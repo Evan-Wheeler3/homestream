@@ -157,6 +157,11 @@ export function ContinueCard({ movie }: { movie: Movie }) {
           sizes="(max-width: 900px) 72vw, 380px"
           widths={[400, 640, 960]}
         />
+        {!movie.images.backdrop && !movie.images.poster && (
+          <span className="continue-card__fallback-title" aria-hidden="true">
+            {movie.title}
+          </span>
+        )}
         <span className="continue-card__play">
           <Icon name="play" size={22} />
         </span>

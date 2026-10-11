@@ -99,7 +99,7 @@
   --line-strong: rgb(255 255 255 / 0.15);
   --text: #f2eee7;
   --text-2: #b4aea5;
-  --text-3: #807a72;
+  --text-3: #948e86; /* ≥4.8:1 on every surface (WCAG AA) */
   --scrim: rgb(8 8 10 / 0.72);
   --danger: #f0776c;
   --success: #79c39a;
@@ -117,7 +117,7 @@
   --line-strong: rgb(255 255 255 / 0.16);
   --text: #f5f3ef;
   --text-2: #aeaaa4;
-  --text-3: #7a7670;
+  --text-3: #918d87;
   --scrim: rgb(0 0 0 / 0.78);
 }
 
@@ -132,7 +132,7 @@
   --line-strong: rgb(255 228 196 / 0.16);
   --text: #f5e9da;
   --text-2: #c4b19b;
-  --text-3: #8d7c69;
+  --text-3: #a08f7b;
   --scrim: rgb(14 9 6 / 0.74);
 }
 

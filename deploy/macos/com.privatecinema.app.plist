@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  launchd agent: starts Private Cinema when you log in and restarts it if it stops.
+  1. Replace /Users/CHANGE_ME/private-cinema (twice) with the folder containing package.json,
+     and /opt/homebrew/bin/node with the output of `which node`.
+  2. cp deploy/macos/com.privatecinema.app.plist ~/Library/LaunchAgents/
+  3. launchctl load ~/Library/LaunchAgents/com.privatecinema.app.plist
+  Logs: /tmp/private-cinema.log
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.privatecinema.app</string>
+  <key>WorkingDirectory</key>
+  <string>/Users/CHANGE_ME/private-cinema</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/node</string>
+    <string>--env-file-if-exists=.env</string>
+    <string>dist/server/index.js</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/tmp/private-cinema.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/private-cinema.log</string>
+</dict>
+</plist>
