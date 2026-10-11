@@ -21,6 +21,8 @@ interface StartOptions {
 
 const PROGRESS_INTERVAL_MS = 10_000;
 const HIDE_CONTROLS_MS = 3000;
+/** Generous: a slow server may need a while to produce the first transcoded segment. */
+const STARTUP_TIMEOUT_MS = 45_000;
 
 const METHOD_LABEL: Record<PlaybackInfo['method'], string> = {
   DirectPlay: 'Direct play',
@@ -71,15 +73,19 @@ export default function PlayerPage({ prefs }: { prefs: Preferences }) {
     null,
   );
 
+  // Last known playback position. Kept in a ref because React detaches element refs
+  // before effect cleanups run, so the <video> is gone when the stop report is sent.
+  const positionRef = useRef(0);
+
   const reportBody = useCallback((paused: boolean): PlaybackReport | null => {
     const i = infoRef.current;
-    const video = videoRef.current;
-    if (!i || !video) return null;
+    if (!i) return null;
+    const position = videoRef.current?.currentTime ?? positionRef.current;
     return {
       itemId: i.itemId,
       mediaSourceId: i.mediaSourceId,
       playSessionId: i.playSessionId,
-      positionSeconds: video.currentTime,
+      positionSeconds: position,
       isPaused: paused,
       method: i.method,
       audioStreamIndex: i.selectedAudioIndex,
@@ -87,11 +93,11 @@ export default function PlayerPage({ prefs }: { prefs: Preferences }) {
     };
   }, []);
 
-  const stopReport = useCallback(() => {
-    if (!startedRef.current) return;
+  const stopReport = useCallback((): Promise<unknown> => {
+    if (!startedRef.current) return Promise.resolve();
     const body = reportBody(true);
     startedRef.current = false;
-    if (body) void report('stop', body);
+    return body ? report('stop', body) : Promise.resolve();
   }, [reportBody]);
 
   // ---------------------------------------------------------------------------
@@ -99,7 +105,7 @@ export default function PlayerPage({ prefs }: { prefs: Preferences }) {
 
   const start = useCallback(
     async (options: StartOptions) => {
-      stopReport();
+      void stopReport();
       setLoading(true);
       setError(null);
       setNeedsTap(false);
@@ -168,7 +174,15 @@ export default function PlayerPage({ prefs }: { prefs: Preferences }) {
         hls.on(HlsClass.Events.ERROR, (_event, data) => {
           if (!data.fatal) return;
           recordError(`HLS ${data.type}: ${data.details}`);
-          if (data.type === HlsClass.ErrorTypes.MEDIA_ERROR && !recovered) {
+          const codecProblem =
+            data.details === HlsClass.ErrorDetails.MANIFEST_INCOMPATIBLE_CODECS_ERROR ||
+            data.details === HlsClass.ErrorDetails.BUFFER_INCOMPATIBLE_CODECS_ERROR ||
+            data.details === HlsClass.ErrorDetails.BUFFER_ADD_CODEC_ERROR;
+          if (codecProblem) {
+            // Retrying cannot help: the browser lacks a decoder for the stream.
+            setError('This browser cannot decode the video format Jellyfin produced (H.264/AAC).');
+            setLoading(false);
+          } else if (data.type === HlsClass.ErrorTypes.MEDIA_ERROR && !recovered) {
             recovered = true;
             hls.recoverMediaError();
           } else if (data.type === HlsClass.ErrorTypes.NETWORK_ERROR && !recovered) {
@@ -200,29 +214,43 @@ export default function PlayerPage({ prefs }: { prefs: Preferences }) {
       video.load();
     }
 
+    // Watchdog: never leave the viewer looking at a spinner forever.
+    const watchdog = window.setTimeout(() => {
+      if (!cancelled && video.readyState === 0 && !video.error) {
+        recordError(`Stream did not start within ${STARTUP_TIMEOUT_MS / 1000}s (${info.method})`);
+        setError(
+          'The stream did not start. Jellyfin may still be preparing it, or it may be unreachable. Try again in a moment.',
+        );
+        setLoading(false);
+      }
+    }, STARTUP_TIMEOUT_MS);
+
     return () => {
       cancelled = true;
+      window.clearTimeout(watchdog);
     };
   }, [info]);
 
   // Tear down on leave: stop reporting, release the stream.
   useEffect(() => {
     const video = videoRef.current;
-    const onPageHide = () => stopReport();
+    const onPageHide = () => void stopReport();
     window.addEventListener('pagehide', onPageHide);
     return () => {
       window.removeEventListener('pagehide', onPageHide);
-      stopReport();
+      const stopped = stopReport();
       hlsRef.current?.destroy();
       if (video) {
         video.removeAttribute('src');
         video.load();
       }
-      // Watch state changed; refresh views that show it.
-      void qc.invalidateQueries({ queryKey: ['movie', id] });
-      void qc.invalidateQueries({ queryKey: ['home'] });
-      void qc.invalidateQueries({ queryKey: ['movies'] });
-      void qc.invalidateQueries({ queryKey: ['collection'] });
+      // Watch state changes once Jellyfin has processed the stop; refresh views after that.
+      void stopped.finally(() => {
+        void qc.invalidateQueries({ queryKey: ['movie', id] });
+        void qc.invalidateQueries({ queryKey: ['home'] });
+        void qc.invalidateQueries({ queryKey: ['movies'] });
+        void qc.invalidateQueries({ queryKey: ['collection'] });
+      });
     };
   }, [stopReport, qc, id]);
 
@@ -291,6 +319,7 @@ export default function PlayerPage({ prefs }: { prefs: Preferences }) {
       if (body && startedRef.current) void report('progress', body);
     };
     const onTime = () => {
+      positionRef.current = video.currentTime;
       setCurrent(video.currentTime);
       if (video.buffered.length) setBuffered(video.buffered.end(video.buffered.length - 1));
     };
@@ -308,7 +337,7 @@ export default function PlayerPage({ prefs }: { prefs: Preferences }) {
     };
     const onEnded = () => {
       setPlaying(false);
-      stopReport();
+      void stopReport();
     };
     const onError = () => {
       const i = infoRef.current;

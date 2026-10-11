@@ -466,6 +466,9 @@ export function apiRouter(deps: ApiDeps): Router {
     router.get('/mock/sample.mp4', (_req, res) => {
       res.sendFile(path.join(deps.assetsDir, 'sample', 'sample.mp4'));
     });
+    router.get('/mock/sample.webm', (_req, res) => {
+      res.sendFile(path.join(deps.assetsDir, 'sample', 'sample.webm'));
+    });
     router.get('/mock/sample.en.vtt', (_req, res) => {
       res.type('text/vtt').sendFile(path.join(deps.assetsDir, 'sample', 'sample.en.vtt'));
     });

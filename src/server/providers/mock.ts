@@ -30,6 +30,16 @@ interface MockRow {
   last_played: string | null;
 }
 
+/** H.264 MP4 plays everywhere that matters; VP9 WebM covers browsers built without H.264. */
+function sampleUrl(capabilities: unknown): string {
+  const caps = (capabilities ?? {}) as { mp4VideoCodecs?: unknown; webmVideoCodecs?: unknown };
+  const mp4 = Array.isArray(caps.mp4VideoCodecs) ? caps.mp4VideoCodecs : [];
+  const webm = Array.isArray(caps.webmVideoCodecs) ? caps.webmVideoCodecs : [];
+  return !mp4.includes('h264') && webm.includes('vp9')
+    ? '/api/mock/sample.webm'
+    : '/api/mock/sample.mp4';
+}
+
 /** Stable "date added" spread over the last ~6 months, anchored to a fixed epoch. */
 function dateAdded(film: SampleFilm, index: number): string {
   const anchor = Date.UTC(2026, 9, 1);
@@ -294,7 +304,7 @@ export class MockProvider implements MediaProvider {
       playSessionId: randomUUID(),
       method: 'DirectPlay',
       delivery: 'file',
-      url: '/api/mock/sample.mp4',
+      url: sampleUrl(request.capabilities),
       // The sample clip is short; map the saved position proportionally into it.
       startSeconds: Math.min(1, start / runtime) * SAMPLE_DURATION_SECONDS,
       durationSeconds: SAMPLE_DURATION_SECONDS,

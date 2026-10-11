@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["vite/client", "node"],
+    "noUncheckedIndexedAccess": true
+  },
+  "include": [
+    "tests",
+    "e2e",
+    "playwright.config.ts",
+    "vitest.config.ts",
+    "vitest.jellyfin.config.ts",
+    "src/shared"
+  ]
+}
