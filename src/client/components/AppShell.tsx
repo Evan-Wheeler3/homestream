@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import type { Preferences, SessionInfo } from '../../shared/types';
 import { api } from '../lib/api';
-import { useConnection } from '../lib/connection';
+import { connection, useConnection } from '../lib/connection';
 import { Icon, type IconName } from './Icon';
 import { IconButton } from './ui';
 
@@ -13,10 +13,32 @@ const NAV: { to: string; label: string; icon: IconName; end?: boolean }[] = [
   { to: '/collections', label: 'Collections', icon: 'stack' },
 ];
 
+/** Re-check the app server and, if needed, Jellyfin (via a catalog refresh). */
+async function recheck(mediaServerOk: boolean) {
+  await api('/health');
+  if (!mediaServerOk) {
+    const result = await api<{ stale: boolean }>('/catalog/refresh', { method: 'POST' });
+    connection.reportMediaServer(!result.stale);
+  }
+}
+
 function OfflineBanner() {
   const state = useConnection();
   const qc = useQueryClient();
   const [retrying, setRetrying] = useState(false);
+  const down = !state.appServer || !state.mediaServer;
+
+  // While something is down, quietly re-check every 20 seconds so the app
+  // recovers on its own when the computer or Jellyfin comes back.
+  useEffect(() => {
+    if (!down || !state.browserOnline) return;
+    const id = window.setInterval(() => {
+      recheck(connection.get().mediaServer)
+        .then(() => qc.invalidateQueries())
+        .catch(() => undefined);
+    }, 20_000);
+    return () => window.clearInterval(id);
+  }, [down, state.browserOnline, qc]);
   let message: string | null = null;
   if (!state.browserOnline) message = 'You are offline. Check your Wi-Fi or network connection.';
   else if (!state.appServer)
@@ -29,7 +51,7 @@ function OfflineBanner() {
   const retry = async () => {
     setRetrying(true);
     try {
-      await api('/health');
+      await recheck(state.mediaServer);
       await qc.invalidateQueries();
     } catch {
       /* banner stays */

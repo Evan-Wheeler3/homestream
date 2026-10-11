@@ -425,3 +425,52 @@ describe('catalog cache', () => {
     expect(calls).toBe(1);
   });
 });
+
+describe('catalog cache staleness', () => {
+  it('stays flagged stale after a failed forced refresh until a refresh succeeds', async () => {
+    let up = true;
+    const cache = new CatalogCache(
+      {
+        listMovies: async () => {
+          if (!up) throw new ApiError('MEDIA_SERVER_UNREACHABLE', 'down');
+          return [];
+        },
+      } as never,
+      60_000,
+    );
+    await cache.get(ctx);
+    up = false;
+    expect((await cache.get(ctx, { force: true })).stale).toBe(true);
+    expect((await cache.get(ctx)).stale).toBe(true);
+    up = true;
+    expect((await cache.get(ctx, { force: true })).stale).toBe(false);
+    expect((await cache.get(ctx)).stale).toBe(false);
+  });
+});
+
+describe('track selection', () => {
+  it('names the media source whenever a track is chosen (Jellyfin ignores the index otherwise)', async () => {
+    const { impl, calls } = fakeFetch(() =>
+      json({ MediaSources: [{ Id: 'ms', SupportsDirectPlay: true, MediaStreams: [] }] }),
+    );
+    const provider = new JellyfinProvider('http://jf.local', '1', impl);
+    const prefs = { maxBitrate: null, preferDirectPlay: true };
+    await provider.getPlayback(ctx, 'item9', { capabilities: {} as never }, prefs);
+    await provider.getPlayback(
+      ctx,
+      'item9',
+      { capabilities: {} as never, audioStreamIndex: 2 },
+      prefs,
+    );
+    await provider.getPlayback(
+      ctx,
+      'item9',
+      { capabilities: {} as never, mediaSourceId: 'other', subtitleStreamIndex: 3 },
+      prefs,
+    );
+    const bodies = calls.map((c) => JSON.parse(String(c.init.body)));
+    expect(bodies[0].MediaSourceId).toBeUndefined();
+    expect(bodies[1]).toMatchObject({ MediaSourceId: 'item9', AudioStreamIndex: 2 });
+    expect(bodies[2]).toMatchObject({ MediaSourceId: 'other', SubtitleStreamIndex: 3 });
+  });
+});

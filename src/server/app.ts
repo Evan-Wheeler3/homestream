@@ -67,6 +67,27 @@ export function createApp({ config, db, provider: injected, logger = console }: 
 
   app.use(sessionMiddleware(sessions));
 
+  // Re-check each session's media-server token at most once a minute, so access
+  // revoked in Jellyfin (e.g. a lost phone) ends promptly even while browsing is
+  // served from the cached index. An unreachable server never signs anyone out.
+  const lastValidated = new Map<string, number>();
+  app.use(['/api', '/jf'], (req, res, next) => {
+    const session = req.session;
+    if (!session || provider.kind !== 'jellyfin') return next();
+    const last = lastValidated.get(session.idHash) ?? 0;
+    if (Date.now() - last < 60_000) return next();
+    lastValidated.set(session.idHash, Date.now());
+    provider
+      .validate(session.ctx)
+      .then(() => next())
+      .catch((error: unknown) => {
+        if (error instanceof ApiError && error.code === 'SESSION_EXPIRED') {
+          lastValidated.delete(session.idHash);
+          next(error);
+        } else next();
+      });
+  });
+
   app.use(
     '/api',
     (_req, res, next) => {

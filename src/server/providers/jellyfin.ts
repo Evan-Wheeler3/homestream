@@ -416,11 +416,16 @@ export class JellyfinProvider implements MediaProvider {
     const audioIndex = request.audioStreamIndex ?? null;
     const subtitleIndex = request.subtitleStreamIndex ?? null;
     const allowDirect = prefs.preferDirectPlay && !request.forceTranscode;
+    // Jellyfin ignores audio/subtitle track choices unless a media source is named
+    // (verified against 12.2), so default to the item's primary source.
+    const requestedSource =
+      request.mediaSourceId ?? (audioIndex != null || subtitleIndex != null ? id : undefined);
     const body = {
       UserId: ctx.userId,
       DeviceProfile: buildDeviceProfile(caps, prefs.maxBitrate),
       MaxStreamingBitrate: prefs.maxBitrate ?? 120_000_000,
       StartTimeTicks: Math.round(startSeconds * TICKS_PER_SECOND),
+      MediaSourceId: requestedSource,
       AudioStreamIndex: audioIndex ?? undefined,
       SubtitleStreamIndex: subtitleIndex ?? undefined,
       EnableDirectPlay: allowDirect,

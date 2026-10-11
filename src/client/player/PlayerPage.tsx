@@ -14,6 +14,7 @@ import { useMovie } from '../lib/queries';
 
 interface StartOptions {
   startSeconds: number;
+  mediaSourceId?: string | null;
   audioStreamIndex?: number | null;
   subtitleStreamIndex?: number | null;
   forceTranscode?: boolean;
@@ -567,6 +568,7 @@ export default function PlayerPage({ prefs }: { prefs: Preferences }) {
       // Image-based subtitles must be burned in by Jellyfin: restart the stream.
       void start({
         startSeconds: videoRef.current?.currentTime ?? 0,
+        mediaSourceId: info.mediaSourceId,
         audioStreamIndex: info.selectedAudioIndex,
         subtitleStreamIndex: sub.index,
         forceTranscode: true,
@@ -574,10 +576,14 @@ export default function PlayerPage({ prefs }: { prefs: Preferences }) {
       return;
     }
     if (burnedIn) {
+      // Leave the burned-in stream; the new session starts with the chosen text track.
       void start({
         startSeconds: videoRef.current?.currentTime ?? 0,
+        mediaSourceId: info.mediaSourceId,
         audioStreamIndex: info.selectedAudioIndex,
+        subtitleStreamIndex: index,
       });
+      return;
     }
     setTextTrack(index);
   };
@@ -587,10 +593,15 @@ export default function PlayerPage({ prefs }: { prefs: Preferences }) {
     if (!info || index === info.selectedAudioIndex) return;
     const defaultIndex =
       info.audioTracks.find((a) => a.isDefault)?.index ?? info.audioTracks[0]?.index;
+    const burnedIn =
+      info.selectedSubtitleIndex != null &&
+      info.subtitles.find((s) => s.index === info.selectedSubtitleIndex)?.url == null;
     void start({
       startSeconds: videoRef.current?.currentTime ?? 0,
+      mediaSourceId: info.mediaSourceId,
       audioStreamIndex: index,
-      subtitleStreamIndex: info.selectedSubtitleIndex,
+      // Keep whatever subtitles are currently on screen.
+      subtitleStreamIndex: burnedIn ? info.selectedSubtitleIndex : textTrack,
       // Browsers play only the default audio track of a file; others need a remux.
       forceTranscode: index !== defaultIndex,
     });

@@ -12,8 +12,10 @@ import type {
 } from '../../shared/types.js';
 import {
   cookieOptions,
+  DEVICE_COOKIE,
   deviceNameFromUserAgent,
   LoginRateLimiter,
+  parseCookies,
   requireAuth,
   SESSION_COOKIE,
   type SessionStore,
@@ -122,14 +124,24 @@ export function apiRouter(deps: ApiDeps): Router {
       }
       const key = `${req.ip}:${username.toLowerCase()}`;
       limiter.check(key);
+      // One stable device id per browser, so Jellyfin's device list doesn't grow
+      // with every sign-in. It identifies the browser only; it grants nothing.
+      const existingDevice = parseCookies(req.headers.cookie)[DEVICE_COOKIE];
       const device = {
-        deviceId: `pc-${randomUUID()}`,
+        deviceId:
+          existingDevice && /^pc-[0-9a-f-]{36}$/.test(existingDevice)
+            ? existingDevice
+            : `pc-${randomUUID()}`,
         deviceName: deviceNameFromUserAgent(req.headers['user-agent']),
       };
       const result = await provider.authenticate(username.trim(), password, device);
       limiter.reset(key);
       const { token, expires } = sessions.create(result.user, result.token, device);
       res.cookie(SESSION_COOKIE, token, { ...cookieOptions(config, req), expires });
+      res.cookie(DEVICE_COOKIE, device.deviceId, {
+        ...cookieOptions(config, req),
+        maxAge: 400 * 86_400_000,
+      });
       store.ensureStarterCollections(result.user.id);
       const body: SessionInfo = { user: result.user, source: config.source };
       return body;
@@ -226,7 +238,11 @@ export function apiRouter(deps: ApiDeps): Router {
 
   router.get(
     '/movies/:id',
-    route((req) => library.detail(ctxOf(req), itemId(req))),
+    route(async (req, res) => {
+      const { detail, stale } = await library.detail(ctxOf(req), itemId(req));
+      if (stale) res.setHeader('X-Catalog-Stale', '1');
+      return detail;
+    }),
   );
 
   router.get(
@@ -274,6 +290,10 @@ export function apiRouter(deps: ApiDeps): Router {
         itemId(req),
         {
           capabilities: body.capabilities,
+          mediaSourceId:
+            typeof body.mediaSourceId === 'string' && /^[\w-]{1,64}$/.test(body.mediaSourceId)
+              ? body.mediaSourceId
+              : null,
           audioStreamIndex: optionalIndex(body.audioStreamIndex),
           subtitleStreamIndex: optionalIndex(body.subtitleStreamIndex),
           startSeconds: Number(body.startSeconds) || 0,

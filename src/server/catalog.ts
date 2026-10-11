@@ -66,7 +66,8 @@ export class CatalogCache {
   async get(ctx: UserContext, options: { force?: boolean } = {}): Promise<CatalogSnapshot> {
     const entry = this.entries.get(ctx.userId);
     const fresh = entry && entry.fetchedAt > 0 && Date.now() - entry.fetchedAt < this.ttlMs;
-    if (entry && fresh && !options.force) return { ...entry, stale: false };
+    // A failed refresh since the last success means the server is down right now.
+    if (entry && fresh && !options.force) return { ...entry, stale: Boolean(entry.lastError) };
     try {
       const loaded = await this.load(ctx, entry);
       return { ...loaded, stale: false };

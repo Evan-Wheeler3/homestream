@@ -439,3 +439,32 @@ describe('robustness', () => {
     expect((await client.get('/api/nope')).status).toBe(404);
   });
 });
+
+describe('device identity', () => {
+  it('reuses one device id per browser across sign-ins', async () => {
+    const first = await fetch(server.url + '/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'private-cinema' },
+      body: JSON.stringify({ username: 'device-user', password: 'demo' }),
+    });
+    const device = first.headers
+      .getSetCookie()
+      .find((c) => c.startsWith('pc_device='))!
+      .split(';')[0]!;
+    expect(device).toMatch(/^pc_device=pc-[0-9a-f-]{36}$/);
+    const second = await fetch(server.url + '/api/auth/login', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'private-cinema',
+        Cookie: device,
+      },
+      body: JSON.stringify({ username: 'device-user', password: 'demo' }),
+    });
+    const again = second.headers
+      .getSetCookie()
+      .find((c) => c.startsWith('pc_device='))!
+      .split(';')[0];
+    expect(again).toBe(device);
+  });
+});

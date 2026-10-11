@@ -12,8 +12,8 @@ import type {
   Preferences,
 } from '../shared/types.js';
 import type { CatalogCache, CatalogSnapshot } from './catalog.js';
-import { notFound } from './errors.js';
-import type { MediaProvider, UserContext } from './providers/types.js';
+import { ApiError, notFound } from './errors.js';
+import type { MediaProvider, ProviderDetail, UserContext } from './providers/types.js';
 import type { CollectionRow, Store } from './store.js';
 
 const ROW_LIMIT = 20;
@@ -52,14 +52,38 @@ export class LibraryService {
     return pool[Math.floor(Math.random() * pool.length)] ?? null;
   }
 
-  async detail(ctx: UserContext, id: string): Promise<MovieDetail> {
-    const detail = await this.provider.getMovie(ctx, id);
+  /**
+   * Full detail from the media server. If it is unreachable, fall back to the
+   * cached index entry (without cast/media info) and flag the result as stale.
+   */
+  async detail(ctx: UserContext, id: string): Promise<{ detail: MovieDetail; stale: boolean }> {
+    let detail: ProviderDetail | null;
+    let stale = false;
+    try {
+      detail = await this.provider.getMovie(ctx, id);
+    } catch (error) {
+      const cached = this.catalog.peek(ctx.userId)?.byId.get(id);
+      if (!(error instanceof ApiError && error.code === 'MEDIA_SERVER_UNREACHABLE') || !cached)
+        throw error;
+      detail = {
+        ...cached,
+        cast: [],
+        writers: [],
+        producers: [],
+        mediaInfo: null,
+        externalLinks: [],
+      };
+      stale = true;
+    }
     if (!detail) throw notFound('This movie is not in the library (it may have been removed).');
-    this.catalog.updateUserState(ctx.userId, id, detail.user);
+    if (!stale) this.catalog.updateUserState(ctx.userId, id, detail.user);
     return {
-      ...detail,
-      personal: this.store.getPersonal(ctx.userId, id),
-      collections: this.store.collectionsContaining(ctx.userId, id),
+      detail: {
+        ...detail,
+        personal: this.store.getPersonal(ctx.userId, id),
+        collections: this.store.collectionsContaining(ctx.userId, id),
+      },
+      stale,
     };
   }
 

@@ -317,6 +317,8 @@ export interface ClientCapabilities {
 
 export interface PlaybackRequest {
   capabilities: ClientCapabilities;
+  /** The media source (file version) being played, when switching tracks. */
+  mediaSourceId?: string | null;
   audioStreamIndex?: number | null;
   subtitleStreamIndex?: number | null;
   startSeconds?: number;
