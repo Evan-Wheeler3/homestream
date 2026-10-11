@@ -11,6 +11,8 @@ export default defineConfig({
     outDir: '../../dist/client',
     emptyOutDir: true,
     sourcemap: true,
+    // hls.js (~570 kB) is lazy-loaded only by browsers without native HLS.
+    chunkSizeWarningLimit: 600,
   },
   server: {
     host: true,

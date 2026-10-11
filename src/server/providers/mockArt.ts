@@ -40,7 +40,14 @@ function wrap(text: string, maxChars: number): string[] {
   return lines;
 }
 
-function motif(kind: number, rand: () => number, w: number, h: number, ink: string, accent: string) {
+function motif(
+  kind: number,
+  rand: () => number,
+  w: number,
+  h: number,
+  ink: string,
+  accent: string,
+) {
   const cx = w * (0.35 + rand() * 0.3);
   const cy = h * (0.3 + rand() * 0.15);
   const r = Math.min(w, h) * (0.22 + rand() * 0.12);
@@ -68,7 +75,8 @@ function motif(kind: number, rand: () => number, w: number, h: number, ink: stri
         for (let x = step / 2; x < w; x += step) {
           const d = Math.hypot(x - cx, y - cy) / (r * 1.6);
           const size = Math.max(0, (1 - d) * step * 0.45);
-          if (size > 0.5) dots.push(`<circle cx="${x}" cy="${y}" r="${size.toFixed(1)}" fill="${accent}"/>`);
+          if (size > 0.5)
+            dots.push(`<circle cx="${x}" cy="${y}" r="${size.toFixed(1)}" fill="${accent}"/>`);
         }
       }
       return dots.join('');
@@ -98,7 +106,8 @@ export function posterSvg(film: SampleFilm): string {
   const H = 900;
   const lines = wrap(film.title.toUpperCase(), 12);
   const longest = Math.max(...lines.map((l) => l.length));
-  const size = Math.min(92, Math.floor(520 / Math.max(longest, 5) / 0.62));
+  // Georgia capitals average ~0.74em wide; keep the longest line inside 520px.
+  const size = Math.min(92, Math.floor(520 / Math.max(longest, 5) / 0.76));
   const lineHeight = size * 1.02;
   const titleTop = H - 120 - lines.length * lineHeight;
   const director = film.directors.length

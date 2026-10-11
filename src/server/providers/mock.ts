@@ -10,7 +10,13 @@ import type {
 import type { Db } from '../db.js';
 import { ApiError } from '../errors.js';
 import { SAMPLE_FILMS, type SampleFilm } from './mockLibrary.js';
-import type { AuthResult, MediaProvider, MediaServerInfo, ProviderDetail, UserContext } from './types.js';
+import type {
+  AuthResult,
+  MediaProvider,
+  MediaServerInfo,
+  ProviderDetail,
+  UserContext,
+} from './types.js';
 
 const SAMPLE_DURATION_SECONDS = 40;
 const DAY = 86_400_000;
@@ -41,7 +47,9 @@ export class MockProvider implements MediaProvider {
   readonly kind = 'mock' as const;
   readonly serverUrl = null;
   private readonly films = new Map(SAMPLE_FILMS.map((film) => [film.id, film]));
-  private readonly addedDates = new Map(SAMPLE_FILMS.map((film, i) => [film.id, dateAdded(film, i)]));
+  private readonly addedDates = new Map(
+    SAMPLE_FILMS.map((film, i) => [film.id, dateAdded(film, i)]),
+  );
 
   constructor(
     private readonly db: Db,
@@ -82,7 +90,15 @@ export class MockProvider implements MediaProvider {
       ['rashomon-1950', 0, 1, 0, 600],
     ];
     for (const [id, favorite, played, position, hoursAgo] of seed) {
-      insert.run(userId, id, favorite, played, position, played, new Date(now - hoursAgo * 3_600_000).toISOString());
+      insert.run(
+        userId,
+        id,
+        favorite,
+        played,
+        position,
+        played,
+        new Date(now - hoursAgo * 3_600_000).toISOString(),
+      );
     }
   }
 
@@ -165,8 +181,27 @@ export class MockProvider implements MediaProvider {
         height: 540,
         sizeBytes: null,
         bitrate: null,
-        audioTracks: [{ index: 1, language: 'eng', title: 'English - AAC - Stereo', codec: 'aac', isDefault: true, channels: 2 }],
-        subtitleTracks: [{ index: 2, language: 'eng', title: 'English', codec: 'webvtt', isDefault: false, isExternal: true, isImageBased: false }],
+        audioTracks: [
+          {
+            index: 1,
+            language: 'eng',
+            title: 'English - AAC - Stereo',
+            codec: 'aac',
+            isDefault: true,
+            channels: 2,
+          },
+        ],
+        subtitleTracks: [
+          {
+            index: 2,
+            language: 'eng',
+            title: 'English',
+            codec: 'webvtt',
+            isDefault: false,
+            isExternal: true,
+            isImageBased: false,
+          },
+        ],
       },
       externalLinks: [],
     };
@@ -216,7 +251,15 @@ export class MockProvider implements MediaProvider {
          ON CONFLICT(user_id, item_id) DO UPDATE SET favorite = excluded.favorite, played = excluded.played,
            position_seconds = excluded.position_seconds, play_count = excluded.play_count, last_played = excluded.last_played`,
       )
-      .run(userId, id, next.favorite, next.played, next.position_seconds, next.play_count, next.last_played);
+      .run(
+        userId,
+        id,
+        next.favorite,
+        next.played,
+        next.position_seconds,
+        next.play_count,
+        next.last_played,
+      );
   }
 
   async setFavorite(ctx: UserContext, id: string, favorite: boolean): Promise<MovieUserState> {
@@ -231,8 +274,8 @@ export class MockProvider implements MediaProvider {
     this.upsert(ctx.userId, id, {
       played: played ? 1 : 0,
       position_seconds: 0,
-      play_count: played ? (current?.play_count ?? 0) + 1 : current?.play_count ?? 0,
-      last_played: played ? new Date().toISOString() : current?.last_played ?? null,
+      play_count: played ? (current?.play_count ?? 0) + 1 : (current?.play_count ?? 0),
+      last_played: played ? new Date().toISOString() : (current?.last_played ?? null),
     });
     return this.getUserState(ctx, id);
   }
@@ -255,7 +298,16 @@ export class MockProvider implements MediaProvider {
       // The sample clip is short; map the saved position proportionally into it.
       startSeconds: Math.min(1, start / runtime) * SAMPLE_DURATION_SECONDS,
       durationSeconds: SAMPLE_DURATION_SECONDS,
-      audioTracks: [{ index: 1, language: 'eng', title: 'English - AAC - Stereo', codec: 'aac', isDefault: true, channels: 2 }],
+      audioTracks: [
+        {
+          index: 1,
+          language: 'eng',
+          title: 'English - AAC - Stereo',
+          codec: 'aac',
+          isDefault: true,
+          channels: 2,
+        },
+      ],
       subtitles: [
         {
           index: 2,
@@ -299,7 +351,10 @@ export class MockProvider implements MediaProvider {
         last_played: now,
       });
     } else if (fraction > 0.02) {
-      this.upsert(ctx.userId, film.id, { position_seconds: Math.round(fraction * runtime), last_played: now });
+      this.upsert(ctx.userId, film.id, {
+        position_seconds: Math.round(fraction * runtime),
+        last_played: now,
+      });
     }
   }
 

@@ -285,8 +285,16 @@ export interface HomePayload {
   sections: (
     | { type: 'row'; row: HomeRow }
     | { type: 'collections'; id: 'collections'; collections: Collection[] }
-    | { type: 'genres'; id: 'genres'; genres: { name: string; count: number; poster: string | null }[] }
-    | { type: 'decades'; id: 'decades'; decades: { decade: number; count: number; poster: string | null }[] }
+    | {
+        type: 'genres';
+        id: 'genres';
+        genres: { name: string; count: number; poster: string | null }[];
+      }
+    | {
+        type: 'decades';
+        id: 'decades';
+        decades: { decade: number; count: number; poster: string | null }[];
+      }
     | { type: 'randomPick'; id: 'randomPick'; movie: Movie | null }
   )[];
   libraryCount: number;

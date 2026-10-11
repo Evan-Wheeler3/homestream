@@ -20,7 +20,13 @@ const ALLOWED: RegExp[] = [
   `^/Items/(${ID})/Images/(Primary|Backdrop|Logo|Thumb)(/\\d{1,3})?$`,
 ].map((source) => new RegExp(source, 'i'));
 
-const FORWARD_REQUEST_HEADERS = ['range', 'if-none-match', 'if-modified-since', 'if-range', 'accept'];
+const FORWARD_REQUEST_HEADERS = [
+  'range',
+  'if-none-match',
+  'if-modified-since',
+  'if-range',
+  'accept',
+];
 const FORWARD_RESPONSE_HEADERS = [
   'content-type',
   'content-length',
@@ -88,7 +94,11 @@ export function mediaProxy(provider: JellyfinProvider) {
           if (value !== undefined) res.setHeader(name, value);
         }
         // Artwork is immutable per tag; let browsers cache it privately.
-        if (incoming.pathname.includes('/Images/') && incoming.searchParams.has('tag') && status === 200) {
+        if (
+          incoming.pathname.includes('/Images/') &&
+          incoming.searchParams.has('tag') &&
+          status === 200
+        ) {
           res.setHeader('Cache-Control', 'private, max-age=2592000, immutable');
         }
         upstreamRes.pipe(res);

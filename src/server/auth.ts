@@ -93,7 +93,11 @@ export class SessionStore {
     private readonly config: AppConfig,
   ) {}
 
-  create(user: SessionUser, mediaToken: string | null, device: { deviceId: string; deviceName: string }) {
+  create(
+    user: SessionUser,
+    mediaToken: string | null,
+    device: { deviceId: string; deviceName: string },
+  ) {
     const token = randomBytes(32).toString('base64url');
     const now = new Date();
     const expires = new Date(now.getTime() + this.config.sessionDays * 86_400_000);
@@ -120,8 +124,7 @@ export class SessionStore {
 
   find(token: string): Session | null {
     const row = this.db.prepare('SELECT * FROM sessions WHERE id_hash = ?').get(hash(token)) as
-      | SessionRow
-      | undefined;
+      SessionRow | undefined;
     if (!row) return null;
     // Sessions created for a different media source (e.g. sample mode) are invalid.
     if (Date.parse(row.expires_at) < Date.now() || row.source !== this.config.source) {
@@ -196,7 +199,10 @@ export class LoginRateLimiter {
     const now = Date.now();
     const recent = (this.attempts.get(key) ?? []).filter((t) => now - t < this.windowMs);
     if (recent.length >= this.max) {
-      throw new ApiError('FORBIDDEN', 'Too many sign-in attempts. Wait a few minutes and try again.');
+      throw new ApiError(
+        'FORBIDDEN',
+        'Too many sign-in attempts. Wait a few minutes and try again.',
+      );
     }
     recent.push(now);
     this.attempts.set(key, recent);

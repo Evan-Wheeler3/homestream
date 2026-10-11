@@ -83,7 +83,10 @@ function sanitizeSections(input: unknown): HomeSectionPref[] {
       const valid = BUILTIN_IDS.has(id) || /^collection:[\w-]{1,64}$/.test(id);
       if (!valid || seen.has(id)) continue;
       seen.add(id);
-      out.push({ id: id as HomeSectionId, visible: Boolean((entry as { visible?: unknown }).visible) });
+      out.push({
+        id: id as HomeSectionId,
+        visible: Boolean((entry as { visible?: unknown }).visible),
+      });
     }
   }
   // Newly introduced built-in sections appear at the end, visible.
@@ -127,13 +130,18 @@ export function mergePreferences(base: Preferences, patch: unknown): Preferences
     else if (typeof pb.maxBitrate === 'number' && pb.maxBitrate >= 250_000) {
       next.playback.maxBitrate = Math.round(Math.min(pb.maxBitrate, 200_000_000));
     }
-    if (pb.resumeBehavior === 'ask' || pb.resumeBehavior === 'resume' || pb.resumeBehavior === 'restart') {
+    if (
+      pb.resumeBehavior === 'ask' ||
+      pb.resumeBehavior === 'resume' ||
+      pb.resumeBehavior === 'restart'
+    ) {
       next.playback.resumeBehavior = pb.resumeBehavior;
     }
     if (typeof pb.subtitleLanguage === 'string' && /^[a-z]{0,3}$/.test(pb.subtitleLanguage)) {
       next.playback.subtitleLanguage = pb.subtitleLanguage;
     }
-    if (typeof pb.preferDirectPlay === 'boolean') next.playback.preferDirectPlay = pb.preferDirectPlay;
+    if (typeof pb.preferDirectPlay === 'boolean')
+      next.playback.preferDirectPlay = pb.preferDirectPlay;
   }
   next.homeSections = sanitizeSections(next.homeSections);
   return next;

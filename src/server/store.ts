@@ -40,10 +40,14 @@ export interface CollectionInput {
 const MAX_ARTWORK_BYTES = 5 * 1024 * 1024;
 
 export function detectImageType(buffer: Buffer): 'png' | 'jpg' | 'webp' | null {
-  if (buffer.length > 8 && buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
+  if (
+    buffer.length > 8 &&
+    buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+  ) {
     return 'png';
   }
-  if (buffer.length > 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return 'jpg';
+  if (buffer.length > 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff)
+    return 'jpg';
   if (
     buffer.length > 12 &&
     buffer.subarray(0, 4).toString('ascii') === 'RIFF' &&
@@ -70,8 +74,7 @@ export class Store {
 
   getPreferences(userId: string): Preferences {
     const row = this.db.prepare('SELECT data FROM preferences WHERE user_id = ?').get(userId) as
-      | { data: string }
-      | undefined;
+      { data: string } | undefined;
     if (!row) return structuredClone(DEFAULT_PREFERENCES);
     try {
       return mergePreferences(DEFAULT_PREFERENCES, JSON.parse(row.data));
@@ -96,8 +99,11 @@ export class Store {
 
   getPersonal(userId: string, itemId: string): PersonalData {
     const row = this.db
-      .prepare('SELECT rating, notes, updated_at FROM personal_data WHERE user_id = ? AND item_id = ?')
-      .get(userId, itemId) as { rating: number | null; notes: string; updated_at: string } | undefined;
+      .prepare(
+        'SELECT rating, notes, updated_at FROM personal_data WHERE user_id = ? AND item_id = ?',
+      )
+      .get(userId, itemId) as
+      { rating: number | null; notes: string; updated_at: string } | undefined;
     return row
       ? { rating: row.rating, notes: row.notes, updatedAt: row.updated_at }
       : { rating: null, notes: '', updatedAt: null };
@@ -106,18 +112,30 @@ export class Store {
   allPersonal(userId: string): Map<string, PersonalData> {
     const rows = this.db
       .prepare('SELECT item_id, rating, notes, updated_at FROM personal_data WHERE user_id = ?')
-      .all(userId) as { item_id: string; rating: number | null; notes: string; updated_at: string }[];
-    return new Map(rows.map((r) => [r.item_id, { rating: r.rating, notes: r.notes, updatedAt: r.updated_at }]));
+      .all(userId) as {
+      item_id: string;
+      rating: number | null;
+      notes: string;
+      updated_at: string;
+    }[];
+    return new Map(
+      rows.map((r) => [r.item_id, { rating: r.rating, notes: r.notes, updatedAt: r.updated_at }]),
+    );
   }
 
-  setPersonal(userId: string, itemId: string, input: { rating?: unknown; notes?: unknown }): PersonalData {
+  setPersonal(
+    userId: string,
+    itemId: string,
+    input: { rating?: unknown; notes?: unknown },
+  ): PersonalData {
     const current = this.getPersonal(userId, itemId);
     let rating = current.rating;
     if ('rating' in input) {
       if (input.rating === null) rating = null;
       else {
         const n = Number(input.rating);
-        if (!Number.isInteger(n) || n < 1 || n > 5) throw badRequest('Rating must be a whole number from 1 to 5');
+        if (!Number.isInteger(n) || n < 1 || n > 5)
+          throw badRequest('Rating must be a whole number from 1 to 5');
         rating = n;
       }
     }
@@ -129,7 +147,9 @@ export class Store {
     }
     const updatedAt = nowIso();
     if (rating === null && notes.trim() === '') {
-      this.db.prepare('DELETE FROM personal_data WHERE user_id = ? AND item_id = ?').run(userId, itemId);
+      this.db
+        .prepare('DELETE FROM personal_data WHERE user_id = ? AND item_id = ?')
+        .run(userId, itemId);
       return { rating: null, notes: '', updatedAt };
     }
     this.db
@@ -156,9 +176,9 @@ export class Store {
   }
 
   snapshot(itemId: string): { title: string; year: number | null } | null {
-    const row = this.db.prepare('SELECT title, year FROM item_snapshots WHERE item_id = ?').get(itemId) as
-      | { title: string; year: number | null }
-      | undefined;
+    const row = this.db
+      .prepare('SELECT title, year FROM item_snapshots WHERE item_id = ?')
+      .get(itemId) as { title: string; year: number | null } | undefined;
     return row ?? null;
   }
 
@@ -176,7 +196,8 @@ export class Store {
   }
 
   getCollection(userId: string, id: string): CollectionRow {
-    const row = this.db.prepare('SELECT * FROM collections WHERE id = ?').get(id) as CollectionRow | undefined;
+    const row = this.db.prepare('SELECT * FROM collections WHERE id = ?').get(id) as
+      CollectionRow | undefined;
     if (!row || (row.owner_user_id !== userId && row.visibility !== 'shared')) {
       throw notFound('Collection not found');
     }
@@ -229,12 +250,15 @@ export class Store {
         throw badRequest(error instanceof Error ? error.message : 'Invalid rules');
       }
     }
-    const description = typeof input.description === 'string' ? input.description.slice(0, 500) : '';
+    const description =
+      typeof input.description === 'string' ? input.description.slice(0, 500) : '';
     const visibility = input.visibility === 'shared' ? 'shared' : 'private';
     const id = randomUUID();
     const now = nowIso();
     const { next } = this.db
-      .prepare('SELECT COALESCE(MAX(position), -1) + 1 AS next FROM collections WHERE owner_user_id = ?')
+      .prepare(
+        'SELECT COALESCE(MAX(position), -1) + 1 AS next FROM collections WHERE owner_user_id = ?',
+      )
       .get(userId) as { next: number };
     this.wrapUnique(() =>
       this.db
@@ -253,7 +277,9 @@ export class Store {
     const description =
       typeof input.description === 'string' ? input.description.slice(0, 500) : row.description;
     const visibility =
-      input.visibility === 'shared' || input.visibility === 'private' ? input.visibility : row.visibility;
+      input.visibility === 'shared' || input.visibility === 'private'
+        ? input.visibility
+        : row.visibility;
     let rules = row.rules;
     if (input.rules !== undefined) {
       if (row.kind !== 'smart') throw badRequest('Only smart collections have rules');
@@ -271,12 +297,18 @@ export class Store {
         this.removeArtworkFile(row);
         artworkKind = 'auto';
         artworkRef = null;
-      } else if (art.kind === 'movie' && typeof art.ref === 'string' && /^[\w-]{1,64}$/.test(art.ref)) {
+      } else if (
+        art.kind === 'movie' &&
+        typeof art.ref === 'string' &&
+        /^[\w-]{1,64}$/.test(art.ref)
+      ) {
         this.removeArtworkFile(row);
         artworkKind = 'movie';
         artworkRef = art.ref;
       } else {
-        throw badRequest('Artwork must be "auto" or a movie id (use the upload endpoint for images)');
+        throw badRequest(
+          'Artwork must be "auto" or a movie id (use the upload endpoint for images)',
+        );
       }
     }
     this.wrapUnique(() =>
@@ -311,7 +343,9 @@ export class Store {
 
   memberIds(collectionId: string): string[] {
     const rows = this.db
-      .prepare('SELECT item_id FROM collection_items WHERE collection_id = ? ORDER BY position, added_at')
+      .prepare(
+        'SELECT item_id FROM collection_items WHERE collection_id = ? ORDER BY position, added_at',
+      )
       .all(collectionId) as { item_id: string }[];
     return rows.map((r) => r.item_id);
   }
@@ -329,10 +363,13 @@ export class Store {
   addItems(userId: string, id: string, itemIds: unknown) {
     const row = this.getEditableCollection(userId, id);
     if (row.kind !== 'manual') throw badRequest('Smart collections are filled by their rules');
-    if (!Array.isArray(itemIds) || itemIds.length === 0) throw badRequest('itemIds must be a non-empty array');
+    if (!Array.isArray(itemIds) || itemIds.length === 0)
+      throw badRequest('itemIds must be a non-empty array');
     const ids = itemIds.map(String).filter((v) => /^[\w-]{1,64}$/.test(v));
     const { next } = this.db
-      .prepare('SELECT COALESCE(MAX(position), -1) + 1 AS next FROM collection_items WHERE collection_id = ?')
+      .prepare(
+        'SELECT COALESCE(MAX(position), -1) + 1 AS next FROM collection_items WHERE collection_id = ?',
+      )
       .get(id) as { next: number };
     const stmt = this.db.prepare(
       'INSERT OR IGNORE INTO collection_items (collection_id, item_id, position, added_at) VALUES (?, ?, ?, ?)',
@@ -344,7 +381,9 @@ export class Store {
 
   removeItem(userId: string, id: string, itemId: string) {
     this.getEditableCollection(userId, id);
-    this.db.prepare('DELETE FROM collection_items WHERE collection_id = ? AND item_id = ?').run(id, itemId);
+    this.db
+      .prepare('DELETE FROM collection_items WHERE collection_id = ? AND item_id = ?')
+      .run(id, itemId);
     this.touch(id);
   }
 
@@ -356,7 +395,9 @@ export class Store {
     const set = new Set(current);
     const ordered = itemIds.map(String).filter((v) => set.has(v));
     for (const v of current) if (!ordered.includes(v)) ordered.push(v);
-    const stmt = this.db.prepare('UPDATE collection_items SET position = ? WHERE collection_id = ? AND item_id = ?');
+    const stmt = this.db.prepare(
+      'UPDATE collection_items SET position = ? WHERE collection_id = ? AND item_id = ?',
+    );
     transaction(this.db, () => ordered.forEach((itemId, i) => stmt.run(i, id, itemId)));
     this.touch(id);
   }
@@ -379,7 +420,9 @@ export class Store {
     fs.writeFileSync(path.join(this.artworkDir, file), body);
     this.removeArtworkFile(row);
     this.db
-      .prepare(`UPDATE collections SET artwork_kind = 'upload', artwork_ref = ?, updated_at = ? WHERE id = ?`)
+      .prepare(
+        `UPDATE collections SET artwork_kind = 'upload', artwork_ref = ?, updated_at = ? WHERE id = ?`,
+      )
       .run(file, nowIso(), id);
     return this.getCollection(userId, id);
   }
@@ -407,25 +450,45 @@ export class Store {
         name: 'Personal Favorites',
         description: 'Everything you have marked as a favorite.',
         kind: 'smart',
-        rules: { match: 'all', rules: [{ field: 'favorite', op: 'is', value: true }], sort: 'title', dir: 'asc' },
+        rules: {
+          match: 'all',
+          rules: [{ field: 'favorite', op: 'is', value: true }],
+          sort: 'title',
+          dir: 'asc',
+        },
       },
       {
         name: '1990s Cinema',
         description: 'Released between 1990 and 1999.',
         kind: 'smart',
-        rules: { match: 'all', rules: [{ field: 'year', op: 'between', min: 1990, max: 1999 }], sort: 'year', dir: 'asc' },
+        rules: {
+          match: 'all',
+          rules: [{ field: 'year', op: 'between', min: 1990, max: 1999 }],
+          sort: 'year',
+          dir: 'asc',
+        },
       },
       {
         name: 'Japanese Cinema',
         description: 'Films produced in Japan.',
         kind: 'smart',
-        rules: { match: 'all', rules: [{ field: 'country', op: 'any', values: ['Japan'] }], sort: 'year', dir: 'asc' },
+        rules: {
+          match: 'all',
+          rules: [{ field: 'country', op: 'any', values: ['Japan'] }],
+          sort: 'year',
+          dir: 'asc',
+        },
       },
       {
         name: 'Under 100 Minutes',
         description: 'For when the evening is short.',
         kind: 'smart',
-        rules: { match: 'all', rules: [{ field: 'runtime', op: 'between', min: null, max: 99 }], sort: 'runtime', dir: 'asc' },
+        rules: {
+          match: 'all',
+          rules: [{ field: 'runtime', op: 'between', min: null, max: 99 }],
+          sort: 'runtime',
+          dir: 'asc',
+        },
       },
       {
         name: 'Family Movie Night',
@@ -442,7 +505,11 @@ export class Store {
         },
       },
       { name: 'Movies to Rewatch', description: 'Worth another look.', kind: 'manual' },
-      { name: 'Favorite Directors', description: 'Hand-picked work from directors you love.', kind: 'manual' },
+      {
+        name: 'Favorite Directors',
+        description: 'Hand-picked work from directors you love.',
+        kind: 'manual',
+      },
     ];
     transaction(this.db, () => {
       for (const starter of starters) {

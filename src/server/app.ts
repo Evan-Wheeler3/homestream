@@ -75,7 +75,13 @@ export function createApp({ config, db, provider: injected, logger = console }: 
     },
     requireCsrfHeader,
     express.json({ limit: '256kb' }),
-    apiRouter({ config, sessions, library, startedAt: new Date(), assetsDir: path.join(ROOT, 'assets') }),
+    apiRouter({
+      config,
+      sessions,
+      library,
+      startedAt: new Date(),
+      assetsDir: path.join(ROOT, 'assets'),
+    }),
   );
 
   if (provider instanceof JellyfinProvider) {
@@ -121,7 +127,12 @@ export function createApp({ config, db, provider: injected, logger = console }: 
   app.use((error: unknown, req: Request, res: Response, _next: NextFunction) => {
     let apiError: ApiError;
     if (error instanceof ApiError) apiError = error;
-    else if (error && typeof error === 'object' && 'type' in error && error.type === 'entity.too.large') {
+    else if (
+      error &&
+      typeof error === 'object' &&
+      'type' in error &&
+      error.type === 'entity.too.large'
+    ) {
       apiError = new ApiError('BAD_REQUEST', 'Request is too large');
     } else if (error instanceof SyntaxError) {
       apiError = new ApiError('BAD_REQUEST', 'Malformed JSON');

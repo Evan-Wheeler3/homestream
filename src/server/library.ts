@@ -130,7 +130,9 @@ export class LibraryService {
     const snap = await this.snapshot(ctx);
     return this.store
       .listCollections(ctx.userId)
-      .map((row) => this.toCollection(ctx, row, this.collectionMovies(ctx, row, snap).movies, snap));
+      .map((row) =>
+        this.toCollection(ctx, row, this.collectionMovies(ctx, row, snap).movies, snap),
+      );
   }
 
   async collectionDetail(ctx: UserContext, id: string): Promise<CollectionDetail> {
@@ -142,7 +144,11 @@ export class LibraryService {
       ? []
       : missing.map((itemId) => {
           const known = this.store.snapshot(itemId);
-          return { itemId, lastKnownTitle: known?.title ?? null, lastKnownYear: known?.year ?? null };
+          return {
+            itemId,
+            lastKnownTitle: known?.title ?? null,
+            lastKnownYear: known?.year ?? null,
+          };
         });
     return { ...this.toCollection(ctx, row, movies, snap), movies, unavailable };
   }
@@ -153,7 +159,9 @@ export class LibraryService {
   private pickHero(movies: Movie[], prefs: Preferences, ctx: UserContext): Movie[] {
     const withArt = movies.filter((m) => m.available && (m.images.backdrop || m.images.poster));
     const rand = seededRandom(`${ctx.userId}-${dayKey()}`);
-    const byAdded = [...withArt].sort((a, b) => (b.dateAdded ?? '').localeCompare(a.dateAdded ?? ''));
+    const byAdded = [...withArt].sort((a, b) =>
+      (b.dateAdded ?? '').localeCompare(a.dateAdded ?? ''),
+    );
     let candidates: Movie[];
     switch (prefs.heroSource) {
       case 'random':
@@ -186,7 +194,9 @@ export class LibraryService {
     const movies = snap.movies.filter((m) => m.available);
     const rand = seededRandom(`${ctx.userId}-${dayKey()}-rows`);
     const sections: HomePayload['sections'] = [];
-    const collectionRows = new Map(this.store.listCollections(ctx.userId).map((row) => [row.id, row]));
+    const collectionRows = new Map(
+      this.store.listCollections(ctx.userId).map((row) => [row.id, row]),
+    );
     const titles = new Map(BUILTIN_SECTIONS.map((s) => [s.id, s.label]));
 
     const pushRow = (row: HomeRow) => {
@@ -198,7 +208,12 @@ export class LibraryService {
       const title = titles.get(section.id) ?? '';
       switch (section.id) {
         case 'continueWatching':
-          pushRow({ id: section.id, title, kind: 'continue', movies: inProgress(movies).slice(0, ROW_LIMIT) });
+          pushRow({
+            id: section.id,
+            title,
+            kind: 'continue',
+            movies: inProgress(movies).slice(0, ROW_LIMIT),
+          });
           break;
         case 'recentlyAdded':
           pushRow({
@@ -235,7 +250,8 @@ export class LibraryService {
         }
         case 'collections': {
           const list = (await this.listCollections(ctx)).filter((c) => c.itemCount > 0);
-          if (list.length) sections.push({ type: 'collections', id: 'collections', collections: list });
+          if (list.length)
+            sections.push({ type: 'collections', id: 'collections', collections: list });
           break;
         }
         case 'randomPick':
@@ -256,7 +272,9 @@ export class LibraryService {
               genres: facets.slice(0, 18).map((g) => ({
                 name: g.value,
                 count: g.count,
-                poster: movies.find((m) => m.genres.includes(g.value) && m.images.backdrop)?.images.backdrop ??
+                poster:
+                  movies.find((m) => m.genres.includes(g.value) && m.images.backdrop)?.images
+                    .backdrop ??
                   movies.find((m) => m.genres.includes(g.value))?.images.poster ??
                   null,
               })),
@@ -274,8 +292,10 @@ export class LibraryService {
                 decade: Number(d.value),
                 count: d.count,
                 poster:
-                  movies.find((m) => m.year != null && decadeOf(m.year) === Number(d.value) && m.images.poster)
-                    ?.images.poster ?? null,
+                  movies.find(
+                    (m) =>
+                      m.year != null && decadeOf(m.year) === Number(d.value) && m.images.poster,
+                  )?.images.poster ?? null,
               })),
             });
           }

@@ -2,23 +2,22 @@ import { compareMovies } from './catalog.js';
 import type { CollectionRule, Movie, PersonalData, RuleField, SmartRules } from './types.js';
 
 /** Human-readable description of each supported rule field (shown in the editor). */
-export const RULE_FIELDS: Record<RuleField, { label: string; kind: 'list' | 'range' | 'other' }> =
-  {
-    genre: { label: 'Genre', kind: 'list' },
-    director: { label: 'Director', kind: 'list' },
-    country: { label: 'Production country', kind: 'list' },
-    tag: { label: 'Tag', kind: 'list' },
-    studio: { label: 'Studio', kind: 'list' },
-    officialRating: { label: 'Age rating', kind: 'list' },
-    year: { label: 'Release year', kind: 'range' },
-    runtime: { label: 'Runtime (minutes)', kind: 'range' },
-    communityRating: { label: 'Community rating', kind: 'range' },
-    personalRating: { label: 'My rating', kind: 'range' },
-    watched: { label: 'Watch status', kind: 'other' },
-    favorite: { label: 'Favorite', kind: 'other' },
-    title: { label: 'Title contains', kind: 'other' },
-    addedWithinDays: { label: 'Added within (days)', kind: 'other' },
-  };
+export const RULE_FIELDS: Record<RuleField, { label: string; kind: 'list' | 'range' | 'other' }> = {
+  genre: { label: 'Genre', kind: 'list' },
+  director: { label: 'Director', kind: 'list' },
+  country: { label: 'Production country', kind: 'list' },
+  tag: { label: 'Tag', kind: 'list' },
+  studio: { label: 'Studio', kind: 'list' },
+  officialRating: { label: 'Age rating', kind: 'list' },
+  year: { label: 'Release year', kind: 'range' },
+  runtime: { label: 'Runtime (minutes)', kind: 'range' },
+  communityRating: { label: 'Community rating', kind: 'range' },
+  personalRating: { label: 'My rating', kind: 'range' },
+  watched: { label: 'Watch status', kind: 'other' },
+  favorite: { label: 'Favorite', kind: 'other' },
+  title: { label: 'Title contains', kind: 'other' },
+  addedWithinDays: { label: 'Added within (days)', kind: 'other' },
+};
 
 export type PersonalLookup = (itemId: string) => PersonalData | undefined;
 

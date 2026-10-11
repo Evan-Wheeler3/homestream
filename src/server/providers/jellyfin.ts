@@ -12,7 +12,11 @@ import type {
   SubtitleDelivery,
 } from '../../shared/types.js';
 import { ApiError } from '../errors.js';
-import { buildDeviceProfile, IMAGE_SUBTITLE_CODECS, sanitizeCapabilities } from './deviceProfile.js';
+import {
+  buildDeviceProfile,
+  IMAGE_SUBTITLE_CODECS,
+  sanitizeCapabilities,
+} from './deviceProfile.js';
 import type {
   AuthResult,
   MediaProvider,
@@ -60,7 +64,8 @@ function pascal(value: unknown): unknown {
 const str = (v: unknown): string | null => (typeof v === 'string' && v.length ? v : null);
 const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 const arr = (v: unknown): Json[] => (Array.isArray(v) ? (v as Json[]) : []);
-const strArr = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []);
+const strArr = (v: unknown): string[] =>
+  Array.isArray(v) ? v.filter((x) => typeof x === 'string') : [];
 
 /** Escape a value for the MediaBrowser Authorization header. */
 function headerValue(value: string): string {
@@ -124,7 +129,10 @@ export class JellyfinProvider implements MediaProvider {
     return response;
   }
 
-  private async json<T = Json>(path: string, options: Parameters<JellyfinProvider['request']>[1] = {}) {
+  private async json<T = Json>(
+    path: string,
+    options: Parameters<JellyfinProvider['request']>[1] = {},
+  ) {
     const response = await this.request(path, options);
     if (response.status === 404) throw new ApiError('NOT_FOUND', 'Item not found on Jellyfin');
     if (!response.ok) {
@@ -162,7 +170,11 @@ export class JellyfinProvider implements MediaProvider {
       throw new ApiError('MEDIA_SERVER_ERROR', 'Jellyfin did not return an access token.');
     }
     return {
-      user: { id: String(user.Id), name: String(user.Name ?? username), isAdmin: Boolean(policy.IsAdministrator) },
+      user: {
+        id: String(user.Id),
+        name: String(user.Name ?? username),
+        isAdmin: Boolean(policy.IsAdministrator),
+      },
       token,
     };
   }
@@ -239,7 +251,9 @@ export class JellyfinProvider implements MediaProvider {
       runtimeMinutes: runtimeTicks ? Math.round(runtimeTicks / TICKS_PER_SECOND / 60) : null,
       genres: strArr(item.Genres),
       directors: people.filter((p) => p.Type === 'Director').map((p) => String(p.Name)),
-      studios: arr(item.Studios).map((s) => String(s.Name)).filter(Boolean),
+      studios: arr(item.Studios)
+        .map((s) => String(s.Name))
+        .filter(Boolean),
       tags: strArr(item.Tags),
       countries: strArr(item.ProductionLocations),
       officialRating: str(item.OfficialRating),
@@ -288,7 +302,11 @@ export class JellyfinProvider implements MediaProvider {
     return {
       index: num(stream.Index) ?? 0,
       language: str(stream.Language),
-      title: str(stream.DisplayTitle) ?? str(stream.Title) ?? str(stream.Language) ?? `Track ${String(stream.Index)}`,
+      title:
+        str(stream.DisplayTitle) ??
+        str(stream.Title) ??
+        str(stream.Language) ??
+        `Track ${String(stream.Index)}`,
       codec,
       isDefault: Boolean(stream.IsDefault),
       isForced: Boolean(stream.IsForced),
@@ -323,7 +341,8 @@ export class JellyfinProvider implements MediaProvider {
         { ctx },
       );
     } catch (error) {
-      if (error instanceof ApiError && (error.code === 'NOT_FOUND' || error.status === 400)) return null;
+      if (error instanceof ApiError && (error.code === 'NOT_FOUND' || error.status === 400))
+        return null;
       throw error;
     }
     if (item.Type !== 'Movie') return null;
@@ -462,7 +481,10 @@ export class JellyfinProvider implements MediaProvider {
       delivery = transcodingUrl.pathname.endsWith('.m3u8') ? 'hls' : 'file';
       url = `/jf${transcodingUrl.pathname}${transcodingUrl.search}`;
     } else {
-      throw new ApiError('MEDIA_UNAVAILABLE', 'Jellyfin found no compatible way to stream this file.');
+      throw new ApiError(
+        'MEDIA_UNAVAILABLE',
+        'Jellyfin found no compatible way to stream this file.',
+      );
     }
 
     const subtitles: SubtitleDelivery[] = streams
@@ -496,7 +518,8 @@ export class JellyfinProvider implements MediaProvider {
       audioTracks,
       subtitles,
       selectedAudioIndex: audioIndex ?? defaultAudio,
-      selectedSubtitleIndex: subtitleIndex ?? (defaultSub != null && defaultSub >= 0 ? defaultSub : null),
+      selectedSubtitleIndex:
+        subtitleIndex ?? (defaultSub != null && defaultSub >= 0 ? defaultSub : null),
       isSample: false,
       transcodeReasons,
     };
@@ -530,7 +553,10 @@ export class JellyfinProvider implements MediaProvider {
       },
     });
     if (!response.ok) {
-      throw new ApiError('MEDIA_SERVER_ERROR', `Jellyfin rejected the playback report (${response.status}).`);
+      throw new ApiError(
+        'MEDIA_SERVER_ERROR',
+        `Jellyfin rejected the playback report (${response.status}).`,
+      );
     }
   }
 }

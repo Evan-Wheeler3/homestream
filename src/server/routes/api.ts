@@ -18,6 +18,7 @@ import {
   SESSION_COOKIE,
   type SessionStore,
 } from '../auth.js';
+import { evaluateSmartCollection, parseSmartRules } from '../../shared/rules.js';
 import type { AppConfig } from '../config.js';
 import { ApiError, badRequest, notFound } from '../errors.js';
 import type { LibraryService } from '../library.js';
@@ -340,6 +341,23 @@ export function apiRouter(deps: ApiDeps): Router {
       const row = store.createCollection(ctx.userId, req.body ?? {});
       res.status(201);
       return library.collectionDetail(ctx, row.id);
+    }),
+  );
+
+  router.post(
+    '/collections/preview',
+    route(async (req) => {
+      const ctx = ctxOf(req);
+      let rules;
+      try {
+        rules = parseSmartRules(req.body?.rules);
+      } catch (error) {
+        throw badRequest(error instanceof Error ? error.message : 'Invalid rules');
+      }
+      const snap = await library.snapshot(ctx);
+      const personal = store.allPersonal(ctx.userId);
+      const movies = evaluateSmartCollection(rules, snap.movies, (id) => personal.get(id));
+      return { count: movies.length, sample: movies.slice(0, 8) };
     }),
   );
 

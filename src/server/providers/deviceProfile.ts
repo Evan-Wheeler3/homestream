@@ -107,4 +107,13 @@ export function buildDeviceProfile(caps: ClientCapabilities, maxBitrate: number 
   };
 }
 
-export const IMAGE_SUBTITLE_CODECS = new Set(['pgssub', 'pgs', 'dvdsub', 'dvbsub', 'vobsub', 'dvb_subtitle', 'hdmv_pgs_subtitle', 'dvd_subtitle']);
+export const IMAGE_SUBTITLE_CODECS = new Set([
+  'pgssub',
+  'pgs',
+  'dvdsub',
+  'dvbsub',
+  'vobsub',
+  'dvb_subtitle',
+  'hdmv_pgs_subtitle',
+  'dvd_subtitle',
+]);

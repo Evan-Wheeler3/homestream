@@ -8,7 +8,7 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    files: ['src/client/**/*.{ts,tsx}', 'tests/client/**/*.{ts,tsx}'],
+    files: ['src/client/**/*.{ts,tsx,js}', 'tests/client/**/*.{ts,tsx}'],
     languageOptions: { globals: globals.browser },
     plugins: { 'react-hooks': reactHooks },
     rules: {
@@ -16,12 +16,21 @@ export default tseslint.config(
     },
   },
   {
-    files: ['src/server/**/*.ts', 'scripts/**/*.mjs', 'tests/**/*.ts', 'e2e/**/*.ts', '*.config.{js,ts}'],
+    files: [
+      'src/server/**/*.ts',
+      'scripts/**/*.mjs',
+      'tests/**/*.ts',
+      'e2e/**/*.ts',
+      '*.config.{js,ts}',
+    ],
     languageOptions: { globals: globals.node },
   },
   {
     rules: {
-      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      ],
     },
   },
 );
