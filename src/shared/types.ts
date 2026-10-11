@@ -1,0 +1,405 @@
+// Shared domain model used by the backend and the frontend.
+//
+// Ownership of each field is deliberate:
+//  - `Movie` metadata, images, and `user` (watch state, favorite) are owned by the
+//    media server (Jellyfin). The app never edits them locally; it asks Jellyfin.
+//  - `personal` (rating, notes), collections and preferences are owned by this app
+//    and stored in its SQLite database, keyed by stable Jellyfin item / user IDs.
+
+export type MediaSourceKind = 'jellyfin' | 'mock';
+
+export interface MovieImages {
+  /** Same-origin URL; append width params with `imageUrl()` on the client. */
+  poster: string | null;
+  backdrop: string | null;
+  logo: string | null;
+}
+
+/** Per-user state owned by the media server. */
+export interface MovieUserState {
+  played: boolean;
+  favorite: boolean;
+  /** Resume position in seconds (0 when not started or finished). */
+  positionSeconds: number;
+  /** 0..1, derived from position / runtime. */
+  progress: number;
+  playCount: number;
+  lastPlayed: string | null;
+}
+
+/** App-owned per-user annotations. */
+export interface PersonalData {
+  rating: number | null;
+  notes: string;
+  updatedAt: string | null;
+}
+
+export interface Movie {
+  /** Stable media-server item identifier. Never use titles as keys. */
+  id: string;
+  title: string;
+  sortTitle: string;
+  originalTitle: string | null;
+  year: number | null;
+  premiereDate: string | null;
+  runtimeMinutes: number | null;
+  genres: string[];
+  directors: string[];
+  studios: string[];
+  tags: string[];
+  countries: string[];
+  officialRating: string | null;
+  communityRating: number | null;
+  criticRating: number | null;
+  overview: string | null;
+  tagline: string | null;
+  dateAdded: string | null;
+  images: MovieImages;
+  user: MovieUserState;
+  /** False for items Jellyfin knows about but whose file is missing/virtual. */
+  available: boolean;
+}
+
+export interface Person {
+  id: string | null;
+  name: string;
+  role: string | null;
+  type: string;
+  image: string | null;
+}
+
+export interface MediaTrack {
+  index: number;
+  language: string | null;
+  title: string;
+  codec: string | null;
+  isDefault: boolean;
+  isForced?: boolean;
+  isExternal?: boolean;
+  /** Subtitle only: image-based subtitles (PGS/VobSub) must be burned in. */
+  isImageBased?: boolean;
+  channels?: number | null;
+}
+
+export interface MediaInfo {
+  container: string | null;
+  videoCodec: string | null;
+  width: number | null;
+  height: number | null;
+  sizeBytes: number | null;
+  bitrate: number | null;
+  audioTracks: MediaTrack[];
+  subtitleTracks: MediaTrack[];
+}
+
+export interface MovieDetail extends Movie {
+  cast: Person[];
+  writers: string[];
+  producers: string[];
+  mediaInfo: MediaInfo | null;
+  externalLinks: { name: string; url: string }[];
+  personal: PersonalData;
+  collections: { id: string; name: string }[];
+}
+
+// ---------------------------------------------------------------------------
+// Catalog querying
+
+export type SortField = 'title' | 'year' | 'dateAdded' | 'runtime' | 'rating' | 'random';
+export type SortDir = 'asc' | 'desc';
+
+export interface MovieQuery {
+  q?: string;
+  genres?: string[];
+  directors?: string[];
+  countries?: string[];
+  tags?: string[];
+  studios?: string[];
+  ratings?: string[];
+  yearMin?: number;
+  yearMax?: number;
+  runtimeMax?: number;
+  watched?: 'watched' | 'unwatched' | 'inProgress';
+  favorite?: boolean;
+  sort?: SortField;
+  dir?: SortDir;
+  offset?: number;
+  limit?: number;
+}
+
+export interface Page<T> {
+  items: T[];
+  total: number;
+  offset: number;
+  limit: number;
+}
+
+export interface Facets {
+  genres: FacetValue[];
+  directors: FacetValue[];
+  countries: FacetValue[];
+  tags: FacetValue[];
+  studios: FacetValue[];
+  ratings: FacetValue[];
+  decades: FacetValue[];
+  yearRange: [number, number] | null;
+  runtimeRange: [number, number] | null;
+}
+
+export interface FacetValue {
+  value: string;
+  count: number;
+}
+
+// ---------------------------------------------------------------------------
+// Collections
+
+/** Rules supported by smart collections. Anything not listed is not supported. */
+export type CollectionRule =
+  | {
+      field: 'genre' | 'director' | 'country' | 'tag' | 'studio' | 'officialRating';
+      op: 'any' | 'none';
+      values: string[];
+    }
+  | {
+      field: 'year' | 'runtime' | 'communityRating' | 'personalRating';
+      op: 'between';
+      min: number | null;
+      max: number | null;
+    }
+  | { field: 'watched'; op: 'is'; value: 'watched' | 'unwatched' | 'inProgress' }
+  | { field: 'favorite'; op: 'is'; value: boolean }
+  | { field: 'title'; op: 'contains'; value: string }
+  | { field: 'addedWithinDays'; op: 'lte'; value: number };
+
+export type RuleField = CollectionRule['field'];
+
+export interface SmartRules {
+  match: 'all' | 'any';
+  rules: CollectionRule[];
+  sort: Exclude<SortField, 'random'>;
+  dir: SortDir;
+  limit: number | null;
+}
+
+export type CollectionKind = 'manual' | 'smart';
+
+export interface CollectionArtwork {
+  kind: 'auto' | 'movie' | 'upload';
+  /** movie: item id whose backdrop is used; upload: stored file name */
+  ref: string | null;
+  /** Resolved same-origin URL for display (null = auto mosaic of posters). */
+  url: string | null;
+}
+
+export interface Collection {
+  id: string;
+  ownerUserId: string;
+  name: string;
+  description: string;
+  kind: CollectionKind;
+  rules: SmartRules | null;
+  visibility: 'private' | 'shared';
+  artwork: CollectionArtwork;
+  position: number;
+  createdAt: string;
+  updatedAt: string;
+  /** Number of matching/available movies (computed). */
+  itemCount: number;
+  /** Up to 4 poster URLs for the automatic artwork mosaic (computed). */
+  previewPosters: string[];
+  /** True when the current user may edit it. */
+  editable: boolean;
+}
+
+export interface UnavailableMember {
+  itemId: string;
+  lastKnownTitle: string | null;
+  lastKnownYear: number | null;
+}
+
+export interface CollectionDetail extends Collection {
+  movies: Movie[];
+  /** Manual members whose Jellyfin items no longer exist (deleted / renamed id). */
+  unavailable: UnavailableMember[];
+}
+
+// ---------------------------------------------------------------------------
+// Preferences (per user, stored server-side so they follow the user across devices)
+
+export type HomeSectionId =
+  | 'hero'
+  | 'continueWatching'
+  | 'recentlyAdded'
+  | 'favorites'
+  | 'collections'
+  | 'randomPick'
+  | 'genres'
+  | 'decades'
+  | 'unwatched'
+  | `collection:${string}`;
+
+export interface HomeSectionPref {
+  id: HomeSectionId;
+  visible: boolean;
+}
+
+export type ThemeName = 'graphite' | 'midnight' | 'sepia';
+export type Density = 'compact' | 'comfortable' | 'large';
+
+export interface Preferences {
+  appName: string;
+  theme: ThemeName;
+  accent: string;
+  motion: 'system' | 'reduced';
+  density: Density;
+  defaultSort: SortField;
+  defaultSortDir: SortDir;
+  heroSource: 'recentlyAdded' | 'random' | 'favorites' | 'continueWatching';
+  homeSections: HomeSectionPref[];
+  playback: {
+    /** Bits per second; null = no cap ("Auto"). */
+    maxBitrate: number | null;
+    resumeBehavior: 'ask' | 'resume' | 'restart';
+    /** ISO 639-2 code, '' = off unless forced. */
+    subtitleLanguage: string;
+    preferDirectPlay: boolean;
+  };
+  /** Internal: starter collections have been created for this user. */
+  starterCollectionsCreated: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Home
+
+export interface HomeRow {
+  id: HomeSectionId;
+  title: string;
+  kind: 'movies' | 'continue';
+  movies: Movie[];
+  href?: string;
+}
+
+export interface HomePayload {
+  hero: Movie[];
+  sections: (
+    | { type: 'row'; row: HomeRow }
+    | { type: 'collections'; id: 'collections'; collections: Collection[] }
+    | { type: 'genres'; id: 'genres'; genres: { name: string; count: number; poster: string | null }[] }
+    | { type: 'decades'; id: 'decades'; decades: { decade: number; count: number; poster: string | null }[] }
+    | { type: 'randomPick'; id: 'randomPick'; movie: Movie | null }
+  )[];
+  libraryCount: number;
+}
+
+// ---------------------------------------------------------------------------
+// Playback
+
+export interface ClientCapabilities {
+  /** Video codecs the browser reports it can decode in MP4 (e.g. h264, hevc, av1). */
+  mp4VideoCodecs: string[];
+  webmVideoCodecs: string[];
+  audioCodecs: string[];
+  /** Browser plays HLS natively (Safari / iOS). */
+  nativeHls: boolean;
+  /** Media Source Extensions available (hls.js can be used). */
+  mse: boolean;
+  maxAudioChannels: number;
+}
+
+export interface PlaybackRequest {
+  capabilities: ClientCapabilities;
+  audioStreamIndex?: number | null;
+  subtitleStreamIndex?: number | null;
+  startSeconds?: number;
+  /** Force server-side processing (e.g. to switch audio track). */
+  forceTranscode?: boolean;
+}
+
+export interface SubtitleDelivery extends MediaTrack {
+  /** Same-origin WebVTT URL when it can be shown as a text track; null if burn-in is needed. */
+  url: string | null;
+}
+
+export interface PlaybackInfo {
+  itemId: string;
+  mediaSourceId: string;
+  playSessionId: string;
+  method: 'DirectPlay' | 'DirectStream' | 'Transcode';
+  /** 'file' => progressive <video src>, 'hls' => HLS playlist */
+  delivery: 'file' | 'hls';
+  url: string;
+  startSeconds: number;
+  durationSeconds: number | null;
+  audioTracks: MediaTrack[];
+  subtitles: SubtitleDelivery[];
+  selectedAudioIndex: number | null;
+  selectedSubtitleIndex: number | null;
+  /** True when the URL is a bundled sample clip (mock mode), not the movie itself. */
+  isSample: boolean;
+  transcodeReasons: string[];
+}
+
+export interface PlaybackReport {
+  itemId: string;
+  mediaSourceId: string;
+  playSessionId: string;
+  positionSeconds: number;
+  isPaused: boolean;
+  method: PlaybackInfo['method'];
+  audioStreamIndex?: number | null;
+  subtitleStreamIndex?: number | null;
+}
+
+// ---------------------------------------------------------------------------
+// Session / status
+
+export interface SessionUser {
+  id: string;
+  name: string;
+  isAdmin: boolean;
+}
+
+export interface SessionInfo {
+  user: SessionUser;
+  source: MediaSourceKind;
+}
+
+export interface ServerStatus {
+  app: { name: string; version: string; startedAt: string; node: string };
+  source: MediaSourceKind;
+  mediaServer: {
+    url: string | null;
+    reachable: boolean;
+    name: string | null;
+    version: string | null;
+    latencyMs: number | null;
+    error: string | null;
+  };
+  catalog: {
+    count: number;
+    lastRefreshed: string | null;
+    stale: boolean;
+    lastError: string | null;
+  };
+}
+
+export interface ApiErrorBody {
+  error: {
+    code: ApiErrorCode;
+    message: string;
+  };
+}
+
+export type ApiErrorCode =
+  | 'UNAUTHENTICATED'
+  | 'SESSION_EXPIRED'
+  | 'INVALID_CREDENTIALS'
+  | 'FORBIDDEN'
+  | 'NOT_FOUND'
+  | 'BAD_REQUEST'
+  | 'MEDIA_SERVER_UNREACHABLE'
+  | 'MEDIA_SERVER_ERROR'
+  | 'MEDIA_UNAVAILABLE'
+  | 'CONFLICT'
+  | 'INTERNAL';

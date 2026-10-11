@@ -1,0 +1,7 @@
+dist
+node_modules
+data
+package-lock.json
+playwright-report
+test-results
+*.mp4
