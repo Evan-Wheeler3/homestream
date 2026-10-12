@@ -26,7 +26,7 @@ import type {
 } from './types.js';
 
 const TICKS_PER_SECOND = 10_000_000;
-const CLIENT_NAME = 'Private Cinema';
+const CLIENT_NAME = 'Wheelhouse';
 const PAGE_SIZE = 500;
 
 /** Fields requested for catalog listings. People is needed to know directors. */

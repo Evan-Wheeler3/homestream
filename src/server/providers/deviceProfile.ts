@@ -54,7 +54,7 @@ export function buildDeviceProfile(caps: ClientCapabilities, maxBitrate: number 
   }
 
   return {
-    Name: 'Private Cinema Web',
+    Name: 'Wheelhouse Web',
     MaxStreamingBitrate: bitrate,
     MaxStaticBitrate: bitrate,
     MusicStreamingTranscodingBitrate: 384_000,

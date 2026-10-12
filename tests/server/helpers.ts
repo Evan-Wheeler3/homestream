@@ -64,7 +64,7 @@ export class Client {
     const init: RequestInit = {
       method,
       headers: {
-        'X-Requested-With': 'private-cinema',
+        'X-Requested-With': 'wheelhouse',
         ...(body !== undefined && !(body instanceof Uint8Array)
           ? { 'Content-Type': 'application/json' }
           : {}),

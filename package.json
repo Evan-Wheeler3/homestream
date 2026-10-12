@@ -1,5 +1,5 @@
 {
-  "name": "private-cinema",
+  "name": "wheelhouse",
   "version": "1.0.0",
   "private": true,
   "description": "A custom personal streaming interface for a home Jellyfin library.",

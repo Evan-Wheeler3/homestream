@@ -92,7 +92,14 @@ export function openDatabase(dataDir: string | ':memory:'): Db {
   let file = ':memory:';
   if (dataDir !== ':memory:') {
     fs.mkdirSync(dataDir, { recursive: true });
-    file = path.join(dataDir, 'private-cinema.db');
+    file = path.join(dataDir, 'wheelhouse.db');
+    // The app was called "Private Cinema" before; carry its database over once.
+    const legacy = path.join(dataDir, 'private-cinema.db');
+    if (!fs.existsSync(file) && fs.existsSync(legacy)) {
+      for (const suffix of ['', '-wal', '-shm']) {
+        if (fs.existsSync(legacy + suffix)) fs.renameSync(legacy + suffix, file + suffix);
+      }
+    }
   }
   const db = new DatabaseSync(file);
   db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');

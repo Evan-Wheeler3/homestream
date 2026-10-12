@@ -1,8 +1,8 @@
-# Private Cinema
+# Wheelhouse
 
 A personal streaming interface for your own movie collection. Your films stay on your own hard drive,
 [Jellyfin](https://jellyfin.org) does the media-server work (scanning, artwork, streaming, transcoding),
-and Private Cinema is the custom, cinematic front end you watch from — on your iPhone, computer, tablet
+and Wheelhouse is the custom, cinematic front end you watch from — on your iPhone, computer, tablet
 or a large screen — with your own branding, collections, notes and home layout.
 
 ![Home](docs/screenshots/home.jpg)
@@ -23,7 +23,7 @@ or a large screen — with your own branding, collections, notes and home layout
 2. [How it fits together](#how-it-fits-together)
 3. [Quick start (try it in 5 minutes)](#quick-start)
 4. [Set up Jellyfin and add your movies](#set-up-jellyfin-and-add-your-movies)
-5. [Connect Private Cinema to Jellyfin](#connect-private-cinema-to-jellyfin)
+5. [Connect Wheelhouse to Jellyfin](#connect-wheelhouse-to-jellyfin)
 6. [Watching on your phone, TV and other devices](#watching-on-other-devices)
 7. [Keep it running](#keep-it-running)
 8. [Backups and updates](#backups-and-updates)
@@ -69,7 +69,7 @@ subtitles · <kbd>Esc</kbd> back.
           │  (one address, e.g. http://192.168.1.20:8787)
           ▼
  ┌──────────────────────────── your computer ────────────────────────────┐
- │  Private Cinema  (Node.js, one process)                                │
+ │  Wheelhouse  (Node.js, one process)                                │
  │   • serves the web app                                                 │
  │   • SQLite database: collections, notes, ratings, preferences, logins  │
  │   • signs you in *through* Jellyfin; keeps the Jellyfin token here     │
@@ -81,13 +81,13 @@ subtitles · <kbd>Esc</kbd> back.
  └────────────────────────────────────────────────────────────────────────┘
 ```
 
-| Responsibility                                                 | Owned by                           |
-| -------------------------------------------------------------- | ---------------------------------- |
-| Movie files                                                    | Your hard drive (never uploaded)   |
-| Library, metadata, artwork, users, watch progress, favorites   | Jellyfin                           |
-| Streaming, direct play / transcoding decisions, subtitles      | Jellyfin                           |
-| Collections, smart rules, notes, personal ratings, preferences | Private Cinema (SQLite in `data/`) |
-| The interface                                                  | Private Cinema (React)             |
+| Responsibility                                                 | Owned by                         |
+| -------------------------------------------------------------- | -------------------------------- |
+| Movie files                                                    | Your hard drive (never uploaded) |
+| Library, metadata, artwork, users, watch progress, favorites   | Jellyfin                         |
+| Streaming, direct play / transcoding decisions, subtitles      | Jellyfin                         |
+| Collections, smart rules, notes, personal ratings, preferences | Wheelhouse (SQLite in `data/`)   |
+| The interface                                                  | Wheelhouse (React)               |
 
 **Why this design** (short version):
 
@@ -109,8 +109,8 @@ subtitles · <kbd>Esc</kbd> back.
 Requirements: **Node.js 22.13 or newer** (22 LTS recommended — download from <https://nodejs.org>) and Git.
 
 ```bash
-git clone <this repository> private-cinema
-cd private-cinema
+git clone <this repository> wheelhouse
+cd wheelhouse
 npm install
 npm run build
 npm start
@@ -128,7 +128,7 @@ in this mode.
    Jellyfin is free and needs no cloud account.
 2. Open Jellyfin at <http://localhost:8096> and complete its first-run wizard. Create an **administrator**
    account for yourself. Later, create a separate (non-administrator) account for each family member in
-   _Dashboard → Users_ — those are the accounts everyone uses to sign in to Private Cinema.
+   _Dashboard → Users_ — those are the accounts everyone uses to sign in to Wheelhouse.
 3. **Organise your movie files** on the 2 TB drive, one folder per film, named like this:
 
    ```
@@ -150,12 +150,12 @@ in this mode.
    - _Dashboard → Playback → Resume_: Jellyfin does not save a resume point for videos shorter than **5
      minutes** or before **5 %** of a film by default. That is normal Jellyfin behaviour.
 
-**About your DVD reader:** Private Cinema plays files that Jellyfin can read; it doesn’t rip discs and does not
+**About your DVD reader:** Wheelhouse plays files that Jellyfin can read; it doesn’t rip discs and does not
 include any copy-protection circumvention. Create digital copies of discs you own only where that is legal for
 you, using software of your choice, and save them in the folder layout above. MKV or MP4 with H.264 video and
 AAC audio plays directly on every device without conversion.
 
-## Connect Private Cinema to Jellyfin
+## Connect Wheelhouse to Jellyfin
 
 Run the setup helper from the project folder:
 
@@ -177,17 +177,17 @@ _Settings → Server → Refresh library now_).
 No passwords or API keys go into `.env`. You can check the connection at any time with
 `npm run check:jellyfin`, and in the app under _Settings → Server_.
 
-> **CORS / origins:** nothing to configure. The browser never talks to Jellyfin directly — Private Cinema
+> **CORS / origins:** nothing to configure. The browser never talks to Jellyfin directly — Wheelhouse
 > passes media through on the same address — so Jellyfin’s CORS settings and “known proxies” can stay at their
-> defaults. If Private Cinema runs on the same computer, Jellyfin doesn’t even need to be reachable from the
+> defaults. If Wheelhouse runs on the same computer, Jellyfin doesn’t even need to be reachable from the
 > network (though Jellyfin’s own TV apps would need that).
 
 ## Watching on other devices
 
-When Private Cinema starts it prints the addresses other devices can use, e.g.
+When Wheelhouse starts it prints the addresses other devices can use, e.g.
 
 ```
-Private Cinema 1.0.0 listening on http://localhost:8787
+Wheelhouse 1.0.0 listening on http://localhost:8787
   On your network: http://192.168.1.20:8787
 ```
 
@@ -197,27 +197,27 @@ Private Cinema 1.0.0 listening on http://localhost:8787
 - Give the host computer a **fixed address** in your router (often called “DHCP reservation”) so the address
   doesn’t change. Bookmark it.
 - **iPhone/iPad:** in Safari tap _Share → Add to Home Screen_ — it then opens full-screen like an app.
-- The host computer must be on (and not asleep) while you watch. Both **Jellyfin** and **Private Cinema** must
+- The host computer must be on (and not asleep) while you watch. Both **Jellyfin** and **Wheelhouse** must
   be running.
 
 **Televisions:** use any reasonably modern browser on the TV or a streaming box, or a computer connected by
 HDMI. Built-in smart-TV browsers vary a lot; they are _not_ guaranteed to work (see limitations). For the
 living-room TV, Jellyfin’s own official apps (Android TV, Fire TV, Roku, webOS, Tizen, Apple TV via Swiftfin)
-read the same Jellyfin library and watch progress — but not Private Cinema’s collections or notes.
+read the same Jellyfin library and watch progress — but not Wheelhouse’s collections or notes.
 
 ## Keep it running
 
-`npm start` runs until you close the window. To start Private Cinema automatically with the computer:
+`npm start` runs until you close the window. To start Wheelhouse automatically with the computer:
 
 - **Windows:** in an Administrator PowerShell, from the project folder:
   `powershell -ExecutionPolicy Bypass -File deploy\windows\install-startup-task.ps1`
-  (log: `deploy\windows\private-cinema.log`; remove with `Unregister-ScheduledTask -TaskName "Private Cinema"`).
-- **macOS:** edit and install `deploy/macos/com.privatecinema.app.plist` (instructions inside the file).
-- **Linux:** edit and install `deploy/linux/private-cinema.service` (instructions inside the file).
+  (log: `deploy\windows\wheelhouse.log`; remove with `Unregister-ScheduledTask -TaskName "Wheelhouse"`).
+- **macOS:** edit and install `deploy/macos/com.wheelhouse.app.plist` (instructions inside the file).
+- **Linux:** edit and install `deploy/linux/wheelhouse.service` (instructions inside the file).
 
 Jellyfin’s installers already set Jellyfin up to start automatically.
 
-Processes that must be running while anyone watches: **Jellyfin** and **Private Cinema** (`node … dist/server/index.js`).
+Processes that must be running while anyone watches: **Jellyfin** and **Wheelhouse** (`node … dist/server/index.js`).
 Also disable sleep on the host computer while it serves movies.
 
 ## Backups and updates
@@ -227,18 +227,18 @@ Also disable sleep on the host computer while it serves movies.
 - Your **movie files** (the 2 TB drive) — the most valuable part; keep a second copy if you can.
 - **Jellyfin’s data** (users, watch history, metadata): see Jellyfin’s backup documentation, or back up its
   data folder while Jellyfin is stopped.
-- **Private Cinema’s data** — collections, notes, ratings, preferences, uploaded artwork — all in the `data/`
+- **Wheelhouse’s data** — collections, notes, ratings, preferences, uploaded artwork — all in the `data/`
   folder (or wherever `DATA_DIR` points). Create a consistent snapshot any time, even while running:
 
   ```bash
-  npm run backup                       # → data/backups/private-cinema-YYYY-MM-DD-HH-MM/
+  npm run backup                       # → data/backups/wheelhouse-YYYY-MM-DD-HH-MM/
   npm run backup -- --out E:\Backups   # or anywhere else
   ```
 
-  To restore: stop Private Cinema, copy `private-cinema.db` and `artwork/` from the backup into `data/`,
+  To restore: stop Wheelhouse, copy `wheelhouse.db` and `artwork/` from the backup into `data/`,
   start it again.
 
-**Updating Private Cinema:**
+**Updating Wheelhouse:**
 
 ```bash
 git pull
@@ -263,7 +263,7 @@ All settings live in `.env` (copy `.env.example`; `npm run setup` writes it for 
 | --------------------- | --------- | -------------------------------------------------------------------------------------- |
 | `JELLYFIN_URL`        | _(empty)_ | Jellyfin address as seen from this computer. Empty = sample library.                   |
 | `MEDIA_SOURCE`        | `auto`    | `auto`, `jellyfin` (fail if `JELLYFIN_URL` missing) or `mock` (always sample library). |
-| `PORT`                | `8787`    | Port Private Cinema listens on.                                                        |
+| `PORT`                | `8787`    | Port Wheelhouse listens on.                                                            |
 | `HOST`                | `0.0.0.0` | `0.0.0.0` = reachable on your network; `127.0.0.1` = this computer only.               |
 | `DATA_DIR`            | `./data`  | Database and uploaded artwork. Back this up.                                           |
 | `SESSION_DAYS`        | `30`      | Days a sign-in lasts without use.                                                      |
@@ -272,7 +272,7 @@ All settings live in `.env` (copy `.env.example`; `npm run setup` writes it for 
 | `COOKIE_SECURE`       | `auto`    | Secure cookies when served over HTTPS. `true` behind an HTTPS reverse proxy.           |
 | `TRUST_PROXY`         | `false`   | Set `true` only behind a reverse proxy (Caddy, nginx, Tailscale Serve).                |
 
-**Security model:** you sign in with Jellyfin credentials; Private Cinema stores only a session (a random token
+**Security model:** you sign in with Jellyfin credentials; Wheelhouse stores only a session (a random token
 in an HttpOnly, SameSite cookie, hashed in the database) and keeps the Jellyfin access token on the server.
 State-changing requests require a custom header (CSRF protection). Sign-in attempts are rate-limited. Only
 video, subtitle and artwork paths of Jellyfin are reachable through the app — no Jellyfin admin functions, no
@@ -283,7 +283,7 @@ minute. Collections are private unless you mark them shared (others can view, no
 
 | Symptom                                                   | What to check                                                                                                                                                                                                |
 | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| “Cannot reach the Private Cinema server”                  | Is the host computer on and awake, and is `npm start` / the service running? Same network? Correct address/port? Firewall prompt allowed?                                                                    |
+| “Cannot reach the Wheelhouse server”                      | Is the host computer on and awake, and is `npm start` / the service running? Same network? Correct address/port? Firewall prompt allowed?                                                                    |
 | “Jellyfin is not responding” banner                       | Start Jellyfin (or wait ~30 s after a restart). The app keeps showing your cached library and recovers on its own. `npm run check:jellyfin` tests the connection.                                            |
 | Sign-in says “Incorrect username or password”             | Use your **Jellyfin** account. Test the same login at <http://localhost:8096>.                                                                                                                               |
 | “Your session expired”                                    | This browser was removed from Jellyfin’s device list (or its sign-in was revoked). Sign in again.                                                                                                            |
@@ -331,7 +331,7 @@ and 20 browser end-to-end checks including accessibility audits with axe (`npm r
 - **Image-based subtitles** (PGS/VobSub from Blu-ray/DVD rips) are requested as burned-in, which Jellyfin
   supports; this path was not tested with a real PGS file.
 - Movies with **multiple versions** (e.g. 4K + 1080p files) play the first version Jellyfin offers.
-- **Collections, notes and ratings exist only in Private Cinema** — Jellyfin’s own apps don’t see them.
+- **Collections, notes and ratings exist only in Wheelhouse** — Jellyfin’s own apps don’t see them.
 - AirPlay/Chromecast are not integrated. Safari’s native player may offer AirPlay; because streams require
   your sign-in cookie, playback on the AirPlay receiver may not work.
 - Smart-collection rules support: genre, director, country, tag, studio, age rating (any/none of), release
@@ -369,4 +369,4 @@ type is Inter (both bundled — no font requests to the internet).
 
 Ideas for the next iteration: rule-based collections by cast, a “watch together” queue, per-collection
 sort options for hand-picked lists via drag-and-drop, Chromecast support, and an optional Docker Compose file
-that runs Jellyfin and Private Cinema together.
+that runs Jellyfin and Wheelhouse together.

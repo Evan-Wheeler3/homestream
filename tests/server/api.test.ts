@@ -430,7 +430,7 @@ describe('robustness', () => {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
-        'X-Requested-With': 'private-cinema',
+        'X-Requested-With': 'wheelhouse',
         Cookie: client.cookie,
       },
       body: '{not json',
@@ -444,7 +444,7 @@ describe('device identity', () => {
   it('reuses one device id per browser across sign-ins', async () => {
     const first = await fetch(server.url + '/api/auth/login', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'private-cinema' },
+      headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'wheelhouse' },
       body: JSON.stringify({ username: 'device-user', password: 'demo' }),
     });
     const device = first.headers
@@ -456,7 +456,7 @@ describe('device identity', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Requested-With': 'private-cinema',
+        'X-Requested-With': 'wheelhouse',
         Cookie: device,
       },
       body: JSON.stringify({ username: 'device-user', password: 'demo' }),
@@ -466,5 +466,33 @@ describe('device identity', () => {
       .find((c) => c.startsWith('pc_device='))!
       .split(';')[0];
     expect(again).toBe(device);
+  });
+});
+
+describe('rename from Private Cinema', () => {
+  it('moves an old private-cinema.db to wheelhouse.db and keeps its data', async () => {
+    const fs = await import('node:fs');
+    const os = await import('node:os');
+    const path = await import('node:path');
+    const { openDatabase } = await import('../../src/server/db');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wh-rename-'));
+    const old = openDatabase(dir);
+    old.exec(
+      `INSERT INTO preferences (user_id, data, updated_at) VALUES ('u', '{"appName":"Private Cinema","theme":"sepia"}', 'now')`,
+    );
+    old.close();
+    fs.renameSync(path.join(dir, 'wheelhouse.db'), path.join(dir, 'private-cinema.db'));
+    for (const s of ['-wal', '-shm']) {
+      if (fs.existsSync(path.join(dir, 'wheelhouse.db' + s))) {
+        fs.renameSync(path.join(dir, 'wheelhouse.db' + s), path.join(dir, 'private-cinema.db' + s));
+      }
+    }
+    const db = openDatabase(dir);
+    expect(fs.existsSync(path.join(dir, 'private-cinema.db'))).toBe(false);
+    const { Store } = await import('../../src/server/store');
+    const prefs = new Store(db, dir).getPreferences('u');
+    expect(prefs.theme).toBe('sepia');
+    expect(prefs.appName).toBe('Wheelhouse');
+    db.close();
   });
 });

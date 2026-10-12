@@ -34,7 +34,7 @@ export interface RequestOptions {
 export async function api<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const headers: Record<string, string> = {
     Accept: 'application/json',
-    'X-Requested-With': 'private-cinema',
+    'X-Requested-With': 'wheelhouse',
   };
   let body: BodyInit | undefined;
   if (options.raw) {
@@ -58,7 +58,7 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') throw error;
     connection.reportAppServer(false);
-    const err = new ApiError('NETWORK', 'Cannot reach the Private Cinema server.', 0);
+    const err = new ApiError('NETWORK', 'Cannot reach the Wheelhouse server.', 0);
     recordError(`${options.method ?? 'GET'} ${path}: network error`);
     throw err;
   }

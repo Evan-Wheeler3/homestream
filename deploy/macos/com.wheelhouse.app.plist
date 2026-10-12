@@ -1,19 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  launchd agent: starts Private Cinema when you log in and restarts it if it stops.
-  1. Replace /Users/CHANGE_ME/private-cinema (twice) with the folder containing package.json,
+  launchd agent: starts Wheelhouse when you log in and restarts it if it stops.
+  1. Replace /Users/CHANGE_ME/wheelhouse (twice) with the folder containing package.json,
      and /opt/homebrew/bin/node with the output of `which node`.
-  2. cp deploy/macos/com.privatecinema.app.plist ~/Library/LaunchAgents/
-  3. launchctl load ~/Library/LaunchAgents/com.privatecinema.app.plist
-  Logs: /tmp/private-cinema.log
+  2. cp deploy/macos/com.wheelhouse.app.plist ~/Library/LaunchAgents/
+  3. launchctl load ~/Library/LaunchAgents/com.wheelhouse.app.plist
+  Logs: /tmp/wheelhouse.log
 -->
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>com.privatecinema.app</string>
+  <string>com.wheelhouse.app</string>
   <key>WorkingDirectory</key>
-  <string>/Users/CHANGE_ME/private-cinema</string>
+  <string>/Users/CHANGE_ME/wheelhouse</string>
   <key>ProgramArguments</key>
   <array>
     <string>/opt/homebrew/bin/node</string>
@@ -25,8 +25,8 @@
   <key>KeepAlive</key>
   <true/>
   <key>StandardOutPath</key>
-  <string>/tmp/private-cinema.log</string>
+  <string>/tmp/wheelhouse.log</string>
   <key>StandardErrorPath</key>
-  <string>/tmp/private-cinema.log</string>
+  <string>/tmp/wheelhouse.log</string>
 </dict>
 </plist>

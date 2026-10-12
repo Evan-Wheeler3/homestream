@@ -5,7 +5,7 @@ import { defineConfig, devices } from '@playwright/test';
 // End-to-end tests run the production build against the built-in sample library
 // with a throwaway database, so they never touch real data.
 const PORT = 4310;
-const dataDir = path.join(os.tmpdir(), `private-cinema-e2e-${Date.now()}`);
+const dataDir = path.join(os.tmpdir(), `wheelhouse-e2e-${Date.now()}`);
 
 export default defineConfig({
   testDir: 'e2e',

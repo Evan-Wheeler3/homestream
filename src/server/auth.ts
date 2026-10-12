@@ -10,7 +10,7 @@ export const SESSION_COOKIE = 'pc_session';
 export const DEVICE_COOKIE = 'pc_device';
 /** Required on every state-changing request; cross-site forms cannot set it. */
 export const CSRF_HEADER = 'x-requested-with';
-export const CSRF_VALUE = 'private-cinema';
+export const CSRF_VALUE = 'wheelhouse';
 
 interface SessionRow {
   id_hash: string;

@@ -48,8 +48,6 @@ describe('mergePreferences', () => {
   });
 
   it('falls back to the default name when blank', () => {
-    expect(mergePreferences(DEFAULT_PREFERENCES, { appName: '   ' }).appName).toBe(
-      'Private Cinema',
-    );
+    expect(mergePreferences(DEFAULT_PREFERENCES, { appName: '   ' }).appName).toBe('Wheelhouse');
   });
 });

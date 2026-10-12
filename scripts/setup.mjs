@@ -101,7 +101,7 @@ const ask = async (question, fallback) => {
   return line.trim() || fallback || '';
 };
 
-console.log('\nPrivate Cinema setup\n--------------------');
+console.log('\nWheelhouse setup\n--------------------');
 console.log('Press Enter to accept the value in [brackets].\n');
 
 let url;
@@ -124,7 +124,7 @@ for (;;) {
   if (keep.toLowerCase().startsWith('y')) break;
 }
 
-const port = await ask('Port for Private Cinema', existing.values.PORT || '8787');
+const port = await ask('Port for Wheelhouse', existing.values.PORT || '8787');
 const lan = await ask(
   'Allow phones, TVs and other computers on your home network to connect? (y/n)',
   (existing.values.HOST ?? '0.0.0.0') === '127.0.0.1' ? 'n' : 'y',

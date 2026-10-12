@@ -70,7 +70,7 @@ describe('JellyfinProvider', () => {
     expect(result).toEqual({ user: { id: 'u1', name: 'owner', isAdmin: true }, token: 'tok' });
     const header = (calls[0]!.init.headers as Record<string, string>).Authorization!;
     expect(header).toMatch(
-      /^MediaBrowser Client="Private Cinema", Device="Mac%20%C2%B7%20Chrome", DeviceId="d1", Version="1.0.0"$/,
+      /^MediaBrowser Client="Wheelhouse", Device="Mac%20%C2%B7%20Chrome", DeviceId="d1", Version="1.0.0"$/,
     );
     expect(JSON.parse(String(calls[0]!.init.body))).toEqual({ Username: 'owner', Pw: 'pw' });
   });

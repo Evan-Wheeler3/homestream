@@ -51,8 +51,8 @@ export function applyAppearance(prefs: Preferences) {
 
 export function cachedAppName(): string {
   try {
-    return JSON.parse(localStorage.getItem('pc-appearance') ?? 'null')?.appName ?? 'Private Cinema';
+    return JSON.parse(localStorage.getItem('pc-appearance') ?? 'null')?.appName ?? 'Wheelhouse';
   } catch {
-    return 'Private Cinema';
+    return 'Wheelhouse';
   }
 }

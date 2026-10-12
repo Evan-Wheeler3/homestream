@@ -77,7 +77,10 @@ export class Store {
       { data: string } | undefined;
     if (!row) return structuredClone(DEFAULT_PREFERENCES);
     try {
-      return mergePreferences(DEFAULT_PREFERENCES, JSON.parse(row.data));
+      const stored = JSON.parse(row.data) as { appName?: string };
+      // Users who never renamed the app keep following the default name.
+      if (stored.appName === 'Private Cinema') delete stored.appName;
+      return mergePreferences(DEFAULT_PREFERENCES, stored);
     } catch {
       return structuredClone(DEFAULT_PREFERENCES);
     }

@@ -84,7 +84,7 @@ export function LoginPage() {
         )}
         {health.isError && (
           <p className="login__error" role="alert">
-            <Icon name="offline" size={18} /> Cannot reach the Private Cinema server.{' '}
+            <Icon name="offline" size={18} /> Cannot reach the Wheelhouse server.{' '}
             <button type="button" className="link-btn" onClick={() => health.refetch()}>
               Retry
             </button>

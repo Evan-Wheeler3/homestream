@@ -41,8 +41,7 @@ function OfflineBanner() {
   }, [down, state.browserOnline, qc]);
   let message: string | null = null;
   if (!state.browserOnline) message = 'You are offline. Check your Wi-Fi or network connection.';
-  else if (!state.appServer)
-    message = 'Cannot reach the Private Cinema server on your home computer.';
+  else if (!state.appServer) message = 'Cannot reach the Wheelhouse server on your home computer.';
   else if (!state.mediaServer)
     message =
       'Jellyfin is not responding. Showing your library from cache — playback is unavailable until it is back.';

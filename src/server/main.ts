@@ -19,7 +19,7 @@ const server = app.listen(config.port, config.host, () => {
     .flat()
     .filter((i) => i && i.family === 'IPv4' && !i.internal)
     .map((i) => `http://${i!.address}:${config.port}`);
-  console.info(`Private Cinema ${config.version} listening on http://localhost:${config.port}`);
+  console.info(`Wheelhouse ${config.version} listening on http://localhost:${config.port}`);
   for (const url of lanAddresses) console.info(`  On your network: ${url}`);
   if (provider.kind === 'mock') {
     console.info('  Media source: built-in SAMPLE library (set JELLYFIN_URL to use Jellyfin)');

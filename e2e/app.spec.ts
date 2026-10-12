@@ -207,7 +207,7 @@ test('shows a clear offline banner and recovers when the server is back', async 
   await page.goto('/browse');
   await page.route('**/api/**', (route) => route.abort('connectionrefused'));
   await page.getByPlaceholder('Search titles').fill('heat');
-  const banner = page.getByText('Cannot reach the Private Cinema server');
+  const banner = page.getByText('Cannot reach the Wheelhouse server');
   await expect(banner).toBeVisible();
   // Retrying while the server is still unreachable keeps the banner up.
   await page.getByRole('button', { name: 'Retry' }).click();

@@ -1,18 +1,18 @@
-# systemd unit: keeps Private Cinema running and starts it at boot.
+# systemd unit: keeps Wheelhouse running and starts it at boot.
 #
 # 1. Edit User= and WorkingDirectory= below (the folder containing package.json).
-# 2. sudo cp deploy/linux/private-cinema.service /etc/systemd/system/
-# 3. sudo systemctl daemon-reload && sudo systemctl enable --now private-cinema
-# 4. Logs: journalctl -u private-cinema -f
+# 2. sudo cp deploy/linux/wheelhouse.service /etc/systemd/system/
+# 3. sudo systemctl daemon-reload && sudo systemctl enable --now wheelhouse
+# 4. Logs: journalctl -u wheelhouse -f
 [Unit]
-Description=Private Cinema (custom interface for Jellyfin)
+Description=Wheelhouse (custom interface for Jellyfin)
 After=network-online.target jellyfin.service
 Wants=network-online.target
 
 [Service]
 Type=simple
 User=CHANGE_ME
-WorkingDirectory=/home/CHANGE_ME/private-cinema
+WorkingDirectory=/home/CHANGE_ME/wheelhouse
 ExecStart=/usr/bin/env node --env-file-if-exists=.env dist/server/index.js
 Restart=on-failure
 RestartSec=5

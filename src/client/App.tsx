@@ -84,7 +84,7 @@ function Protected() {
         <StatusView
           icon="offline"
           tone="error"
-          title="Cannot reach Private Cinema"
+          title="Cannot reach Wheelhouse"
           action={
             <Button variant="primary" icon="refresh" onClick={() => session.refetch()}>
               Try again
@@ -92,9 +92,7 @@ function Protected() {
           }
         >
           <p>{errorMessage(session.error)}</p>
-          <p>
-            Make sure the computer running Private Cinema is switched on and on the same network.
-          </p>
+          <p>Make sure the computer running Wheelhouse is switched on and on the same network.</p>
         </StatusView>
       </div>
     );

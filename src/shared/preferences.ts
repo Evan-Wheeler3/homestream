@@ -45,7 +45,7 @@ export const BITRATE_OPTIONS: { label: string; value: number | null }[] = [
 ];
 
 export const DEFAULT_PREFERENCES: Preferences = {
-  appName: 'Private Cinema',
+  appName: 'Wheelhouse',
   theme: 'graphite',
   accent: '#d9a856',
   motion: 'system',

@@ -182,7 +182,7 @@ export function apiRouter(deps: ApiDeps): Router {
       const peek = catalog.peek(ctxOf(req).userId);
       const status: ServerStatus = {
         app: {
-          name: 'Private Cinema',
+          name: 'Wheelhouse',
           version: config.version,
           startedAt: deps.startedAt.toISOString(),
           node: process.version,
