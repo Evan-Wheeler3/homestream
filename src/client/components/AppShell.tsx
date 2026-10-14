@@ -5,7 +5,7 @@ import type { Preferences, SessionInfo } from '../../shared/types';
 import { api } from '../lib/api';
 import { connection, useConnection } from '../lib/connection';
 import { focusFirst } from '../lib/spatialNav';
-import { isTvMode } from '../lib/tv';
+import { isTvMode, useTvMode } from '../lib/tv';
 import { Icon, type IconName } from './Icon';
 import { IconButton } from './ui';
 
@@ -72,12 +72,67 @@ function OfflineBanner() {
   );
 }
 
+/**
+ * TV navigation: a slim rail down the left edge (icons only) that opens to show
+ * labels when it has focus, like the big streaming apps. Press ◀ from the
+ * page to reach it, ▶ to go back to the page.
+ */
+function TvRail({
+  session,
+  prefs,
+  onSignOut,
+}: {
+  session: SessionInfo;
+  prefs: Preferences;
+  onSignOut: () => void;
+}) {
+  const items: { to: string; label: string; icon: IconName; end?: boolean }[] = [
+    { to: '/search', label: 'Search', icon: 'search' },
+    { to: '/', label: 'Home', icon: 'home', end: true },
+    { to: '/browse', label: 'Browse', icon: 'grid' },
+    { to: '/collections', label: 'Collections', icon: 'stack' },
+    { to: '/spin', label: 'Spin the wheel', icon: 'wheel' },
+    ...(session.ripper ? [{ to: '/rips', label: 'Discs', icon: 'disc' as const }] : []),
+    { to: '/settings', label: 'Settings', icon: 'settings' },
+  ];
+  return (
+    <nav className="tv-rail" aria-label="Main">
+      <span className="tv-rail__brand" aria-hidden="true">
+        <span className="topbar__mark" />
+        <span className="tv-rail__label tv-rail__name">{prefs.appName}</span>
+      </span>
+      <ul className="tv-rail__list">
+        {items.map((item) => (
+          <li key={item.to}>
+            <NavLink to={item.to} end={item.end} className="tv-rail__item" data-rail-item>
+              <Icon name={item.icon} size={26} />
+              <span className="tv-rail__label">{item.label}</span>
+            </NavLink>
+          </li>
+        ))}
+      </ul>
+      <button
+        type="button"
+        className="tv-rail__item tv-rail__user"
+        data-rail-item
+        onClick={onSignOut}
+      >
+        <span className="tv-rail__avatar" aria-hidden="true">
+          {session.user.name.slice(0, 1).toUpperCase()}
+        </span>
+        <span className="tv-rail__label">Sign out {session.user.name}</span>
+      </button>
+    </nav>
+  );
+}
+
 export function AppShell({ session, prefs }: { session: SessionInfo; prefs: Preferences }) {
   const [scrolled, setScrolled] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const qc = useQueryClient();
   const onPlayer = location.pathname.startsWith('/play/');
+  const tv = useTvMode().enabled;
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 24);
@@ -117,7 +172,12 @@ export function AppShell({ session, prefs }: { session: SessionInfo; prefs: Pref
     let tries = 0;
     const id = window.setInterval(() => {
       const active = document.activeElement;
-      const idle = !active || active === document.body || active.id === 'main';
+      // Choosing a section in the TV rail also hands focus to the new page.
+      const idle =
+        !active ||
+        active === document.body ||
+        active.id === 'main' ||
+        Boolean(active.closest('.tv-rail'));
       if (!idle || focusFirst() || ++tries > 25) window.clearInterval(id);
     }, 120);
     return () => window.clearInterval(id);
@@ -133,6 +193,18 @@ export function AppShell({ session, prefs }: { session: SessionInfo; prefs: Pref
   };
 
   if (onPlayer) return <Outlet />;
+
+  if (tv) {
+    return (
+      <>
+        <TvRail session={session} prefs={prefs} onSignOut={signOut} />
+        <OfflineBanner />
+        <main id="main" tabIndex={-1} className="main">
+          <Outlet />
+        </main>
+      </>
+    );
+  }
 
   return (
     <>

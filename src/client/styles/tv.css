@@ -11,7 +11,9 @@ html[data-tv] {
   --row-wide: clamp(300px, 25vw, 500px);
   --poster-min: 200px;
   --focus-ring: 0 0 0 3px var(--bg), 0 0 0 7px var(--accent);
-  --nav-height: 84px;
+  /* No top bar on TV: navigation lives in the left rail. */
+  --nav-height: 0px;
+  --tv-rail: 104px;
 }
 
 /* Focus comes from the remote, so show it whenever something has focus. */
@@ -65,7 +67,7 @@ html[data-tv] .main {
 }
 
 /* Player: bigger targets, no volume slider (the TV remote sets the volume). */
-html[data-tv] .player__volume input {
+html[data-tv] .player__volume {
   display: none;
 }
 html[data-tv] .player__controls .icon-btn {
@@ -90,4 +92,96 @@ html[data-tv] .seek:focus-within {
 html[data-tv] .player__menu button {
   padding-block: 14px;
   font-size: var(--text-lg);
+}
+
+/* Left navigation rail ------------------------------------------------------ */
+html[data-tv] .main {
+  margin-left: var(--tv-rail);
+}
+.tv-rail {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: var(--z-nav);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-5);
+  width: var(--tv-rail);
+  padding: var(--s-6) var(--s-4);
+  overflow: hidden;
+  background: linear-gradient(90deg, var(--bg) 55%, transparent);
+  transition:
+    width var(--dur-2) var(--ease-out),
+    background-color var(--dur-2);
+}
+.tv-rail:focus-within {
+  width: 320px;
+  background: var(--bg-raised);
+  box-shadow: 30px 0 60px -10px rgb(0 0 0 / 0.7);
+}
+.tv-rail__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  height: 56px;
+  padding-left: 22px;
+}
+.tv-rail__name {
+  font-family: var(--font-display);
+  font-size: 1.6rem;
+}
+.tv-rail__list {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--s-2);
+}
+.tv-rail__item {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  width: 100%;
+  height: 60px;
+  padding: 0 21px;
+  border-radius: var(--r-md);
+  color: var(--text-2);
+  white-space: nowrap;
+  transition:
+    background-color var(--dur-1),
+    color var(--dur-1);
+}
+.tv-rail__item svg {
+  flex: none;
+}
+.tv-rail__item.active {
+  color: var(--accent);
+}
+html[data-tv] .tv-rail__item:focus {
+  background: var(--accent);
+  color: var(--accent-ink);
+  box-shadow: none;
+}
+.tv-rail__label {
+  font-size: var(--text-lg);
+  font-weight: var(--weight-medium);
+  opacity: 0;
+  transition: opacity var(--dur-2);
+}
+.tv-rail:focus-within .tv-rail__label {
+  opacity: 1;
+}
+.tv-rail__avatar {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  margin-left: -2px;
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--text);
+  font-weight: var(--weight-semibold);
+}
+html[data-tv] .offline-banner {
+  left: calc(var(--tv-rail) + var(--s-4));
 }

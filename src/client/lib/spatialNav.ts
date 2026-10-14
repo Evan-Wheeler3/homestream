@@ -167,20 +167,52 @@ function fieldKeepsKey(el: HTMLElement, key: RemoteKey) {
   return false;
 }
 
+/** Where focus was on the page before moving into the TV rail, to return to it. */
+let lastPageFocus: HTMLElement | null = null;
+
+function railEntry(rail: Element): HTMLElement | null {
+  return (
+    rail.querySelector<HTMLElement>('[data-rail-item].active') ??
+    rail.querySelector<HTMLElement>('[data-rail-item]')
+  );
+}
+
 export function move(direction: Direction): boolean {
   const root = scope();
   const active = document.activeElement as HTMLElement | null;
   if (nothingFocused() || !active || !(root as Node).contains(active)) {
     return focusFirst();
   }
-  const candidates = focusables(root).filter((el) => el !== active && !el.contains(active));
+  const rail = root === document ? document.querySelector('.tv-rail') : null;
+  const inRail = Boolean(rail && rail.contains(active));
+
+  if (rail && inRail && direction === 'right') {
+    // Back to where you were on the page.
+    if (lastPageFocus?.isConnected && isVisible(lastPageFocus)) focusElement(lastPageFocus);
+    else focusFirst();
+    return true;
+  }
+
+  // Inside the rail, up/down stay in the rail.
+  const pool = rail && inRail ? focusables(rail) : focusables(root);
+  const candidates = pool.filter((el) => el !== active && !el.contains(active));
   const index = findNext(
     active.getBoundingClientRect(),
     candidates.map((el) => el.getBoundingClientRect()),
     direction,
   );
-  if (index < 0) return false;
-  focusElement(candidates[index]!);
+  const target = index >= 0 ? candidates[index]! : null;
+
+  if (rail && !inRail && direction === 'left' && (!target || rail.contains(target))) {
+    // Left from the page edge always opens the rail at the current section.
+    const entry = railEntry(rail);
+    if (!entry) return false;
+    lastPageFocus = active;
+    entry.focus({ preventScroll: true });
+    return true;
+  }
+  if (!target) return false;
+  focusElement(target);
   return true;
 }
 

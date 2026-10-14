@@ -149,3 +149,24 @@ test('@tv the wheel spins with the OK button', async ({ page }) => {
   await page.keyboard.press('Enter');
   await expect(page.getByText('Tonight you’re watching')).toBeVisible({ timeout: 3000 });
 });
+
+test('@tv the side rail: left opens it, OK changes section, focus returns to the page', async ({
+  page,
+}) => {
+  await signIn(page);
+  await expect(page.getByRole('banner')).toHaveCount(0); // no top bar on TV
+  await expect.poll(() => focused(page)).not.toBeNull();
+  await page.keyboard.press('ArrowLeft');
+  await expect.poll(async () => (await focused(page))?.label).toMatch(/Home/);
+  await page.keyboard.press('ArrowDown');
+  await expect.poll(async () => (await focused(page))?.label).toMatch(/Browse/);
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL('/browse');
+  // Focus moves into the new page, onto a poster.
+  await expect.poll(async () => (await focused(page))?.href ?? '').toMatch(/^\/movie\//);
+  // Left from the first column goes to the rail at "Browse"; right comes back.
+  await page.keyboard.press('ArrowLeft');
+  await expect.poll(async () => (await focused(page))?.label).toMatch(/Browse/);
+  await page.keyboard.press('ArrowRight');
+  await expect.poll(async () => (await focused(page))?.href ?? '').toMatch(/^\/movie\//);
+});
