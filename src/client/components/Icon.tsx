@@ -180,6 +180,13 @@ const PATHS = {
       <path d="M12 10v4.5M12 17.2v.1" />
     </>
   ),
+  wheel: (
+    <>
+      <circle cx="12" cy="13" r="8" />
+      <path d="M12 5v16M4 13h16M6.3 7.3l11.4 11.4M17.7 7.3 6.3 18.7" />
+      <path d="M10 2.5h4l-2 3z" fill="currentColor" />
+    </>
+  ),
   disc: (
     <>
       <circle cx="12" cy="12" r="8.5" />

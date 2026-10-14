@@ -129,6 +129,24 @@ describe('catalog', () => {
     expect((await client.get('/api/movies/random?genre=Nonexistent')).json.movie).toBeNull();
   });
 
+  it('samples distinct movies for the wheel, honouring filters', async () => {
+    const client = new Client(server.url);
+    await client.login();
+    const res = await client.get('/api/movies/sample?count=6&runtimeMin=90&runtimeMax=120');
+    expect(res.status).toBe(200);
+    const movies = res.json.movies as { id: string; runtimeMinutes: number }[];
+    expect(movies).toHaveLength(6);
+    expect(new Set(movies.map((m) => m.id)).size).toBe(6);
+    for (const m of movies) {
+      expect(m.runtimeMinutes).toBeGreaterThanOrEqual(90);
+      expect(m.runtimeMinutes).toBeLessThanOrEqual(120);
+    }
+    const capped = await client.get('/api/movies/sample?count=500');
+    expect(capped.json.movies.length).toBe(24);
+    const none = await client.get('/api/movies/sample?genre=Nonexistent');
+    expect(none.json.movies).toEqual([]);
+  });
+
   it('builds home sections and hides empty rows', async () => {
     const client = new Client(server.url);
     await client.login('fresh-user');

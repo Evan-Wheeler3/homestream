@@ -29,7 +29,7 @@ export const BUILTIN_SECTIONS: { id: HomeSectionId; label: string }[] = [
   { id: 'recentlyAdded', label: 'Recently Added' },
   { id: 'favorites', label: 'Personal Favorites' },
   { id: 'collections', label: 'Your Collections' },
-  { id: 'randomPick', label: 'Random Pick' },
+  { id: 'randomPick', label: 'Spin the wheel' },
   { id: 'unwatched', label: 'Not Yet Watched' },
   { id: 'genres', label: 'Browse by Genre' },
   { id: 'decades', label: 'Browse by Decade' },

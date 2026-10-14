@@ -133,6 +133,7 @@ export function focusFirst(): boolean {
     return r.bottom > 0 && r.top < window.innerHeight;
   });
   const pick =
+    inView.find((el) => el.matches('[data-tv-focus]')) ??
     inView.find((el) => el.matches('.btn--primary')) ??
     inView.find((el) => el.matches('.poster-card, .continue-card__art, .collection-card')) ??
     inView.find((el) => !el.matches('input, select, textarea')) ??

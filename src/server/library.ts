@@ -52,6 +52,15 @@ export class LibraryService {
     return pool[Math.floor(Math.random() * pool.length)] ?? null;
   }
 
+  /** Up to `count` different playable movies matching the query, in random order. */
+  async sample(ctx: UserContext, query: MovieQuery, count: number): Promise<Movie[]> {
+    const snap = await this.snapshot(ctx);
+    const pool = queryMovies(snap.movies, { ...query, offset: 0, limit: 100_000 }).items.filter(
+      (m) => m.available,
+    );
+    return shuffle(pool).slice(0, count);
+  }
+
   /**
    * Full detail from the media server. If it is unreachable, fall back to the
    * cached index entry (without cast/media info) and flag the result as stale.

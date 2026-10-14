@@ -80,6 +80,7 @@ export function parseMovieQuery(q: Request['query']): MovieQuery {
     ratings: list(q.rating),
     yearMin: int(q.yearMin),
     yearMax: int(q.yearMax),
+    runtimeMin: int(q.runtimeMin),
     runtimeMax: int(q.runtimeMax),
     watched,
     favorite: q.favorite === '1' || q.favorite === 'true' ? true : undefined,
@@ -243,6 +244,14 @@ export function apiRouter(deps: ApiDeps): Router {
   router.get(
     '/movies/facets',
     route((req) => library.facets(ctxOf(req))),
+  );
+
+  router.get(
+    '/movies/sample',
+    route(async (req) => {
+      const count = Math.min(24, Math.max(2, int(req.query.count) ?? 8));
+      return { movies: await library.sample(ctxOf(req), parseMovieQuery(req.query), count) };
+    }),
   );
 
   router.get(

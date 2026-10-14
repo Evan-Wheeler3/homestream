@@ -26,6 +26,7 @@ import { SearchPage } from './pages/SearchPage';
 
 const PlayerPage = lazy(() => import('./player/PlayerPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
+const SpinPage = lazy(() => import('./pages/SpinPage'));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -112,6 +113,7 @@ function Protected() {
           <Route path="collections" element={<CollectionsPage />} />
           <Route path="collections/:id" element={<CollectionDetailPage prefs={preferences} />} />
           <Route path="rips" element={<RipsPage session={session.data} />} />
+          <Route path="spin" element={<SpinPage prefs={preferences} />} />
           <Route
             path="settings"
             element={<SettingsPage session={session.data} prefs={preferences} />}

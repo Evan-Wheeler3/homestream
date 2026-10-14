@@ -118,6 +118,7 @@ export interface MovieQuery {
   ratings?: string[];
   yearMin?: number;
   yearMax?: number;
+  runtimeMin?: number;
   runtimeMax?: number;
   watched?: 'watched' | 'unwatched' | 'inProgress';
   favorite?: boolean;

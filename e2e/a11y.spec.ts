@@ -40,6 +40,7 @@ for (const path of [
   '/collections',
   '/settings',
   '/rips',
+  '/spin',
 ]) {
   test(`${path} has no serious accessibility violations`, async ({ page }) => {
     await signIn(page);

@@ -42,7 +42,7 @@ test('home shows the hero, Continue Watching and the sample-library label', asyn
   await expect(page.getByRole('link', { name: /Play|Resume/ }).first()).toBeVisible();
 });
 
-test('browse: search, filter, sort and random pick', async ({ page }) => {
+test('browse: search, filter, sort and spin from the filtered list', async ({ page }) => {
   await signIn(page);
   await page.goto('/browse');
   await page.getByPlaceholder('Search titles').fill('samurai');
@@ -51,14 +51,17 @@ test('browse: search, filter, sort and random pick', async ({ page }) => {
   await page.getByPlaceholder('Search titles').fill('');
   await expect(page).not.toHaveURL(/q=/);
 
-  await page.getByRole('button', { name: /Filters/ }).click();
+  await page.getByRole('button', { name: /All filters/ }).click();
   const dialog = page.getByRole('dialog', { name: 'Filters' });
   await dialog.getByRole('button', { name: /^Animation/ }).click();
   await dialog.getByRole('button', { name: /^Show \d+ movies?$/ }).click();
   await expect(page).toHaveURL(/genre=Animation/);
   const cards = page.getByRole('list', { name: 'Movies' }).getByRole('listitem');
   await expect(cards).toHaveCount(5);
-  await expect(page.getByRole('button', { name: /Remove filter Animation/ })).toBeVisible();
+  // The genre now shows in its quick-filter pill.
+  await expect(
+    page.getByRole('group', { name: 'Quick filters' }).getByRole('button', { name: 'Animation' }),
+  ).toBeVisible();
 
   await page.getByLabel('Sort by').selectOption('year');
   await expect(page).toHaveURL(/sort=year/);
@@ -67,7 +70,68 @@ test('browse: search, filter, sort and random pick', async ({ page }) => {
   await expect(page).toHaveURL(/dir=asc/);
   await expect(cards.first()).toContainText('Totoro');
 
-  await page.getByRole('button', { name: 'Random pick' }).click();
+  await page.getByRole('link', { name: 'Spin the wheel' }).click();
+  await expect(page).toHaveURL(/\/spin\?.*genre=Animation/);
+  await expect(page.getByText(/Only animation/)).toBeVisible();
+});
+
+test('quick filters: runtime and director in one tap each', async ({ page }) => {
+  await signIn(page);
+  await page.goto('/browse');
+  const quick = page.getByRole('group', { name: 'Quick filters' });
+  const cards = page.getByRole('list', { name: 'Movies' }).getByRole('listitem');
+
+  await quick.getByRole('button', { name: 'Runtime' }).click();
+  await page.getByRole('button', { name: 'Over 2 hours' }).click();
+  await expect(page).toHaveURL(/runtimeMin=121/);
+  await expect(quick.getByRole('button', { name: 'Over 2 hours' })).toBeVisible();
+  await expect(cards.filter({ hasText: 'Seven Samurai' })).toHaveCount(1);
+  await expect(cards.filter({ hasText: 'Rashomon' })).toHaveCount(0); // 88 minutes
+
+  await quick.getByRole('button', { name: 'Director' }).click();
+  await page.getByLabel('Find a director').fill('kuros');
+  await page.getByRole('button', { name: /^Akira Kurosawa/ }).click();
+  await expect(page).toHaveURL(/director=Akira\+Kurosawa|director=Akira%20Kurosawa/);
+  await expect(cards).toHaveCount(1);
+  await expect(cards.first()).toContainText('Seven Samurai');
+
+  await quick.getByRole('button', { name: 'Clear' }).click();
+  await expect(page).not.toHaveURL(/runtimeMin|director/);
+});
+
+test('spin the wheel: it lands on a movie, and "not tonight" takes it off', async ({ page }) => {
+  await signIn(page);
+  await page.goto('/');
+  await page.getByRole('link', { name: 'Spin', exact: true }).click();
+  await expect(page).toHaveURL(/\/spin\?watched=unwatched/);
+  const onWheel = page.getByRole('list', { name: 'Movies on the wheel' }).getByRole('listitem');
+  await expect(onWheel).toHaveCount(8);
+
+  await page.getByRole('button', { name: 'Spin the wheel' }).click();
+  // The full, animated spin takes about six seconds.
+  const result = page
+    .getByRole('region', { name: /./ })
+    .filter({ hasText: 'Tonight you’re watching' });
+  await expect(result).toBeVisible({ timeout: 12_000 });
+  const title = (await result.getByRole('heading', { level: 2 }).textContent())!.trim();
+  await expect(onWheel.filter({ hasText: title })).toHaveCount(1);
+  await expect(result.getByRole('button', { name: /Play|Resume/ })).toBeVisible();
+
+  await result.getByRole('button', { name: /Not tonight/ }).click();
+  await expect(onWheel).toHaveCount(7);
+  await expect(onWheel.filter({ hasText: title })).toHaveCount(0);
+});
+
+test('spin the wheel with reduced motion stops almost at once', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await signIn(page);
+  await page.goto('/spin?slots=6');
+  await expect(
+    page.getByRole('list', { name: 'Movies on the wheel' }).getByRole('listitem'),
+  ).toHaveCount(6);
+  await page.getByRole('button', { name: 'Spin the wheel' }).click();
+  await expect(page.getByText('Tonight you’re watching')).toBeVisible({ timeout: 2500 });
+  await page.getByRole('link', { name: 'Details' }).click();
   await expect(page).toHaveURL(/\/movie\//);
 });
 

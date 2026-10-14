@@ -139,3 +139,13 @@ test('@tv TV mode can be switched off for this device in Settings', async ({ pag
     .click();
   await expect(page.locator('html')).toHaveAttribute('data-tv', '');
 });
+
+test('@tv the wheel spins with the OK button', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await signIn(page);
+  await page.goto('/spin');
+  // Focus starts on the Spin button, so OK spins straight away.
+  await expect.poll(async () => (await focused(page))?.label).toBe('Spin the wheel');
+  await page.keyboard.press('Enter');
+  await expect(page.getByText('Tonight you’re watching')).toBeVisible({ timeout: 3000 });
+});

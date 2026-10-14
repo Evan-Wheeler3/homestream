@@ -1,18 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router';
-import type {
-  Density,
-  Facets,
-  Movie,
-  MovieQuery,
-  Preferences,
-  SortField,
-} from '../../shared/types';
+import { useSearchParams } from 'react-router';
+import type { Facets, Movie, MovieQuery, Preferences, SortField } from '../../shared/types';
 import { Icon } from '../components/Icon';
 import { PosterCard, PosterGrid, PosterGridSkeleton } from '../components/movies';
-import { useToast } from '../components/Toasts';
 import {
   Button,
+  ButtonLink,
   Chip,
   Dialog,
   IconButton,
@@ -21,10 +14,11 @@ import {
   StatusView,
   Switch,
 } from '../components/ui';
-import { api, errorMessage } from '../lib/api';
+import { errorMessage } from '../lib/api';
+import { RUNTIME_PRESETS, runtimeLabel, runtimePreset, selectedDecade } from '../lib/filters';
 import { plural } from '../lib/format';
 import { useDebounced, useInfiniteSentinel } from '../lib/hooks';
-import { movieQueryString, useFacets, useMovies, useUpdatePreferences } from '../lib/queries';
+import { movieQueryString, useFacets, useMovies } from '../lib/queries';
 
 export const SORT_OPTIONS: { value: SortField; label: string }[] = [
   { value: 'title', label: 'Title' },
@@ -33,8 +27,6 @@ export const SORT_OPTIONS: { value: SortField; label: string }[] = [
   { value: 'runtime', label: 'Runtime' },
   { value: 'rating', label: 'Community rating' },
 ];
-
-const RUNTIME_OPTIONS = [90, 100, 120, 150];
 
 const listParam = (params: URLSearchParams, key: string) =>
   params.get(key)?.split('|').filter(Boolean) ?? undefined;
@@ -57,6 +49,7 @@ export function queryFromParams(params: URLSearchParams, prefs: Preferences): Mo
     ratings: listParam(params, 'rating'),
     yearMin: numParam(params, 'yearMin'),
     yearMax: numParam(params, 'yearMax'),
+    runtimeMin: numParam(params, 'runtimeMin'),
     runtimeMax: numParam(params, 'runtimeMax'),
     watched:
       watched === 'watched' || watched === 'unwatched' || watched === 'inProgress'
@@ -79,7 +72,7 @@ function activeFilterCount(q: MovieQuery) {
     (q.studios?.length ?? 0) +
     (q.ratings?.length ?? 0) +
     (q.yearMin != null || q.yearMax != null ? 1 : 0) +
-    (q.runtimeMax != null ? 1 : 0) +
+    (q.runtimeMin != null || q.runtimeMax != null ? 1 : 0) +
     (q.watched ? 1 : 0) +
     (q.favorite ? 1 : 0)
   );
@@ -143,18 +136,192 @@ function FilterList({
   );
 }
 
+type QuickPanel = 'genre' | 'runtime' | 'director' | 'decade';
+
+/**
+ * One-tap filters for the things people filter by most. Each pill opens a
+ * small panel under the row (rather than a pop-over, so it also works on
+ * phones where the row scrolls sideways).
+ */
+function QuickFilters({
+  query,
+  facets,
+  toggleList,
+  setRuntime,
+  setDecade,
+  setValue,
+  filterCount,
+  onClear,
+}: {
+  query: MovieQuery;
+  facets: Facets | undefined;
+  toggleList: (key: string, value: string) => void;
+  setRuntime: (preset: { min?: number; max?: number } | null) => void;
+  setDecade: (decade: number | null) => void;
+  setValue: (key: string, value: string | null) => void;
+  filterCount: number;
+  onClear: () => void;
+}) {
+  const [open, setOpen] = useState<QuickPanel | null>(null);
+  const [directorText, setDirectorText] = useState('');
+  const decade = selectedDecade(query);
+  const runtime = runtimeLabel(query);
+
+  const pillLabel = (name: string, values: string[] | undefined) =>
+    !values?.length ? name : values.length === 1 ? values[0]! : `${name} · ${values.length}`;
+
+  const pills: { id: QuickPanel; label: string; active: boolean }[] = [
+    { id: 'genre', label: pillLabel('Genre', query.genres), active: Boolean(query.genres?.length) },
+    { id: 'runtime', label: runtime ?? 'Runtime', active: Boolean(runtime) },
+    {
+      id: 'director',
+      label: pillLabel('Director', query.directors),
+      active: Boolean(query.directors?.length),
+    },
+    { id: 'decade', label: decade != null ? `${decade}s` : 'Decade', active: decade != null },
+  ];
+
+  const needle = directorText.trim().toLowerCase();
+  const directors = (facets?.directors ?? [])
+    .filter((d) => !needle || d.value.toLowerCase().includes(needle))
+    .slice(0, needle ? 60 : 24);
+
+  return (
+    <div className="quick-filters">
+      <div className="quick-filters__row" role="group" aria-label="Quick filters">
+        <button
+          type="button"
+          className={`pill ${query.watched === 'unwatched' ? 'is-active' : ''}`}
+          aria-pressed={query.watched === 'unwatched'}
+          onClick={() => setValue('watched', query.watched === 'unwatched' ? null : 'unwatched')}
+        >
+          Unwatched
+        </button>
+        {pills.map((pill) => (
+          <button
+            key={pill.id}
+            type="button"
+            className={`pill ${pill.active ? 'is-active' : ''} ${open === pill.id ? 'is-open' : ''}`}
+            aria-expanded={open === pill.id}
+            aria-controls={`quick-${pill.id}`}
+            onClick={() => setOpen(open === pill.id ? null : pill.id)}
+          >
+            {pill.label}
+            <Icon name="chevronDown" size={14} />
+          </button>
+        ))}
+        {filterCount > 0 && (
+          <button type="button" className="link-btn quick-filters__clear" onClick={onClear}>
+            Clear
+          </button>
+        )}
+      </div>
+      {open && facets && (
+        <div
+          className="quick-filters__panel"
+          id={`quick-${open}`}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') setOpen(null);
+          }}
+        >
+          {open === 'genre' && (
+            <div className="chip-list">
+              {facets.genres.map((g) => (
+                <Chip
+                  key={g.value}
+                  count={g.count}
+                  selected={query.genres?.includes(g.value)}
+                  onClick={() => toggleList('genre', g.value)}
+                >
+                  {g.value}
+                </Chip>
+              ))}
+            </div>
+          )}
+          {open === 'runtime' && (
+            <div className="chip-list">
+              {RUNTIME_PRESETS.map((p) => {
+                const selected = runtimePreset(query)?.id === p.id;
+                return (
+                  <Chip
+                    key={p.id}
+                    selected={selected}
+                    onClick={() => setRuntime(selected ? null : p)}
+                  >
+                    {p.label}
+                  </Chip>
+                );
+              })}
+            </div>
+          )}
+          {open === 'director' && (
+            <>
+              <input
+                className="input input--sm quick-filters__search"
+                type="search"
+                placeholder="Find a director"
+                aria-label="Find a director"
+                value={directorText}
+                onChange={(e) => setDirectorText(e.target.value)}
+              />
+              <div className="chip-list">
+                {[
+                  ...(query.directors ?? [])
+                    .filter((d) => !directors.some((x) => x.value === d))
+                    .map((value) => ({ value, count: undefined as number | undefined })),
+                  ...directors,
+                ].map((d) => (
+                  <Chip
+                    key={d.value}
+                    count={d.count}
+                    selected={query.directors?.includes(d.value)}
+                    onClick={() => toggleList('director', d.value)}
+                  >
+                    {d.value}
+                  </Chip>
+                ))}
+                {directors.length === 0 && <p className="faint">No director matches.</p>}
+              </div>
+            </>
+          )}
+          {open === 'decade' && (
+            <div className="chip-list">
+              {facets.decades.map((d) => {
+                const value = Number(d.value);
+                return (
+                  <Chip
+                    key={d.value}
+                    count={d.count}
+                    selected={decade === value}
+                    onClick={() => setDecade(decade === value ? null : value)}
+                  >
+                    {d.value}s
+                  </Chip>
+                );
+              })}
+            </div>
+          )}
+          <button
+            type="button"
+            className="link-btn quick-filters__done"
+            onClick={() => setOpen(null)}
+          >
+            Done
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function BrowsePage({ prefs }: { prefs: Preferences }) {
   const [params, setParams] = useSearchParams();
   const query = useMemo(() => queryFromParams(params, prefs), [params, prefs]);
   const [text, setText] = useState(query.q ?? '');
   const debouncedText = useDebounced(text, 250);
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [randomBusy, setRandomBusy] = useState(false);
-  const navigate = useNavigate();
-  const toast = useToast();
   const facets = useFacets();
   const movies = useMovies(query);
-  const updatePrefs = useUpdatePreferences();
 
   // Debounced search text → URL.
   useEffect(() => {
@@ -199,6 +366,7 @@ export function BrowsePage({ prefs }: { prefs: Preferences }) {
         'rating',
         'yearMin',
         'yearMax',
+        'runtimeMin',
         'runtimeMax',
         'watched',
         'favorite',
@@ -216,48 +384,48 @@ export function BrowsePage({ prefs }: { prefs: Preferences }) {
 
   const filterCount = activeFilterCount(query);
   const f = facets.data;
-  const decadeSelected = (d: number) => query.yearMin === d && query.yearMax === d + 9;
+  const decadeSelected = (d: number) => selectedDecade(query) === d;
 
-  const surprise = async () => {
-    setRandomBusy(true);
-    try {
-      const { movie } = await api<{ movie: Movie | null }>(
-        `/movies/random?${movieQueryString({ ...query, sort: undefined, dir: undefined })}`,
-      );
-      if (movie) navigate(`/movie/${movie.id}`);
-      else toast.show('No movies match these filters.', 'error');
-    } catch (error) {
-      toast.show(errorMessage(error), 'error');
-    } finally {
-      setRandomBusy(false);
-    }
-  };
+  const setRuntime = (preset: { min?: number; max?: number } | null) =>
+    update((p) => {
+      if (preset?.min != null) p.set('runtimeMin', String(preset.min));
+      else p.delete('runtimeMin');
+      if (preset?.max != null) p.set('runtimeMax', String(preset.max));
+      else p.delete('runtimeMax');
+    });
+
+  const setDecade = (decade: number | null) =>
+    update((p) => {
+      if (decade == null) {
+        p.delete('yearMin');
+        p.delete('yearMax');
+      } else {
+        p.set('yearMin', String(decade));
+        p.set('yearMax', String(decade + 9));
+      }
+    });
+
+  // The wheel spins through movies matching the current search and filters.
+  const spinHref = `/spin?${movieQueryString({ ...query, sort: undefined, dir: undefined })}`;
 
   const activeChips: { key: string; label: string; remove: () => void }[] = [];
   const listChips = (key: string, values: string[] | undefined) =>
     values?.forEach((v) =>
       activeChips.push({ key: `${key}-${v}`, label: v, remove: () => toggleList(key, v) }),
     );
-  listChips('genre', query.genres);
-  listChips('director', query.directors);
+  // Genre, director, runtime, decade and "unwatched" show in the quick-filter pills.
   listChips('country', query.countries);
   listChips('tag', query.tags);
   listChips('studio', query.studios);
   listChips('rating', query.ratings);
-  if (query.yearMin != null || query.yearMax != null) {
+  if ((query.yearMin != null || query.yearMax != null) && selectedDecade(query) == null) {
     activeChips.push({
       key: 'years',
       label: `${query.yearMin ?? '…'}–${query.yearMax ?? '…'}`,
       remove: () => update((p) => (p.delete('yearMin'), p.delete('yearMax'))),
     });
   }
-  if (query.runtimeMax != null)
-    activeChips.push({
-      key: 'rt',
-      label: `Under ${query.runtimeMax + 1} min`,
-      remove: () => setValue('runtimeMax', null),
-    });
-  if (query.watched)
+  if (query.watched && query.watched !== 'unwatched')
     activeChips.push({
       key: 'w',
       label: { watched: 'Watched', unwatched: 'Unwatched', inProgress: 'In progress' }[
@@ -278,15 +446,11 @@ export function BrowsePage({ prefs }: { prefs: Preferences }) {
           <h1 className="page-title">Browse</h1>
           <p aria-live="polite">{movies.isPending ? 'Loading…' : plural(total, 'movie')}</p>
         </div>
-        <Button
-          variant="secondary"
-          icon="shuffle"
-          busy={randomBusy}
-          onClick={surprise}
-          disabled={total === 0}
-        >
-          Random pick
-        </Button>
+        {total > 1 && (
+          <ButtonLink to={spinHref} variant="secondary" icon="wheel">
+            Spin the wheel
+          </ButtonLink>
+        )}
       </header>
 
       <div className="toolbar" role="toolbar" aria-label="Browse options">
@@ -341,20 +505,21 @@ export function BrowsePage({ prefs }: { prefs: Preferences }) {
             onClick={() => setFiltersOpen(true)}
             aria-haspopup="dialog"
           >
-            Filters{filterCount ? ` · ${filterCount}` : ''}
+            All filters{filterCount ? ` · ${filterCount}` : ''}
           </Button>
-          <Segmented<Density>
-            label="Poster size"
-            value={prefs.density}
-            onChange={(density) => updatePrefs.mutate({ density })}
-            options={[
-              { value: 'compact', label: 'S' },
-              { value: 'comfortable', label: 'M' },
-              { value: 'large', label: 'L' },
-            ]}
-          />
         </div>
       </div>
+
+      <QuickFilters
+        query={query}
+        facets={f}
+        toggleList={toggleList}
+        setRuntime={setRuntime}
+        setDecade={setDecade}
+        setValue={setValue}
+        filterCount={filterCount}
+        onClear={clearFilters}
+      />
 
       {activeChips.length > 0 && (
         <div className="active-filters" aria-label="Active filters">
@@ -481,17 +646,7 @@ export function BrowsePage({ prefs }: { prefs: Preferences }) {
                         key={d.value}
                         count={d.count}
                         selected={decadeSelected(decade)}
-                        onClick={() =>
-                          update((p) => {
-                            if (decadeSelected(decade)) {
-                              p.delete('yearMin');
-                              p.delete('yearMax');
-                            } else {
-                              p.set('yearMin', String(decade));
-                              p.set('yearMax', String(decade + 9));
-                            }
-                          })
-                        }
+                        onClick={() => setDecade(decadeSelected(decade) ? null : decade)}
                       >
                         {d.value}s
                       </Chip>
@@ -528,17 +683,18 @@ export function BrowsePage({ prefs }: { prefs: Preferences }) {
               <fieldset className="filter-group">
                 <legend className="filter-group__title">Runtime</legend>
                 <div className="chip-list">
-                  {RUNTIME_OPTIONS.map((m) => (
-                    <Chip
-                      key={m}
-                      selected={query.runtimeMax === m - 1}
-                      onClick={() =>
-                        setValue('runtimeMax', query.runtimeMax === m - 1 ? null : String(m - 1))
-                      }
-                    >
-                      Under {m} min
-                    </Chip>
-                  ))}
+                  {RUNTIME_PRESETS.map((p) => {
+                    const selected = runtimePreset(query)?.id === p.id;
+                    return (
+                      <Chip
+                        key={p.id}
+                        selected={selected}
+                        onClick={() => setRuntime(selected ? null : p)}
+                      >
+                        {p.label}
+                      </Chip>
+                    );
+                  })}
                 </div>
               </fieldset>
             )}

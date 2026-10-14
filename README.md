@@ -39,11 +39,16 @@ or a large screen — with your own branding, collections, notes and home layout
 ## What it does
 
 - **Home**: a featured film with backdrop (rotates; source configurable), Continue Watching, Recently Added,
-  Personal Favorites, your collections, a Random Pick, and genre/decade shelves. Sections can be hidden and
+  Personal Favorites, your collections, a “Spin the wheel” invitation, and genre/decade shelves. Sections can be hidden and
   reordered, and any collection can be pinned as its own row. Empty rows never appear.
-- **Browse**: poster grid with search, sorting (title, year, date added, runtime, rating), filters (genre,
-  year/decade, runtime, director, country, age rating, tag, studio, watch status, favorites), three poster
-  sizes, and “Random pick” from whatever is currently filtered. Loads in pages as you scroll.
+- **Browse**: poster grid with search and sorting (title, year, date added, runtime, rating). One-tap
+  **quick filters** for Unwatched, Genre, Runtime (under 90 min, 90 min – 2 hours, over 2 hours, epics),
+  Director and Decade, plus _All filters_ for country, age rating, tag, studio, exact years and favorites.
+  Loads in pages as you scroll.
+- **Spin the wheel**: can’t decide? Up to 12 movies (unwatched, everything, favorites, or whatever you
+  filtered in Browse) go on a prize wheel. Spin it: it ticks past each peg (with an optional click sound),
+  slows down, lands on tonight’s movie and bursts into confetti, with Play, Details, Spin again and “Not
+  tonight” (takes that movie off the wheel). Works with a TV remote; honours “Reduce motion”.
 - **Movie detail**: backdrop, poster, synopsis, cast, director and other metadata, file format and tracks,
   Play / Resume / Start over, favorite, watched, add to collection, **your private 1–5 star rating and notes**,
   and “More like this”. Missing metadata is shown as missing — nothing is invented.
@@ -374,8 +379,8 @@ artwork, sidecar and embedded subtitles, two audio tracks, H.264/MP4, H.264/MKV,
 - A device **revoked in Jellyfin** is signed out within a minute and can sign in again.
 - Favorites toggled in Jellyfin and restored; collections referencing real Jellyfin IDs.
 
-**Automated tests:** 117 unit/integration tests (`npm test`), 9 live Jellyfin tests (`npm run test:jellyfin`),
-and 25 browser end-to-end checks (including TV-remote navigation with an LG webOS user agent) including accessibility audits with axe (`npm run test:e2e`).
+**Automated tests:** 125 unit/integration tests (`npm test`), 9 live Jellyfin tests (`npm run test:jellyfin`),
+and 30 browser end-to-end checks (including TV-remote navigation with an LG webOS user agent) including accessibility audits with axe (`npm run test:e2e`).
 
 **Not verified / limitations — please read:**
 

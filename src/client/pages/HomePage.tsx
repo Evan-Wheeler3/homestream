@@ -1,66 +1,55 @@
-import { useState } from 'react';
-import { Link, useNavigate } from 'react-router';
+import { Link } from 'react-router';
 import type { HomePayload, Movie, Preferences } from '../../shared/types';
 import { CollectionCard } from '../components/CollectionCard';
-import { Hero, HeroSkeleton, MetaLine } from '../components/Hero';
-import { Backdrop, ContinueCard, PosterCard, primaryPlay, Row } from '../components/movies';
+import { Hero, HeroSkeleton } from '../components/Hero';
+import { ContinueCard, PosterCard, Row } from '../components/movies';
 import { Button, ButtonLink, Skeleton, StatusView } from '../components/ui';
-import { api, errorMessage } from '../lib/api';
+import { errorMessage } from '../lib/api';
 import { plural } from '../lib/format';
 import { sizedImage } from '../lib/images';
 import { useHome, useRefreshCatalog } from '../lib/queries';
+import { slicePath } from '../lib/wheel';
 
-function RandomPick({ initial, prefs }: { initial: Movie | null; prefs: Preferences }) {
-  const [movie, setMovie] = useState(initial);
-  const [busy, setBusy] = useState(false);
-  const navigate = useNavigate();
-  if (!movie) return null;
-
-  const reroll = async () => {
-    setBusy(true);
-    try {
-      const result = await api<{ movie: Movie | null }>('/movies/random');
-      if (result.movie) setMovie(result.movie);
-    } finally {
-      setBusy(false);
-    }
-  };
-  const play = primaryPlay(movie, prefs.playback.resumeBehavior);
-
+/** A small, playful invitation to the wheel (replaces the old full-width random pick). */
+function SpinPromo({ movie }: { movie: Movie | null }) {
   return (
-    <section className="random-pick" aria-labelledby="random-pick-title">
-      <Backdrop
-        url={movie.images.backdrop ?? movie.images.poster}
-        className="random-pick__art"
-        sizes="(max-width: 900px) 100vw, 60vw"
-      />
-      <div className="random-pick__body">
-        <p className="eyebrow">Random pick</p>
-        <h2 id="random-pick-title" className="random-pick__title display">
-          <Link to={`/movie/${movie.id}`}>{movie.title}</Link>
-        </h2>
-        <MetaLine movie={movie} extra />
-        {movie.overview && <p className="random-pick__overview">{movie.overview}</p>}
-        <div className="random-pick__actions">
-          <Button variant="primary" icon="play" onClick={() => navigate(play.href)}>
-            {play.label}
-          </Button>
-          <Button variant="secondary" icon="shuffle" busy={busy} onClick={reroll}>
-            Pick another
-          </Button>
-        </div>
+    <section className="spin-promo" aria-labelledby="spin-promo-title">
+      <div className="spin-promo__wheel" aria-hidden="true">
+        <svg viewBox="-50 -50 100 100">
+          {Array.from({ length: 8 }, (_, i) => (
+            <path
+              key={i}
+              d={slicePath(i, 8, 48)}
+              className={`spin-promo__slice spin-promo__slice--${i % 4}`}
+            />
+          ))}
+          <circle r="9" className="spin-promo__hub" />
+        </svg>
       </div>
+      <div className="spin-promo__body">
+        <p className="eyebrow">Can’t decide?</p>
+        <h2 id="spin-promo-title" className="spin-promo__title display">
+          Spin the wheel
+        </h2>
+        <p className="spin-promo__text">
+          {movie
+            ? `Tonight could be ${movie.title}… or anything else you haven’t seen. Let fate decide.`
+            : 'Let fate pick tonight’s movie from the ones you haven’t seen.'}
+        </p>
+      </div>
+      <ButtonLink
+        to="/spin?watched=unwatched"
+        variant="primary"
+        icon="wheel"
+        className="spin-promo__cta"
+      >
+        Spin
+      </ButtonLink>
     </section>
   );
 }
 
-function Section({
-  section,
-  prefs,
-}: {
-  section: HomePayload['sections'][number];
-  prefs: Preferences;
-}) {
+function Section({ section }: { section: HomePayload['sections'][number] }) {
   switch (section.type) {
     case 'row':
       return (
@@ -92,7 +81,7 @@ function Section({
         </Row>
       );
     case 'randomPick':
-      return <RandomPick initial={section.movie} prefs={prefs} />;
+      return <SpinPromo movie={section.movie} />;
     case 'genres':
       return (
         <Row title="Browse by genre" href="/browse" wide id="genres">
@@ -222,11 +211,7 @@ export function HomePage({ prefs }: { prefs: Preferences }) {
       )}
       <div className="home__sections">
         {data.sections.map((section) => (
-          <Section
-            key={section.type === 'row' ? section.row.id : section.id}
-            section={section}
-            prefs={prefs}
-          />
+          <Section key={section.type === 'row' ? section.row.id : section.id} section={section} />
         ))}
         {data.sections.length === 0 && (
           <StatusView

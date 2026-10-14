@@ -56,6 +56,7 @@ export function movieQueryString(query: MovieQuery): string {
   multi('rating', query.ratings);
   if (query.yearMin != null) params.set('yearMin', String(query.yearMin));
   if (query.yearMax != null) params.set('yearMax', String(query.yearMax));
+  if (query.runtimeMin != null) params.set('runtimeMin', String(query.runtimeMin));
   if (query.runtimeMax != null) params.set('runtimeMax', String(query.runtimeMax));
   if (query.watched) params.set('watched', query.watched);
   if (query.favorite) params.set('favorite', '1');

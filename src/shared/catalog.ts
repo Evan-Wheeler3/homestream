@@ -49,6 +49,12 @@ export function matchesQuery(movie: Movie, query: MovieQuery): boolean {
   if (query.yearMin != null && (movie.year == null || movie.year < query.yearMin)) return false;
   if (query.yearMax != null && (movie.year == null || movie.year > query.yearMax)) return false;
   if (
+    query.runtimeMin != null &&
+    (movie.runtimeMinutes == null || movie.runtimeMinutes < query.runtimeMin)
+  ) {
+    return false;
+  }
+  if (
     query.runtimeMax != null &&
     (movie.runtimeMinutes == null || movie.runtimeMinutes > query.runtimeMax)
   ) {

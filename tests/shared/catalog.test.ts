@@ -91,6 +91,16 @@ describe('filters', () => {
     ).toEqual(['a', 'd']);
     expect(queryMovies(library, { yearMin: 1900 }).items.some((m) => m.id === 'e')).toBe(false);
   });
+  it('filters by runtime ranges', () => {
+    const ids = (q: Parameters<typeof queryMovies>[1]) =>
+      queryMovies(library, q)
+        .items.map((m) => m.id)
+        .sort();
+    expect(ids({ runtimeMin: 90, runtimeMax: 120 })).toEqual([]);
+    expect(ids({ runtimeMin: 121 })).toEqual(['b', 'c']);
+    expect(ids({ runtimeMin: 150 })).toEqual(['c']);
+    expect(ids({ runtimeMin: 80, runtimeMax: 125 })).toEqual(['b', 'd']);
+  });
   it('filters by watch status and favorites', () => {
     expect(queryMovies(library, { watched: 'watched' }).items.map((m) => m.id)).toEqual(['c']);
     expect(queryMovies(library, { watched: 'inProgress' }).items.map((m) => m.id)).toEqual(['d']);
