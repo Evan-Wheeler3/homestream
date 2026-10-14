@@ -19,6 +19,9 @@ export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     catalogTtlSeconds: 300,
     clientDir: null,
     version: 'test',
+    backupDir: '/nonexistent-backups',
+    keepBackups: 14,
+    lowSpaceGb: 30,
     ripper: loadRipperConfig({}),
     ...overrides,
   };

@@ -16,6 +16,9 @@ export interface AppConfig {
   catalogTtlSeconds: number;
   clientDir: string | null;
   version: string;
+  backupDir: string;
+  keepBackups: number;
+  lowSpaceGb: number;
   /** Automatic disc ripping (off unless RIPPER_ENABLED is set). */
   ripper: RipperConfig;
 }
@@ -58,6 +61,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     catalogTtlSeconds: Math.max(10, Number(env.CATALOG_TTL_SECONDS ?? 300)),
     clientDir: env.CLIENT_DIR === undefined ? path.resolve('dist/client') : env.CLIENT_DIR || null,
     version: env.npm_package_version ?? APP_VERSION,
+    backupDir: path.resolve(env.BACKUP_DIR || path.join(env.DATA_DIR ?? 'data', 'backups')),
+    keepBackups: Math.max(1, Number(env.BACKUP_KEEP ?? 14) || 14),
+    lowSpaceGb: Math.max(1, Number(env.LOW_SPACE_GB ?? 30) || 30),
     ripper: loadRipperConfig(env),
   };
 }

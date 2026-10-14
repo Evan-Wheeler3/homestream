@@ -1224,3 +1224,33 @@
   scroll-margin: calc(var(--nav-height) + 16px) 0
     calc(var(--tabbar-height) + var(--safe-bottom) + 16px);
 }
+
+/* Storage meters (Settings → Server) */
+.drives {
+  display: grid;
+  gap: var(--s-3);
+  margin: var(--s-4) 0;
+}
+.drive__head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--s-2);
+  font-size: var(--text-sm);
+}
+.drive__bar {
+  height: 6px;
+  margin-top: var(--s-2);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  overflow: hidden;
+}
+.drive__bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+.drive--low .drive__bar span {
+  background: var(--danger);
+}

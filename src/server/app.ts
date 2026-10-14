@@ -15,6 +15,7 @@ import type { AppConfig } from './config.js';
 import type { Db } from './db.js';
 import { ApiError } from './errors.js';
 import { LibraryService } from './library.js';
+import { Maintenance } from './maintenance.js';
 import { JellyfinProvider } from './providers/jellyfin.js';
 import { MockProvider } from './providers/mock.js';
 import type { MediaProvider } from './providers/types.js';
@@ -76,13 +77,12 @@ export function createApp({
   sessions.purgeExpired();
 
   let ripper: Ripper | null = null;
-  let ntfy: NtfyNotifier | null = null;
-  if (config.ripper.enabled) {
-    const rc = config.ripper;
-    ntfy = rc.ntfyTopic ? new NtfyNotifier(rc.ntfyServer, rc.ntfyTopic, ripperFetch) : null;
-    const notifier =
-      ripperNotifier ??
-      new MultiNotifier([new MacNotifier(ripperRunner), ...(ntfy ? [ntfy] : [])], logger);
+  const rc = config.ripper;
+  const ntfy = rc.ntfyTopic ? new NtfyNotifier(rc.ntfyServer, rc.ntfyTopic, ripperFetch) : null;
+  const notifier =
+    ripperNotifier ??
+    new MultiNotifier([new MacNotifier(ripperRunner), ...(ntfy ? [ntfy] : [])], logger);
+  if (rc.enabled) {
     ripper = new Ripper({
       config: rc,
       jobs: new RipJobStore(db),
@@ -96,6 +96,30 @@ export function createApp({
       logger,
     });
   }
+
+  // Daily backups and drive-space warnings (not for in-memory test databases).
+  const maintenance =
+    config.dataDir === ':memory:'
+      ? null
+      : new Maintenance({
+          db,
+          dataDir: config.dataDir,
+          backupDir: config.backupDir,
+          keepBackups: config.keepBackups,
+          drives: [
+            { label: 'Wheelhouse data', path: config.dataDir },
+            ...(rc.enabled
+              ? [
+                  { label: 'Movies', path: rc.moviesDir },
+                  { label: 'Rips', path: rc.ripsDir },
+                ]
+              : []),
+          ],
+          lowSpaceGb: config.lowSpaceGb,
+          notifier: ntfy ? notifier : null,
+          publicUrl: rc.publicUrl,
+          logger,
+        });
 
   const app = express();
   app.disable('x-powered-by');
@@ -148,6 +172,7 @@ export function createApp({
       assetsDir: path.join(ROOT, 'assets'),
       ripper,
       ntfy: ripperNotifier ?? ntfy,
+      maintenance,
     }),
   );
 
@@ -220,5 +245,5 @@ export function createApp({
     res.status(apiError.status).json(body);
   });
 
-  return { app, provider, library, sessions, ripper };
+  return { app, provider, library, sessions, ripper, maintenance };
 }

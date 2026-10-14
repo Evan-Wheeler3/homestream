@@ -12,7 +12,7 @@ try {
 }
 
 const db = openDatabase(config.dataDir);
-const { app, provider, ripper } = createApp({ config, db });
+const { app, provider, ripper, maintenance } = createApp({ config, db });
 
 const server = app.listen(config.port, config.host, () => {
   const lanAddresses = Object.values(os.networkInterfaces())
@@ -28,6 +28,7 @@ const server = app.listen(config.port, config.host, () => {
     console.info(`  Media source: Jellyfin at ${provider.serverUrl}`);
   }
   console.info(`  Data directory: ${config.dataDir}`);
+  maintenance?.start();
   if (ripper) {
     ripper.start();
     const health = ripper.health();
@@ -46,6 +47,7 @@ server.on('error', (error: NodeJS.ErrnoException) => {
 
 function shutdown() {
   ripper?.stop();
+  maintenance?.stop();
   server.close(() => {
     db.close();
     process.exit(0);

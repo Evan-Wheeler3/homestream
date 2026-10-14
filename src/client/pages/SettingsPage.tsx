@@ -1,4 +1,4 @@
-import { useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import {
@@ -22,7 +22,7 @@ import {
 import { api, errorMessage } from '../lib/api';
 import { detectCapabilities } from '../lib/capabilities';
 import { recentErrors } from '../lib/diagnostics';
-import { relativeTime, SUBTITLE_LANGUAGE_OPTIONS } from '../lib/format';
+import { formatBytes, relativeTime, SUBTITLE_LANGUAGE_OPTIONS } from '../lib/format';
 import { useCollections, useRefreshCatalog, useStatus, useUpdatePreferences } from '../lib/queries';
 import { SORT_OPTIONS } from './BrowsePage';
 import { setTvSetting, useTvMode } from '../lib/tv';
@@ -250,6 +250,7 @@ function HomeSectionsEditor({
 
 function ServerStatusPanel() {
   const status = useStatus();
+  const backup = useMutation({ mutationFn: () => api('/backups', { method: 'POST' }) });
   const refresh = useRefreshCatalog();
   const toast = useToast();
   if (status.isPending) return <Spinner label="Checking server" />;
@@ -307,7 +308,63 @@ function ServerStatusPanel() {
             <dd className="status-bad">{s.catalog.lastError}</dd>
           </div>
         )}
+        {s.ripper && (
+          <div className="facts__row">
+            <dt>Disc ripping</dt>
+            <dd className={s.ripper.problems.length ? 'status-bad' : 'status-ok'}>
+              <Icon name={s.ripper.problems.length ? 'alert' : 'check'} size={16} />
+              {s.ripper.problems.length
+                ? `${s.ripper.problems.length} problem${s.ripper.problems.length > 1 ? 's' : ''}: see Discs`
+                : 'Ready for discs'}
+            </dd>
+          </div>
+        )}
+        {s.backups && (
+          <div className="facts__row">
+            <dt>Backups</dt>
+            <dd>
+              {s.backups.last
+                ? `Last backup ${relativeTime(s.backups.last)} · ${s.backups.count} kept`
+                : 'No backup yet'}
+              <span className="faint"> · daily, in {s.backups.dir}</span>
+            </dd>
+          </div>
+        )}
       </dl>
+      {s.drives.length > 0 && (
+        <ul className="drives" aria-label="Storage">
+          {s.drives.map((d) => {
+            const used = d.totalBytes && d.freeBytes != null ? 1 - d.freeBytes / d.totalBytes : 0;
+            return (
+              <li key={d.path} className={`drive ${d.low ? 'drive--low' : ''}`}>
+                <div className="drive__head">
+                  <strong>{d.label}</strong>
+                  <span className={d.low ? 'status-bad' : 'faint'}>
+                    {d.available
+                      ? `${formatBytes(d.freeBytes)} free of ${formatBytes(d.totalBytes)}`
+                      : 'Not connected'}
+                  </span>
+                </div>
+                {d.available && (
+                  <div
+                    className="drive__bar"
+                    role="meter"
+                    aria-label={`${d.label} space used`}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={Math.round(used * 100)}
+                  >
+                    <span style={{ width: `${Math.round(used * 100)}%` }} />
+                  </div>
+                )}
+                {d.low && (
+                  <p className="field__hint status-bad">Almost full: new movies may not fit.</p>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
       <div className="button-row">
         <Button
           icon="refresh"
@@ -317,6 +374,24 @@ function ServerStatusPanel() {
         >
           Test connection
         </Button>
+        {s.backups && (
+          <Button
+            icon="upload"
+            variant="secondary"
+            busy={backup.isPending}
+            onClick={() =>
+              backup.mutate(undefined, {
+                onSuccess: () => {
+                  toast.show('Backup made');
+                  void status.refetch();
+                },
+                onError: (e) => toast.show(errorMessage(e), 'error'),
+              })
+            }
+          >
+            Back up now
+          </Button>
+        )}
         <Button
           icon="refresh"
           variant="secondary"

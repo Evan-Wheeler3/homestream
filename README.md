@@ -277,6 +277,11 @@ Also disable sleep on the host computer while it serves movies.
 
 ## Backups and updates
 
+Wheelhouse backs up its own database (collections, notes, ratings, preferences) and uploaded artwork
+**automatically once a day** into `BACKUP_DIR`, keeping the newest 14. _Settings → Server_ shows the last
+backup, free space on each drive (with a warning, and a phone notification, when one is nearly full) and a
+**Back up now** button. Your movies themselves are not backed up — keep the LaCie drive safe.
+
 **What to back up:**
 
 - Your **movie files** (the 2 TB drive) — the most valuable part; keep a second copy if you can.
@@ -314,18 +319,21 @@ to the internet). Avoid simply forwarding a port on your router.
 
 All settings live in `.env` (copy `.env.example`; `npm run setup` writes it for you). Never commit `.env`.
 
-| Variable              | Default   | Meaning                                                                                |
-| --------------------- | --------- | -------------------------------------------------------------------------------------- |
-| `JELLYFIN_URL`        | _(empty)_ | Jellyfin address as seen from this computer. Empty = sample library.                   |
-| `MEDIA_SOURCE`        | `auto`    | `auto`, `jellyfin` (fail if `JELLYFIN_URL` missing) or `mock` (always sample library). |
-| `PORT`                | `8787`    | Port Wheelhouse listens on.                                                            |
-| `HOST`                | `0.0.0.0` | `0.0.0.0` = reachable on your network; `127.0.0.1` = this computer only.               |
-| `DATA_DIR`            | `./data`  | Database and uploaded artwork. Back this up.                                           |
-| `SESSION_DAYS`        | `30`      | Days a sign-in lasts without use.                                                      |
-| `CATALOG_TTL_SECONDS` | `300`     | How often the library index is refreshed from Jellyfin.                                |
-| `MOCK_PASSWORD`       | `demo`    | Password for the sample library only.                                                  |
-| `COOKIE_SECURE`       | `auto`    | Secure cookies when served over HTTPS. `true` behind an HTTPS reverse proxy.           |
-| `TRUST_PROXY`         | `false`   | Set `true` only behind a reverse proxy (Caddy, nginx, Tailscale Serve).                |
+| Variable              | Default            | Meaning                                                                                |
+| --------------------- | ------------------ | -------------------------------------------------------------------------------------- |
+| `JELLYFIN_URL`        | _(empty)_          | Jellyfin address as seen from this computer. Empty = sample library.                   |
+| `MEDIA_SOURCE`        | `auto`             | `auto`, `jellyfin` (fail if `JELLYFIN_URL` missing) or `mock` (always sample library). |
+| `PORT`                | `8787`             | Port Wheelhouse listens on.                                                            |
+| `HOST`                | `0.0.0.0`          | `0.0.0.0` = reachable on your network; `127.0.0.1` = this computer only.               |
+| `DATA_DIR`            | `./data`           | Database and uploaded artwork. Back this up.                                           |
+| `SESSION_DAYS`        | `30`               | Days a sign-in lasts without use.                                                      |
+| `CATALOG_TTL_SECONDS` | `300`              | How often the library index is refreshed from Jellyfin.                                |
+| `MOCK_PASSWORD`       | `demo`             | Password for the sample library only.                                                  |
+| `COOKIE_SECURE`       | `auto`             | Secure cookies when served over HTTPS. `true` behind an HTTPS reverse proxy.           |
+| `TRUST_PROXY`         | `false`            | Set `true` only behind a reverse proxy (Caddy, nginx, Tailscale Serve).                |
+| `BACKUP_DIR`          | `DATA_DIR/backups` | Where the automatic daily backups go (another drive is safer).                         |
+| `BACKUP_KEEP`         | `14`               | How many daily backups to keep.                                                        |
+| `LOW_SPACE_GB`        | `30`               | Warn when a drive has less free space than this.                                       |
 
 Disc ripping settings (written by `npm run setup:ripper`; see `.env.example` for all of them): `RIPPER_ENABLED`,
 `MOVIES_DIR`, `RIPS_DIR`, `MAKEMKVCON`, `HANDBRAKE_CLI`, `HANDBRAKE_PRESET`, `HANDBRAKE_QUALITY`,

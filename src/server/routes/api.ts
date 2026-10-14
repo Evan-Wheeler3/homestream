@@ -30,6 +30,7 @@ import type { UserContext } from '../providers/types.js';
 import { toPublicJob } from '../ripper/jobs.js';
 import type { Ripper } from '../ripper/ripper.js';
 import type { Notifier } from '../ripper/services.js';
+import type { Maintenance } from '../maintenance.js';
 
 type Handler = (req: Request, res: Response) => Promise<unknown> | unknown;
 
@@ -106,6 +107,7 @@ export interface ApiDeps {
   ripper?: Ripper | null;
   /** Phone notifications, for the "send a test notification" button. */
   ntfy?: Notifier | null;
+  maintenance?: Maintenance | null;
 }
 
 export function apiRouter(deps: ApiDeps): Router {
@@ -217,8 +219,23 @@ export function apiRouter(deps: ApiDeps): Router {
           stale: peek?.stale ?? false,
           lastError: peek?.lastError ?? null,
         },
+        drives: deps.maintenance?.drives() ?? [],
+        backups: deps.maintenance?.backups() ?? null,
+        ripper: deps.ripper?.health() ?? null,
       };
       return status;
+    }),
+  );
+
+  router.post(
+    '/backups',
+    route((req) => {
+      if (!req.session?.user.isAdmin) {
+        throw new ApiError('FORBIDDEN', 'Only a Jellyfin administrator can make backups.');
+      }
+      if (!deps.maintenance) throw badRequest('Backups are not available.');
+      deps.maintenance.backupNow();
+      return deps.maintenance.backups();
     }),
   );
 

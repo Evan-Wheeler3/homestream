@@ -430,6 +430,23 @@ export interface RipJob {
   finishedAt: string | null;
 }
 
+export interface DriveStatus {
+  label: string;
+  path: string;
+  available: boolean;
+  freeBytes: number | null;
+  totalBytes: number | null;
+  /** Below the low-space warning threshold. */
+  low: boolean;
+}
+
+export interface BackupStatus {
+  enabled: boolean;
+  dir: string;
+  count: number;
+  last: string | null;
+}
+
 export interface RipperHealth {
   enabled: boolean;
   /** Setup problems that stop ripping from working. */
@@ -458,6 +475,10 @@ export interface ServerStatus {
     stale: boolean;
     lastError: string | null;
   };
+  /** Storage, backups and disc ripping (null when not available, e.g. in tests). */
+  drives: DriveStatus[];
+  backups: BackupStatus | null;
+  ripper: RipperHealth | null;
 }
 
 export interface ApiErrorBody {
