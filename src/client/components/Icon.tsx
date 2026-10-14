@@ -180,6 +180,13 @@ const PATHS = {
       <path d="M12 10v4.5M12 17.2v.1" />
     </>
   ),
+  disc: (
+    <>
+      <circle cx="12" cy="12" r="8.5" />
+      <circle cx="12" cy="12" r="2.5" />
+      <path d="M12 6a6 6 0 0 0-6 6" />
+    </>
+  ),
   film: (
     <>
       <rect x="3.5" y="3.5" width="17" height="17" rx="1.5" />

@@ -150,6 +150,11 @@ export function AppShell({ session, prefs }: { session: SessionInfo; prefs: Pref
               {item.label}
             </NavLink>
           ))}
+          {session.ripper && (
+            <NavLink to="/rips" className="topbar__link">
+              Discs
+            </NavLink>
+          )}
         </nav>
         <div className="topbar__actions">
           {session.source === 'mock' && (

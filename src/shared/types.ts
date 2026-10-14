@@ -373,6 +373,71 @@ export interface SessionUser {
 export interface SessionInfo {
   user: SessionUser;
   source: MediaSourceKind;
+  /** True when automatic disc ripping is set up on the server. */
+  ripper?: boolean;
+}
+
+// -----------------------------------------------------------------------------
+// Disc ripping
+
+export type RipStatus =
+  | 'scanning' // reading the disc's contents
+  | 'needs_choice' // several possible main titles; waiting for the user
+  | 'ripping' // copying the movie off the disc
+  | 'ripped' // waiting for its turn to be compressed
+  | 'encoding' // compressing with HandBrake
+  | 'needs_name' // compressed, but which movie it is needs confirming
+  | 'filing' // moving into the Movies folder
+  | 'importing' // waiting for Jellyfin to add it
+  | 'done'
+  | 'failed';
+
+export interface RipCandidate {
+  title: string;
+  year: number | null;
+  tmdbId: string | null;
+  imdbId: string | null;
+}
+
+export interface RipDiscTitle {
+  index: number;
+  durationSeconds: number;
+  sizeBytes: number;
+  chapters: number;
+}
+
+export interface RipJob {
+  id: string;
+  status: RipStatus;
+  discLabel: string;
+  /** 0–1 while ripping or encoding. */
+  progress: number | null;
+  message: string | null;
+  /** The title guessed from the disc label. */
+  guess: string | null;
+  /** The confirmed movie (set automatically when confident, or by the user). */
+  title: string | null;
+  year: number | null;
+  candidates: RipCandidate[];
+  /** Titles to choose from when the status is needs_choice. */
+  discTitles: RipDiscTitle[];
+  moviePath: string | null;
+  /** Wheelhouse/Jellyfin movie id once imported. */
+  movieId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  finishedAt: string | null;
+}
+
+export interface RipperHealth {
+  enabled: boolean;
+  /** Setup problems that stop ripping from working. */
+  problems: string[];
+  /** Things that work but could be better (e.g. no phone notifications). */
+  warnings: string[];
+  watching: boolean;
+  /** Whether movie names can be looked up (needs a Jellyfin API key). */
+  canSearch: boolean;
 }
 
 export interface ServerStatus {

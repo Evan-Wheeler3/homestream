@@ -19,6 +19,16 @@ import { JellyfinProvider } from './providers/jellyfin.js';
 import { MockProvider } from './providers/mock.js';
 import type { MediaProvider } from './providers/types.js';
 import { mediaProxy } from './proxy.js';
+import { RipJobStore } from './ripper/jobs.js';
+import { runProcess, type Runner } from './ripper/process.js';
+import { Ripper } from './ripper/ripper.js';
+import {
+  JellyfinAdmin,
+  MacNotifier,
+  MultiNotifier,
+  NtfyNotifier,
+  type Notifier,
+} from './ripper/services.js';
 import { apiRouter } from './routes/api.js';
 import { Store } from './store.js';
 
@@ -31,9 +41,21 @@ export interface AppOptions {
   db: Db;
   provider?: MediaProvider;
   logger?: Pick<Console, 'error' | 'warn' | 'info'>;
+  /** Test seams for the disc ripper. */
+  ripperRunner?: Runner;
+  ripperNotifier?: Notifier;
+  ripperFetch?: typeof fetch;
 }
 
-export function createApp({ config, db, provider: injected, logger = console }: AppOptions) {
+export function createApp({
+  config,
+  db,
+  provider: injected,
+  logger = console,
+  ripperRunner = runProcess,
+  ripperNotifier,
+  ripperFetch = fetch,
+}: AppOptions) {
   const provider: MediaProvider =
     injected ??
     (config.source === 'jellyfin' && config.jellyfinUrl
@@ -52,6 +74,28 @@ export function createApp({ config, db, provider: injected, logger = console }: 
   const library = new LibraryService(provider, catalog, store);
   const sessions = new SessionStore(db, config);
   sessions.purgeExpired();
+
+  let ripper: Ripper | null = null;
+  let ntfy: NtfyNotifier | null = null;
+  if (config.ripper.enabled) {
+    const rc = config.ripper;
+    ntfy = rc.ntfyTopic ? new NtfyNotifier(rc.ntfyServer, rc.ntfyTopic, ripperFetch) : null;
+    const notifier =
+      ripperNotifier ??
+      new MultiNotifier([new MacNotifier(ripperRunner), ...(ntfy ? [ntfy] : [])], logger);
+    ripper = new Ripper({
+      config: rc,
+      jobs: new RipJobStore(db),
+      run: ripperRunner,
+      jellyfin:
+        rc.jellyfinApiKey && config.jellyfinUrl
+          ? new JellyfinAdmin(config.jellyfinUrl, rc.jellyfinApiKey, config.version, ripperFetch)
+          : null,
+      notifier,
+      onImported: () => catalog.invalidate(),
+      logger,
+    });
+  }
 
   const app = express();
   app.disable('x-powered-by');
@@ -102,6 +146,8 @@ export function createApp({ config, db, provider: injected, logger = console }: 
       library,
       startedAt: new Date(),
       assetsDir: path.join(ROOT, 'assets'),
+      ripper,
+      ntfy: ripperNotifier ?? ntfy,
     }),
   );
 
@@ -174,5 +220,5 @@ export function createApp({ config, db, provider: injected, logger = console }: 
     res.status(apiError.status).json(body);
   });
 
-  return { app, provider, library, sessions };
+  return { app, provider, library, sessions, ripper };
 }

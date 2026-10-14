@@ -27,6 +27,9 @@ import type { LibraryService } from '../library.js';
 import { backdropSvg, posterSvg } from '../providers/mockArt.js';
 import { MockProvider } from '../providers/mock.js';
 import type { UserContext } from '../providers/types.js';
+import { toPublicJob } from '../ripper/jobs.js';
+import type { Ripper } from '../ripper/ripper.js';
+import type { Notifier } from '../ripper/services.js';
 
 type Handler = (req: Request, res: Response) => Promise<unknown> | unknown;
 
@@ -99,6 +102,9 @@ export interface ApiDeps {
   library: LibraryService;
   startedAt: Date;
   assetsDir: string;
+  ripper?: Ripper | null;
+  /** Phone notifications, for the "send a test notification" button. */
+  ntfy?: Notifier | null;
 }
 
 export function apiRouter(deps: ApiDeps): Router {
@@ -143,7 +149,11 @@ export function apiRouter(deps: ApiDeps): Router {
         maxAge: 400 * 86_400_000,
       });
       store.ensureStarterCollections(result.user.id);
-      const body: SessionInfo = { user: result.user, source: config.source };
+      const body: SessionInfo = {
+        user: result.user,
+        source: config.source,
+        ripper: Boolean(deps.ripper),
+      };
       return body;
     }),
   );
@@ -152,7 +162,11 @@ export function apiRouter(deps: ApiDeps): Router {
     '/auth/session',
     route((req) => {
       if (!req.session) throw new ApiError('UNAUTHENTICATED', 'Not signed in.');
-      const body: SessionInfo = { user: req.session.user, source: config.source };
+      const body: SessionInfo = {
+        user: req.session.user,
+        source: config.source,
+        ripper: Boolean(deps.ripper),
+      };
       return body;
     }),
   );
@@ -501,6 +515,105 @@ export function apiRouter(deps: ApiDeps): Router {
         res.type('image/svg+xml');
         res.setHeader('Cache-Control', 'private, max-age=86400');
         res.send(kind === 'poster.svg' ? posterSvg(film) : backdropSvg(film));
+      }),
+    );
+  }
+
+  // Disc ripping -------------------------------------------------------------
+
+  const ripper = deps.ripper;
+  if (ripper) {
+    /** Changing rips is limited to Jellyfin administrators. */
+    const requireAdmin = (req: Request) => {
+      if (!req.session?.user.isAdmin) {
+        throw new ApiError('FORBIDDEN', 'Only a Jellyfin administrator can manage disc rips.');
+      }
+    };
+    /** Turn the ripper's explanations (e.g. "the disc was removed") into 400s. */
+    const ripAction = (fn: (req: Request) => unknown) =>
+      route(async (req) => {
+        requireAdmin(req);
+        try {
+          return await fn(req);
+        } catch (error) {
+          if (ripper.isUserError(error)) throw badRequest(error.message);
+          throw error;
+        }
+      });
+    const ripId = (req: Request) => {
+      const id = String(req.params.id ?? '');
+      if (!/^[0-9a-f-]{36}$/.test(id)) throw badRequest('Invalid rip id');
+      return id;
+    };
+
+    router.get(
+      '/rips',
+      route(() => ({
+        health: ripper.health(),
+        jobs: ripper.listJobs().map(toPublicJob),
+      })),
+    );
+    router.post(
+      '/rips/:id/choose',
+      ripAction((req) => {
+        const index = Number((req.body as { titleIndex?: unknown })?.titleIndex);
+        if (!Number.isInteger(index) || index < 0) throw badRequest('Pick a title.');
+        return toPublicJob(ripper.chooseTitle(ripId(req), index));
+      }),
+    );
+    router.post(
+      '/rips/:id/name',
+      ripAction((req) => {
+        const body = (req.body ?? {}) as Record<string, unknown>;
+        const text = (v: unknown) => (typeof v === 'string' ? v.slice(0, 200) : null);
+        if (typeof body.title !== 'string') throw badRequest('Enter the movie’s title.');
+        return toPublicJob(
+          ripper.resolveName(ripId(req), {
+            title: body.title,
+            year: typeof body.year === 'number' ? body.year : null,
+            tmdbId: text(body.tmdbId),
+            imdbId: text(body.imdbId),
+          }),
+        );
+      }),
+    );
+    router.post(
+      '/rips/:id/retry',
+      ripAction((req) => toPublicJob(ripper.retry(ripId(req)))),
+    );
+    router.delete(
+      '/rips/:id',
+      ripAction((req) => {
+        ripper.dismiss(ripId(req));
+        return { ok: true };
+      }),
+    );
+    router.get(
+      '/rips/search',
+      ripAction(async (req) => {
+        const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+        if (!q) throw badRequest('Type a title to search for.');
+        return { results: await ripper.search(q) };
+      }),
+    );
+    router.post(
+      '/rips/test-notification',
+      ripAction(async () => {
+        if (!deps.ntfy) {
+          throw badRequest('Phone notifications aren’t set up (no NTFY_TOPIC in .env).');
+        }
+        try {
+          await deps.ntfy.send({
+            title: '🎬 Wheelhouse test',
+            message: 'Notifications are working. You’ll hear from me when a movie is ready.',
+            tags: ['white_check_mark'],
+          });
+        } catch (error) {
+          throw badRequest(
+            `Couldn’t send the notification: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+        return { ok: true };
       }),
     );
   }

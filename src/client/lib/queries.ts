@@ -18,6 +18,9 @@ import type {
   Page,
   PersonalData,
   Preferences,
+  RipCandidate,
+  RipJob,
+  RipperHealth,
   ServerStatus,
   SessionInfo,
   SmartRules,
@@ -35,6 +38,7 @@ export const keys = {
   collections: ['collections'] as const,
   collection: (id: string) => ['collection', id] as const,
   status: ['status'] as const,
+  rips: ['rips'] as const,
 };
 
 /** Serialise a MovieQuery into the backend's query-string format. */
@@ -313,4 +317,61 @@ export function useRefreshCatalog() {
       void qc.invalidateQueries({ queryKey: keys.status });
     },
   });
+}
+
+// -----------------------------------------------------------------------------
+// Disc ripping
+
+const WORKING: RipJob['status'][] = [
+  'scanning',
+  'ripping',
+  'ripped',
+  'encoding',
+  'filing',
+  'importing',
+];
+
+export function useRips(enabled = true) {
+  return useQuery({
+    queryKey: keys.rips,
+    queryFn: () => api<{ health: RipperHealth; jobs: RipJob[] }>('/rips'),
+    enabled,
+    // Refresh often while a disc is being worked on, slowly otherwise (to notice new discs).
+    refetchInterval: (query) =>
+      query.state.data?.jobs.some((j) => WORKING.includes(j.status)) ? 2000 : 4000,
+  });
+}
+
+export function useRipActions() {
+  const qc = useQueryClient();
+  const settle = () => {
+    void qc.invalidateQueries({ queryKey: keys.rips });
+  };
+  return {
+    choose: useMutation({
+      mutationFn: (v: { id: string; titleIndex: number }) =>
+        api<RipJob>(`/rips/${v.id}/choose`, { method: 'POST', body: { titleIndex: v.titleIndex } }),
+      onSettled: settle,
+    }),
+    name: useMutation({
+      mutationFn: (v: { id: string; movie: RipCandidate }) =>
+        api<RipJob>(`/rips/${v.id}/name`, { method: 'POST', body: v.movie }),
+      onSettled: settle,
+    }),
+    retry: useMutation({
+      mutationFn: (id: string) => api<RipJob>(`/rips/${id}/retry`, { method: 'POST' }),
+      onSettled: settle,
+    }),
+    dismiss: useMutation({
+      mutationFn: (id: string) => api(`/rips/${id}`, { method: 'DELETE' }),
+      onSettled: settle,
+    }),
+    testNotification: useMutation({
+      mutationFn: () => api('/rips/test-notification', { method: 'POST' }),
+    }),
+  };
+}
+
+export function searchRipCandidates(q: string) {
+  return api<{ results: RipCandidate[] }>(`/rips/search?q=${encodeURIComponent(q)}`);
 }

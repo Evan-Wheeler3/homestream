@@ -39,6 +39,7 @@ for (const path of [
   '/movie/charade-1963',
   '/collections',
   '/settings',
+  '/rips',
 ]) {
   test(`${path} has no serious accessibility violations`, async ({ page }) => {
     await signIn(page);

@@ -731,3 +731,177 @@
   background: var(--bg-raised);
   border: var(--border);
 }
+
+/* ============================================================================
+   Discs (automatic ripping)
+   ========================================================================== */
+.rips__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  max-width: 900px;
+}
+.rips__notice {
+  display: flex;
+  gap: var(--s-3);
+  align-items: flex-start;
+  max-width: 900px;
+  margin-bottom: var(--s-4);
+  padding: var(--s-3) var(--s-4);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: var(--text-sm);
+}
+.rips__notice svg {
+  flex: none;
+  margin-top: 2px;
+}
+.rips__notice ul {
+  display: grid;
+  gap: var(--s-1);
+}
+.rips__notice--error {
+  background: color-mix(in oklab, var(--danger) 12%, transparent);
+  color: var(--text);
+}
+.rips__notice--error ul {
+  margin-top: var(--s-1);
+  list-style: disc;
+  padding-left: 1.2em;
+}
+.rip {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  padding: var(--s-4);
+  border-radius: var(--r-md);
+  background: var(--bg-raised);
+  border: var(--border);
+}
+.rip--attention {
+  border-color: var(--accent-line);
+}
+.rip--failed {
+  border-color: color-mix(in oklab, var(--danger) 55%, transparent);
+}
+.rip__head {
+  display: flex;
+  gap: var(--s-3);
+  align-items: center;
+  flex-wrap: wrap;
+}
+.rip__icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  color: var(--accent);
+}
+.rip--ripping .rip__icon svg,
+.rip--scanning .rip__icon svg {
+  animation: rip-spin 2.4s linear infinite;
+}
+@keyframes rip-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.rip--done .rip__icon {
+  background: var(--accent-soft);
+}
+.rip--failed .rip__icon {
+  color: var(--danger);
+}
+.rip__titles {
+  flex: 1;
+  min-width: 200px;
+}
+.rip__name {
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+}
+.rip__meta {
+  font-size: var(--text-sm);
+}
+.rip__status {
+  color: var(--text-2);
+}
+.rip--attention .rip__status {
+  color: var(--accent);
+}
+.rip__buttons {
+  display: flex;
+  gap: var(--s-2);
+}
+.rip__pct {
+  margin-top: calc(var(--s-2) * -1);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+.rip__message {
+  color: var(--text-2);
+  font-size: var(--text-sm);
+}
+.rip__error {
+  color: var(--text);
+  font-size: var(--text-sm);
+}
+.rip__action {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  align-items: flex-start;
+}
+.rip__choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: var(--s-2);
+  width: 100%;
+}
+.rip__choice {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--s-2) var(--s-3);
+  border-radius: var(--r-sm);
+  border: var(--border);
+  background: var(--surface);
+  text-align: left;
+  font-size: var(--text-sm);
+  color: var(--text-2);
+}
+.rip__choice strong {
+  color: var(--text);
+}
+.rip__choice.is-selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.rip__candidates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+}
+.rip__form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  width: 100%;
+}
+.rip__form .input {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+.rip__form .rip__year {
+  flex: 0 0 90px;
+}
+.rip__manual summary {
+  cursor: pointer;
+  color: var(--text-2);
+  font-size: var(--text-sm);
+  margin-bottom: var(--s-2);
+}

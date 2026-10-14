@@ -25,13 +25,14 @@ or a large screen — with your own branding, collections, notes and home layout
 4. [Set up Jellyfin and add your movies](#set-up-jellyfin-and-add-your-movies)
 5. [Connect Wheelhouse to Jellyfin](#connect-wheelhouse-to-jellyfin)
 6. [Watching on your phone, TV and other devices](#watching-on-other-devices)
-7. [Keep it running](#keep-it-running)
-8. [Backups and updates](#backups-and-updates)
-9. [Remote access (outside your home)](#remote-access)
-10. [Configuration reference](#configuration-reference)
-11. [Troubleshooting](#troubleshooting)
-12. [What has been verified, and known limitations](#verification-status-and-limitations)
-13. [Development](#development)
+7. [Automatic disc ripping (insert a DVD, get a notification)](#automatic-disc-ripping)
+8. [Keep it running](#keep-it-running)
+9. [Backups and updates](#backups-and-updates)
+10. [Remote access (outside your home)](#remote-access)
+11. [Configuration reference](#configuration-reference)
+12. [Troubleshooting](#troubleshooting)
+13. [What has been verified, and known limitations](#verification-status-and-limitations)
+14. [Development](#development)
 
 ---
 
@@ -219,6 +220,41 @@ Starting a movie in TV mode goes full screen, which hides the TV browser’s too
 automatically; to force it on or off for one device, use **Settings → Appearance → TV mode** (it is a
 per-device setting, so your phone is unaffected).
 
+## Automatic disc ripping
+
+With a disc drive plugged into the Wheelhouse computer, inserting a DVD is all it takes:
+
+1. Wheelhouse notices the disc within a few seconds and reads it with **MakeMKV**.
+2. It rips the main feature (the longest title) into the Rips folder, then **ejects the disc** — you can
+   insert the next one while the previous movie is still being compressed.
+3. It compresses the rip with **HandBrakeCLI** (preset _Fast 1080p30_, quality 20) and checks the result is
+   complete (same running time as the disc) before deleting the original rip.
+4. It names the movie from the disc label using Jellyfin's movie lookup (`YOUNG_FRANKENSTEIN` →
+   `Young Frankenstein (1974)`) and files it as `Movies/Young Frankenstein (1974) [tmdbid-3034]/Young
+Frankenstein (1974).mp4`, which makes Jellyfin match the exact film.
+5. It asks Jellyfin to scan, waits until the movie appears, and sends a **phone notification**: tapping it
+   opens the movie in Wheelhouse.
+
+The **Discs** page shows progress. It asks for your help instead of guessing when a disc has many
+same-length titles (copy protection: pick the right one), when the name is uncertain (several films share
+a title, or the label is cryptic), or when something fails (with **Retry**). Nothing is deleted unless the
+compressed movie checks out, and a finished movie in the Movies folder is never touched by **Dismiss**.
+
+**Set up (once, about 15 minutes):**
+
+1. Install **HandBrakeCLI** (the command-line HandBrake, a separate free download from
+   <https://handbrake.fr/downloads2.php>) — `npm run setup:ripper` explains how.
+2. Install the free **ntfy** app on your phone (App Store / Google Play) for notifications.
+3. In Jellyfin: _Dashboard → API Keys → +_, name it "Wheelhouse".
+4. Run `npm run setup:ripper` in the Wheelhouse folder and answer the questions. It checks the tools,
+   creates a private random notification topic, sends a test notification and updates `.env`.
+5. Restart Wheelhouse (`launchctl unload …` / `launchctl load …` if it starts automatically).
+
+Keep the MakeMKV app closed while Wheelhouse is watching (it locks the drive). If macOS asks whether
+**node** may access files on a removable volume, click **Allow**. Ripping takes about 20–30 minutes per DVD
+and compression 30–60 minutes, depending on the computer. MakeMKV reads DVDs for free; Blu-ray needs a
+MakeMKV key. Rip only discs you own.
+
 ## Keep it running
 
 `npm start` runs until you close the window. To start Wheelhouse automatically with the computer:
@@ -286,6 +322,10 @@ All settings live in `.env` (copy `.env.example`; `npm run setup` writes it for 
 | `COOKIE_SECURE`       | `auto`    | Secure cookies when served over HTTPS. `true` behind an HTTPS reverse proxy.           |
 | `TRUST_PROXY`         | `false`   | Set `true` only behind a reverse proxy (Caddy, nginx, Tailscale Serve).                |
 
+Disc ripping settings (written by `npm run setup:ripper`; see `.env.example` for all of them): `RIPPER_ENABLED`,
+`MOVIES_DIR`, `RIPS_DIR`, `MAKEMKVCON`, `HANDBRAKE_CLI`, `HANDBRAKE_PRESET`, `HANDBRAKE_QUALITY`,
+`JELLYFIN_API_KEY`, `NTFY_TOPIC`, `NTFY_SERVER` and `WHEELHOUSE_PUBLIC_URL`.
+
 **Security model:** you sign in with Jellyfin credentials; Wheelhouse stores only a session (a random token
 in an HttpOnly, SameSite cookie, hashed in the database) and keeps the Jellyfin access token on the server.
 State-changing requests require a custom header (CSRF protection). Sign-in attempts are rate-limited. Only
@@ -308,6 +348,9 @@ minute. Collections are private unless you mark them shared (others can view, no
 | `Port 8787 is already in use`                             | Something else uses the port (maybe a second copy). Stop it or set another `PORT` in `.env`.                                                                                                                 |
 | `Configuration error: JELLYFIN_URL must start with http…` | Fix the address in `.env`, e.g. `JELLYFIN_URL=http://127.0.0.1:8096`.                                                                                                                                        |
 | Node prints `.env not found. Continuing without it.`      | Harmless: there is no `.env` yet, so defaults (sample library) are used. Run `npm run setup`.                                                                                                                |
+| Discs page: “MakeMKV can’t see the disc”                  | Close the MakeMKV app (it locks the drive), take the disc out and put it back in.                                                                                                                            |
+| Discs page: “macOS blocked access to …”                   | _System Settings → Privacy & Security → Files and Folders_ (or _Full Disk Access_): allow **node** to access removable volumes, then restart Wheelhouse.                                                     |
+| No phone notification                                     | Discs page → **Test notification**. The ntfy app must be subscribed to exactly the `NTFY_TOPIC` in `.env`.                                                                                                   |
 
 ## Verification status and limitations
 
@@ -331,8 +374,8 @@ artwork, sidecar and embedded subtitles, two audio tracks, H.264/MP4, H.264/MKV,
 - A device **revoked in Jellyfin** is signed out within a minute and can sign in again.
 - Favorites toggled in Jellyfin and restored; collections referencing real Jellyfin IDs.
 
-**Automated tests:** 95 unit/integration tests (`npm test`), 9 live Jellyfin tests (`npm run test:jellyfin`),
-and 23 browser end-to-end checks (including TV-remote navigation with an LG webOS user agent) including accessibility audits with axe (`npm run test:e2e`).
+**Automated tests:** 117 unit/integration tests (`npm test`), 9 live Jellyfin tests (`npm run test:jellyfin`),
+and 25 browser end-to-end checks (including TV-remote navigation with an LG webOS user agent) including accessibility audits with axe (`npm run test:e2e`).
 
 **Not verified / limitations — please read:**
 
@@ -352,6 +395,9 @@ and 23 browser end-to-end checks (including TV-remote navigation with an LG webO
   year, runtime, community rating, your rating (ranges), watch status, favorite, title text, and “added within
   N days”. Cast members, languages and resolution are **not** supported as rules yet.
 - Requires a modern browser (2022 or newer: Safari 16.4+, Chrome/Edge 111+, Firefox 113+).
+- **Disc ripping was tested with stand-ins** for MakeMKV, HandBrakeCLI, the disc drive, Jellyfin's API and
+  ntfy (realistic output, including progress, copy-protection decoys, failures and restarts), but not yet
+  with a real disc, MakeMKV, HandBrake or ntfy. The first real disc is the real test: watch the Discs page.
 
 ## Development
 

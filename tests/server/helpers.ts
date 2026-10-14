@@ -1,7 +1,7 @@
 import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
-import { createApp } from '../../src/server/app';
-import type { AppConfig } from '../../src/server/config';
+import { createApp, type AppOptions } from '../../src/server/app';
+import { loadRipperConfig, type AppConfig } from '../../src/server/config';
 import { openDatabase } from '../../src/server/db';
 import type { MediaProvider } from '../../src/server/providers/types';
 
@@ -19,6 +19,7 @@ export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     catalogTtlSeconds: 300,
     clientDir: null,
     version: 'test',
+    ripper: loadRipperConfig({}),
     ...overrides,
   };
 }
@@ -31,13 +32,20 @@ export interface TestServer {
 export async function startServer(
   overrides: Partial<AppConfig> = {},
   provider?: MediaProvider,
-): Promise<TestServer & { db: ReturnType<typeof openDatabase> }> {
+  extra: Partial<AppOptions> = {},
+): Promise<
+  TestServer & {
+    db: ReturnType<typeof openDatabase>;
+    ripper: ReturnType<typeof createApp>['ripper'];
+  }
+> {
   const db = openDatabase(':memory:');
-  const { app } = createApp({
+  const { app, ripper } = createApp({
     config: testConfig(overrides),
     db,
     provider,
     logger: { error: () => undefined, warn: () => undefined, info: () => undefined },
+    ...extra,
   });
   const server: Server = await new Promise((resolve) => {
     const s = app.listen(0, '127.0.0.1', () => resolve(s));
@@ -46,7 +54,12 @@ export async function startServer(
   return {
     url: `http://127.0.0.1:${port}`,
     db,
-    close: () => new Promise((resolve) => server.close(() => resolve())),
+    ripper,
+    close: () =>
+      new Promise((resolve) => {
+        ripper?.stop();
+        server.close(() => resolve());
+      }),
   };
 }
 

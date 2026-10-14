@@ -26,6 +26,12 @@ export default tseslint.config(
     languageOptions: { globals: globals.node },
   },
   {
+    // Command-line stand-ins for MakeMKV/HandBrake used by the browser tests.
+    files: ['e2e/fixtures/**/*.cjs'],
+    languageOptions: { globals: globals.node, sourceType: 'commonjs' },
+    rules: { '@typescript-eslint/no-require-imports': 'off' },
+  },
+  {
     rules: {
       '@typescript-eslint/no-unused-vars': [
         'error',

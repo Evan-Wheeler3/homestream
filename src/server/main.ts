@@ -12,7 +12,7 @@ try {
 }
 
 const db = openDatabase(config.dataDir);
-const { app, provider } = createApp({ config, db });
+const { app, provider, ripper } = createApp({ config, db });
 
 const server = app.listen(config.port, config.host, () => {
   const lanAddresses = Object.values(os.networkInterfaces())
@@ -28,6 +28,13 @@ const server = app.listen(config.port, config.host, () => {
     console.info(`  Media source: Jellyfin at ${provider.serverUrl}`);
   }
   console.info(`  Data directory: ${config.dataDir}`);
+  if (ripper) {
+    ripper.start();
+    const health = ripper.health();
+    console.info(`  Disc ripping: on (watching ${config.ripper.volumesDir} for discs)`);
+    for (const problem of health.problems) console.warn(`    ! ${problem}`);
+    for (const warning of health.warnings) console.info(`    - ${warning}`);
+  }
 });
 
 server.on('error', (error: NodeJS.ErrnoException) => {
@@ -38,6 +45,7 @@ server.on('error', (error: NodeJS.ErrnoException) => {
 });
 
 function shutdown() {
+  ripper?.stop();
   server.close(() => {
     db.close();
     process.exit(0);

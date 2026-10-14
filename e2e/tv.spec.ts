@@ -60,7 +60,8 @@ test('@tv TV mode turns on by itself and the remote drives Home → detail → b
   }
   const start = await focused(page);
   expect(start?.href).toMatch(/^\/movie\//);
-  expect(start?.inView).toBe(true);
+  // Scrolling to the focused poster is animated; it must end with the poster on screen.
+  await expect.poll(async () => (await focused(page))?.inView).toBe(true);
 
   await page.keyboard.press('ArrowRight');
   const next = await focused(page);

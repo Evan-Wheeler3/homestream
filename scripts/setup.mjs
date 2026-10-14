@@ -1,38 +1,12 @@
 // Interactive first-time setup: writes .env and checks that Jellyfin is reachable.
 // Usage: npm run setup            (interactive)
 //        npm run setup -- --check (only test the configured connection)
-import fs from 'node:fs';
 import path from 'node:path';
-import readline from 'node:readline';
+import { readEnv, writeEnv } from './lib/env.mjs';
+import { createPrompt } from './lib/prompt.mjs';
 
 const envPath = path.resolve('.env');
 const examplePath = path.resolve('.env.example');
-
-function readEnv(file) {
-  if (!fs.existsSync(file)) return { lines: [], values: {} };
-  const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/);
-  const values = {};
-  for (const line of lines) {
-    const match = /^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*)\s*$/.exec(line);
-    if (match) values[match[1]] = match[2];
-  }
-  return { lines, values };
-}
-
-function writeEnv(file, baseLines, updates) {
-  const seen = new Set();
-  const lines = baseLines.map((line) => {
-    const match = /^\s*([A-Z_][A-Z0-9_]*)\s*=/.exec(line);
-    if (match && match[1] in updates) {
-      seen.add(match[1]);
-      return `${match[1]}=${updates[match[1]]}`;
-    }
-    return line;
-  });
-  for (const [key, value] of Object.entries(updates))
-    if (!seen.has(key)) lines.push(`${key}=${value}`);
-  fs.writeFileSync(file, lines.join('\n').replace(/\n*$/, '\n'));
-}
 
 async function checkJellyfin(url) {
   try {
@@ -76,30 +50,7 @@ if (process.argv.includes('--check')) {
   process.exit(result.ok ? 0 : 1);
 }
 
-// Queue input lines so answers can also be piped in (scripted installs).
-const rl = readline.createInterface({
-  input: process.stdin,
-  output: process.stdout,
-  terminal: process.stdin.isTTY,
-});
-const queued = [];
-let waiting = null;
-let inputClosed = false;
-rl.on('line', (line) => (waiting ? (waiting(line), (waiting = null)) : queued.push(line)));
-rl.on('close', () => {
-  inputClosed = true;
-  if (waiting) waiting('');
-});
-const ask = async (question, fallback) => {
-  process.stdout.write(`${question}${fallback ? ` [${fallback}]` : ''}: `);
-  const line = queued.length
-    ? queued.shift()
-    : inputClosed
-      ? ''
-      : await new Promise((resolve) => (waiting = resolve));
-  if (!process.stdin.isTTY) process.stdout.write(`${line}\n`);
-  return line.trim() || fallback || '';
-};
+const { ask, exhausted, close } = createPrompt();
 
 console.log('\nWheelhouse setup\n--------------------');
 console.log('Press Enter to accept the value in [brackets].\n');
@@ -122,6 +73,10 @@ for (;;) {
   if (result.ok) break;
   const keep = await ask('Keep this address anyway? (y/n)', 'n');
   if (keep.toLowerCase().startsWith('y')) break;
+  if (exhausted()) {
+    console.log('No more answers to read; nothing was saved.');
+    process.exit(1);
+  }
 }
 
 const port = await ask('Port for Wheelhouse', existing.values.PORT || '8787');
@@ -129,7 +84,7 @@ const lan = await ask(
   'Allow phones, TVs and other computers on your home network to connect? (y/n)',
   (existing.values.HOST ?? '0.0.0.0') === '127.0.0.1' ? 'n' : 'y',
 );
-rl.close();
+close();
 
 const base = existing.lines.length ? existing.lines : template.lines;
 writeEnv(envPath, base, {

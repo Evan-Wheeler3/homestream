@@ -5,7 +5,16 @@ import { defineConfig, devices } from '@playwright/test';
 // End-to-end tests run the production build against the built-in sample library
 // with a throwaway database, so they never touch real data.
 const PORT = 4310;
-const dataDir = path.join(os.tmpdir(), `wheelhouse-e2e-${Date.now()}`);
+// The config is evaluated again in each test worker; reuse the main process's choice.
+const dataDir = (process.env.WH_E2E_DATA ??= path.join(
+  os.tmpdir(),
+  `wheelhouse-e2e-${Date.now()}`,
+));
+// Disc ripping runs against stand-in tools (e2e/fixtures/bin); a test "inserts"
+// a disc by creating a folder in this Volumes directory.
+const volumesDir = path.join(dataDir, 'Volumes');
+process.env.WH_E2E_VOLUMES = volumesDir;
+const fixtures = path.resolve('e2e/fixtures/bin');
 
 export default defineConfig({
   testDir: 'e2e',
@@ -37,7 +46,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'npm run build && node dist/server/index.js',
+    command: `npm run build && node -e "for (const d of ['Volumes','Rips','Movies']) require('fs').mkdirSync(require('path').join(process.env.DATA_DIR, d), { recursive: true })" && node dist/server/index.js`,
     url: `http://127.0.0.1:${PORT}/api/health`,
     reuseExistingServer: false,
     timeout: 120_000,
@@ -47,6 +56,14 @@ export default defineConfig({
       MEDIA_SOURCE: 'mock',
       MOCK_PASSWORD: 'demo',
       DATA_DIR: dataDir,
+      RIPPER_ENABLED: 'true',
+      DISC_VOLUMES_DIR: volumesDir,
+      RIPS_DIR: path.join(dataDir, 'Rips'),
+      MOVIES_DIR: path.join(dataDir, 'Movies'),
+      MAKEMKVCON: path.join(fixtures, 'makemkvcon.cjs'),
+      HANDBRAKE_CLI: path.join(fixtures, 'HandBrakeCLI.cjs'),
+      RIP_MIN_FREE_GB: '0',
+      RIP_POLL_MS: '1000',
     },
   },
 });

@@ -20,6 +20,7 @@ import { CollectionsPage } from './pages/CollectionsPage';
 import { HomePage } from './pages/HomePage';
 import { LoginPage } from './pages/LoginPage';
 import { MovieDetailPage } from './pages/MovieDetailPage';
+import { RipsPage } from './pages/RipsPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { SearchPage } from './pages/SearchPage';
 
@@ -110,6 +111,7 @@ function Protected() {
           <Route path="movie/:id" element={<MovieDetailPage prefs={preferences} />} />
           <Route path="collections" element={<CollectionsPage />} />
           <Route path="collections/:id" element={<CollectionDetailPage prefs={preferences} />} />
+          <Route path="rips" element={<RipsPage session={session.data} />} />
           <Route
             path="settings"
             element={<SettingsPage session={session.data} prefs={preferences} />}

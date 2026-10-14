@@ -472,6 +472,7 @@ export default function SettingsPage({
           ['library', 'Library'],
           ['playback', 'Playback'],
           ['server', 'Server'],
+          ['discs', 'Discs'],
           ['diagnostics', 'Diagnostics'],
           ['account', 'Account'],
         ].map(([id, label]) => (
@@ -653,6 +654,23 @@ export default function SettingsPage({
 
       <Section id="server" title="Server" description="Connection to your media server.">
         <ServerStatusPanel />
+      </Section>
+
+      <Section
+        id="discs"
+        title="Disc ripping"
+        description="Insert a DVD and it’s added to your library automatically."
+      >
+        {session.ripper ? (
+          <ButtonLink to="/rips" icon="disc">
+            Open Discs
+          </ButtonLink>
+        ) : (
+          <p className="field__hint">
+            Not set up. On the computer running Wheelhouse, run <code>npm run setup:ripper</code>{' '}
+            and restart Wheelhouse.
+          </p>
+        )}
       </Section>
 
       <Section

@@ -84,6 +84,34 @@ const MIGRATIONS: string[] = [
     PRIMARY KEY (user_id, item_id)
   );
   `,
+  // 2: disc ripping queue
+  `
+  CREATE TABLE rip_jobs (
+    id TEXT PRIMARY KEY,
+    status TEXT NOT NULL,
+    disc_label TEXT NOT NULL,
+    disc_name TEXT NOT NULL DEFAULT '',
+    mount_path TEXT NOT NULL,
+    drive_index INTEGER,
+    progress REAL,
+    message TEXT,
+    guess TEXT,
+    title TEXT,
+    year INTEGER,
+    tmdb_id TEXT,
+    imdb_id TEXT,
+    candidates TEXT,
+    disc_titles TEXT,
+    title_index INTEGER,
+    source_seconds INTEGER,
+    movie_path TEXT,
+    movie_id TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    finished_at TEXT
+  );
+  CREATE INDEX rip_jobs_status ON rip_jobs(status);
+  `,
 ];
 
 export type Db = DatabaseSync;

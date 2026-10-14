@@ -1,5 +1,7 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import type { MediaSourceKind } from '../shared/types.js';
+import type { RipperConfig } from './ripper/ripper.js';
 
 export interface AppConfig {
   port: number;
@@ -14,6 +16,8 @@ export interface AppConfig {
   catalogTtlSeconds: number;
   clientDir: string | null;
   version: string;
+  /** Automatic disc ripping (off unless RIPPER_ENABLED is set). */
+  ripper: RipperConfig;
 }
 
 function bool(value: string | undefined, fallback: boolean): boolean {
@@ -54,6 +58,47 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     catalogTtlSeconds: Math.max(10, Number(env.CATALOG_TTL_SECONDS ?? 300)),
     clientDir: env.CLIENT_DIR === undefined ? path.resolve('dist/client') : env.CLIENT_DIR || null,
     version: env.npm_package_version ?? APP_VERSION,
+    ripper: loadRipperConfig(env),
+  };
+}
+
+const MAKEMKVCON_MAC = '/Applications/MakeMKV.app/Contents/MacOS/makemkvcon';
+
+function firstExisting(paths: string[]): string {
+  return paths.find((p) => fs.existsSync(p)) ?? paths[0]!;
+}
+
+export function loadRipperConfig(env: NodeJS.ProcessEnv): RipperConfig {
+  const num = (value: string | undefined, fallback: number) => {
+    const n = Number(value);
+    return value != null && value !== '' && Number.isFinite(n) ? n : fallback;
+  };
+  const publicUrl = env.WHEELHOUSE_PUBLIC_URL?.trim().replace(/\/+$/, '') || null;
+  return {
+    enabled: bool(env.RIPPER_ENABLED, false),
+    ripsDir: path.resolve(env.RIPS_DIR || '/Volumes/LaCie/Rips'),
+    moviesDir: path.resolve(env.MOVIES_DIR || '/Volumes/LaCie/Movies'),
+    volumesDir: env.DISC_VOLUMES_DIR || '/Volumes',
+    makemkvcon: env.MAKEMKVCON || firstExisting([MAKEMKVCON_MAC, '/usr/bin/makemkvcon']),
+    handbrakeCli:
+      env.HANDBRAKE_CLI ||
+      firstExisting([
+        '/usr/local/bin/HandBrakeCLI',
+        '/opt/homebrew/bin/HandBrakeCLI',
+        '/Applications/HandBrakeCLI',
+        '/usr/bin/HandBrakeCLI',
+      ]),
+    preset: env.HANDBRAKE_PRESET || 'Fast 1080p30',
+    quality: num(env.HANDBRAKE_QUALITY, 20),
+    minMinutes: num(env.RIP_MIN_MINUTES, 40),
+    minFreeGb: num(env.RIP_MIN_FREE_GB, 15),
+    ntfyServer: env.NTFY_SERVER?.trim() || 'https://ntfy.sh',
+    ntfyTopic: env.NTFY_TOPIC?.trim() || null,
+    publicUrl,
+    jellyfinApiKey: env.JELLYFIN_API_KEY?.trim() || null,
+    pollMs: num(env.RIP_POLL_MS, 5000),
+    importTimeoutMs: num(env.RIP_IMPORT_TIMEOUT_MS, 15 * 60_000),
+    importPollMs: num(env.RIP_IMPORT_POLL_MS, 15_000),
   };
 }
 
