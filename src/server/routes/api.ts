@@ -163,6 +163,29 @@ export function apiRouter(deps: ApiDeps): Router {
     }),
   );
 
+  // The "Who's watching?" screen. Same information Jellyfin's own login screen shows.
+  router.get(
+    '/auth/profiles',
+    route(async () => {
+      try {
+        return { profiles: await provider.publicProfiles() };
+      } catch {
+        return { profiles: [] };
+      }
+    }),
+  );
+
+  router.get(
+    '/auth/profiles/:id/avatar',
+    route(async (req, res) => {
+      const image = await provider.profileImage(String(req.params.id));
+      if (!image) throw notFound();
+      res.setHeader('Content-Type', image.headers.get('content-type') ?? 'image/jpeg');
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      res.send(Buffer.from(await image.arrayBuffer()));
+    }),
+  );
+
   router.get(
     '/auth/session',
     route((req) => {

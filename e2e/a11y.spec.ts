@@ -1,8 +1,10 @@
+import { useLoginForm } from './helpers';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 
 async function signIn(page: Page) {
   await page.goto('/login');
+  await useLoginForm(page);
   await page.getByLabel('Username').fill(`a11y-${Date.now().toString(36)}`);
   await page.getByLabel('Password').fill('demo');
   await page.getByRole('button', { name: 'Sign in' }).click();
@@ -29,6 +31,7 @@ async function audit(page: Page) {
 
 test('login page has no serious accessibility violations', async ({ page }) => {
   await page.goto('/login');
+  await useLoginForm(page);
   expect(await audit(page)).toEqual([]);
 });
 

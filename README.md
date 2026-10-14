@@ -56,6 +56,14 @@ or a large screen — with your own branding, collections, notes and home layout
   and **smart collections** that fill themselves from rules. Collections can be private or shared read-only
   with the rest of the household. Starter collections are created on first sign-in (1990s Cinema, Japanese
   Cinema, Under 100 Minutes, Family Movie Night, Personal Favorites, Movies to Rewatch, Favorite Directors).
+- **Who’s watching?**: the sign-in page shows each household member’s Jellyfin profile (with their Jellyfin
+  avatar); tap yours and enter your password. **Switch profile** in the top bar (or the TV rail) returns to
+  it. Everyone has their own Continue Watching, favorites, collections, notes and ratings.
+  - A profile appears there when _“Hide this user from login screens”_ is off for that user in Jellyfin
+    (_Dashboard → Users → the user → Profile_).
+  - **Kids profile:** create a Jellyfin user for the kids with **no password** (one tap to sign in), and in
+    _Parental control_ set a **maximum allowed rating** (e.g. PG). Jellyfin then hides everything above
+    it, everywhere in Wheelhouse — rows, search, the wheel.
 - **Search**: instant search by title or director; press <kbd>/</kbd> (or <kbd>Ctrl/⌘ K</kbd>) anywhere.
 - **Player**: plays the original file when the device can (direct play) and lets Jellyfin convert it when it
   can’t; resume, progress tracking, subtitles, audio-track switching, keyboard shortcuts, lock-screen controls.

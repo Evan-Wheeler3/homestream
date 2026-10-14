@@ -112,6 +112,14 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX rip_jobs_status ON rip_jobs(status);
   `,
+  // 3: profiles seen on this server (the sample library has no user list of its own)
+  `
+  CREATE TABLE seen_users (
+    user_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    last_seen_at TEXT NOT NULL
+  );
+  `,
 ];
 
 export type Db = DatabaseSync;

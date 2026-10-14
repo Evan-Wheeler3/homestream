@@ -55,6 +55,40 @@ const ITEM = {
 };
 
 describe('JellyfinProvider', () => {
+  it('lists household profiles for the "Who\'s watching?" screen', async () => {
+    const { impl, calls } = fakeFetch((url) =>
+      url.pathname === '/Users/Public'
+        ? json([
+            {
+              Name: 'Evan',
+              Id: 'a1b2c3d4e5f60718293a4b5c6d7e8f90',
+              HasPassword: true,
+              PrimaryImageTag: 'av1',
+            },
+            { Name: 'Kids', Id: 'ffffffffffffffffffffffffffffffff', HasPassword: false },
+            { Name: '', Id: 'broken' },
+          ])
+        : new Response(new Uint8Array([1, 2, 3]), { headers: { 'Content-Type': 'image/png' } }),
+    );
+    const jf = new JellyfinProvider('http://jf.test', '1.0.0', impl);
+    expect(await jf.publicProfiles()).toEqual([
+      {
+        id: 'a1b2c3d4e5f60718293a4b5c6d7e8f90',
+        name: 'Evan',
+        hasPassword: true,
+        image: '/api/auth/profiles/a1b2c3d4e5f60718293a4b5c6d7e8f90/avatar?tag=av1',
+      },
+      { id: 'ffffffffffffffffffffffffffffffff', name: 'Kids', hasPassword: false, image: null },
+    ]);
+    const avatar = await jf.profileImage('a1b2c3d4e5f60718293a4b5c6d7e8f90');
+    expect(avatar?.headers.get('content-type')).toBe('image/png');
+    expect(calls.at(-1)!.url.pathname).toBe(
+      '/Users/a1b2c3d4e5f60718293a4b5c6d7e8f90/Images/Primary',
+    );
+    // Only well-formed ids are passed through to Jellyfin.
+    expect(await jf.profileImage('../System/Info')).toBeNull();
+  });
+
   it('signs in and sends a well-formed MediaBrowser authorization header', async () => {
     const { impl, calls } = fakeFetch(() =>
       json({

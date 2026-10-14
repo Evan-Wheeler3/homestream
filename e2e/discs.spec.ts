@@ -1,3 +1,4 @@
+import { useLoginForm } from './helpers';
 import fs from 'node:fs';
 import path from 'node:path';
 import { expect, test } from '@playwright/test';
@@ -8,6 +9,7 @@ import { expect, test } from '@playwright/test';
 test('inserting a disc: progress, confirm the name, ready to watch', async ({ page }) => {
   const volumes = process.env.WH_E2E_VOLUMES!;
   await page.goto('/login');
+  await useLoginForm(page);
   await page.getByLabel('Username').fill(`discs-${Date.now().toString(36)}`);
   await page.getByLabel('Password').fill('demo');
   await page.getByRole('button', { name: 'Sign in' }).click();

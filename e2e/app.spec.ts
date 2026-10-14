@@ -1,3 +1,4 @@
+import { useLoginForm } from './helpers';
 import { expect, test, type Browser, type Page } from '@playwright/test';
 
 /** A fresh user per test run, so repeated runs against one database stay independent. */
@@ -7,6 +8,7 @@ function uniqueUser(base: string) {
 
 async function signIn(page: Page, user = uniqueUser('e2e')) {
   await page.goto('/login');
+  await useLoginForm(page);
   await page.getByLabel('Username').fill(user);
   await page.getByLabel('Password').fill('demo');
   await page.getByRole('button', { name: 'Sign in' }).click();
@@ -25,6 +27,7 @@ async function newDevice(browser: Browser, user: string) {
 test('sign-in rejects a wrong password and redirects back after success', async ({ page }) => {
   await page.goto('/browse');
   await expect(page).toHaveURL(/\/login/);
+  await useLoginForm(page);
   await page.getByLabel('Username').fill('e2e');
   await page.getByLabel('Password').fill('wrong');
   await page.getByRole('button', { name: 'Sign in' }).click();
@@ -32,6 +35,29 @@ test('sign-in rejects a wrong password and redirects back after success', async 
   await page.getByLabel('Password').fill('demo');
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page).toHaveURL('/browse');
+});
+
+test("who's watching: pick a profile, enter its password, switch profile", async ({ browser }) => {
+  const name = uniqueUser('Profile');
+  const first = await newDevice(browser, name);
+  await first.context.close();
+
+  // Another device: the person shows up on the "Who's watching?" screen.
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await page.goto('/login');
+  await expect(page.getByRole('heading', { name: 'Who’s watching?' })).toBeVisible();
+  await page.getByRole('button', { name }).click();
+  await expect(page.getByLabel('Password')).toBeFocused();
+  await page.getByLabel('Password').fill('demo');
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await expect(page).toHaveURL('/');
+  await expect(page.getByRole('main')).toBeVisible();
+
+  // "Switch profile" goes back to the picker.
+  await page.getByRole('button', { name: /Switch profile/ }).click();
+  await expect(page.getByRole('heading', { name: 'Who’s watching?' })).toBeVisible();
+  await context.close();
 });
 
 test('home shows the hero, Continue Watching and the sample-library label', async ({ page }) => {

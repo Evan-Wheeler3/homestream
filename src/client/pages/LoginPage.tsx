@@ -1,13 +1,32 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router';
-import type { SessionInfo } from '../../shared/types';
+import type { PublicProfile, SessionInfo } from '../../shared/types';
 import { Icon } from '../components/Icon';
-import { Button } from '../components/ui';
+import { Button, Spinner } from '../components/ui';
 import { api, ApiError, errorMessage } from '../lib/api';
 import { cachedAppName } from '../lib/appearance';
 import { connection } from '../lib/connection';
 import { keys } from '../lib/queries';
+
+const AVATAR_COLOURS = ['#d9a856', '#a8513c', '#1f3b4f', '#5d7a5e', '#4a3a5c', '#8a6d3b'];
+
+function Avatar({ profile, size = 'lg' }: { profile: PublicProfile; size?: 'lg' | 'sm' }) {
+  const [failed, setFailed] = useState(false);
+  const colour =
+    AVATAR_COLOURS[
+      [...profile.name].reduce((n, c) => n + c.charCodeAt(0), 0) % AVATAR_COLOURS.length
+    ];
+  return (
+    <span className={`avatar avatar--${size}`} style={{ background: colour }} aria-hidden="true">
+      {profile.image && !failed ? (
+        <img src={profile.image} alt="" onError={() => setFailed(true)} />
+      ) : (
+        profile.name.slice(0, 1).toUpperCase()
+      )}
+    </span>
+  );
+}
 
 interface LocationState {
   from?: string;
@@ -23,7 +42,15 @@ export function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Profile picker: null = show the picker (when there are profiles), 'manual' = plain form.
+  const [chosen, setChosen] = useState<PublicProfile | 'manual' | null>(null);
   const appName = cachedAppName();
+
+  const profiles = useQuery({
+    queryKey: ['profiles'],
+    queryFn: () => api<{ profiles: PublicProfile[] }>('/auth/profiles'),
+    retry: false,
+  });
 
   const health = useQuery({
     queryKey: ['health'],
@@ -38,14 +65,13 @@ export function LoginPage() {
 
   if (existing.data && !busy) return <Navigate to={state.from ?? '/'} replace />;
 
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
+  const signIn = async (user: string, pass: string) => {
     setBusy(true);
     setError(null);
     try {
       const session = await api<SessionInfo>('/auth/login', {
         method: 'POST',
-        body: { username, password },
+        body: { username: user, password: pass },
       });
       connection.clearAuthLost();
       qc.clear();
@@ -60,6 +86,23 @@ export function LoginPage() {
       setBusy(false);
     }
   };
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    void signIn(typeof chosen === 'object' && chosen ? chosen.name : username, password);
+  };
+
+  const pick = (profile: PublicProfile) => {
+    setChosen(profile);
+    setPassword('');
+    setError(null);
+    // No password on this profile (e.g. a kids profile): straight in.
+    if (!profile.hasPassword) void signIn(profile.name, '');
+  };
+
+  const list = profiles.data?.profiles ?? [];
+  const showPicker = chosen === null && list.length > 0;
+  const profile = typeof chosen === 'object' ? chosen : null;
 
   const source = health.data?.source;
 
@@ -91,41 +134,98 @@ export function LoginPage() {
           </p>
         )}
 
-        <form className="login__form" onSubmit={submit} noValidate>
-          <label className="field__label" htmlFor="login-user">
-            Username
-          </label>
-          <input
-            id="login-user"
-            className="input"
-            autoComplete="username"
-            autoCapitalize="none"
-            autoCorrect="off"
-            spellCheck={false}
-            required
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-          />
-          <label className="field__label" htmlFor="login-pass">
-            Password
-          </label>
-          <input
-            id="login-pass"
-            className="input"
-            type="password"
-            autoComplete="current-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-          {error && (
-            <p className="login__error" role="alert">
-              <Icon name="alert" size={18} /> {error}
-            </p>
-          )}
-          <Button type="submit" variant="primary" size="lg" busy={busy} disabled={!username.trim()}>
-            Sign in
-          </Button>
-        </form>
+        {profiles.isPending ? (
+          <div className="profiles">
+            <Spinner label="Loading profiles" />
+          </div>
+        ) : showPicker ? (
+          <section className="profiles" aria-labelledby="who-title">
+            <h2 id="who-title" className="profiles__title">
+              Who’s watching?
+            </h2>
+            <ul className="profiles__list">
+              {list.map((p) => (
+                <li key={p.id}>
+                  <button
+                    type="button"
+                    className="profile"
+                    onClick={() => pick(p)}
+                    disabled={busy}
+                    data-tv-focus={p === list[0] ? '' : undefined}
+                  >
+                    <Avatar profile={p} />
+                    <span className="profile__name">{p.name}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+            {error && (
+              <p className="login__error" role="alert">
+                <Icon name="alert" size={18} /> {error}
+              </p>
+            )}
+            <button type="button" className="link-btn" onClick={() => setChosen('manual')}>
+              Sign in as someone else
+            </button>
+          </section>
+        ) : (
+          <form className="login__form" onSubmit={submit} noValidate>
+            {profile ? (
+              <div className="login__who">
+                <Avatar profile={profile} size="sm" />
+                <span>{profile.name}</span>
+                <button type="button" className="link-btn" onClick={() => setChosen(null)}>
+                  Not you?
+                </button>
+                {/* Lets password managers match the account. */}
+                <input type="hidden" autoComplete="username" value={profile.name} readOnly />
+              </div>
+            ) : (
+              <>
+                <label className="field__label" htmlFor="login-user">
+                  Username
+                </label>
+                <input
+                  id="login-user"
+                  className="input"
+                  autoComplete="username"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  required
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                />
+              </>
+            )}
+            <label className="field__label" htmlFor="login-pass">
+              Password
+            </label>
+            <input
+              id="login-pass"
+              className="input"
+              type="password"
+              autoFocus={Boolean(profile)}
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+            {error && (
+              <p className="login__error" role="alert">
+                <Icon name="alert" size={18} /> {error}
+              </p>
+            )}
+            <Button
+              type="submit"
+              variant="primary"
+              size="lg"
+              busy={busy}
+              disabled={!profile && !username.trim()}
+            >
+              Sign in
+            </Button>
+          </form>
+        )}
         <p className="login__foot faint">
           {source === 'jellyfin'
             ? 'Accounts are managed in your Jellyfin dashboard.'

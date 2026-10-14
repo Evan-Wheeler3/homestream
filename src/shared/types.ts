@@ -371,6 +371,15 @@ export interface SessionUser {
   isAdmin: boolean;
 }
 
+/** A household member shown on the "Who's watching?" screen. */
+export interface PublicProfile {
+  id: string;
+  name: string;
+  hasPassword: boolean;
+  /** Same-origin avatar URL, or null for initials. */
+  image: string | null;
+}
+
 export interface SessionInfo {
   user: SessionUser;
   source: MediaSourceKind;

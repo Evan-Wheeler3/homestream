@@ -6,6 +6,7 @@ import type {
   PlaybackInfo,
   PlaybackReport,
   PlaybackRequest,
+  PublicProfile,
 } from '../../shared/types.js';
 import type { Db } from '../db.js';
 import { ApiError } from '../errors.js';
@@ -73,7 +74,25 @@ export class MockProvider implements MediaProvider {
     }
     const id = `mock-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
     this.seedUserState(id);
+    this.db
+      .prepare(
+        `INSERT INTO seen_users (user_id, name, last_seen_at) VALUES (?, ?, ?)
+         ON CONFLICT(user_id) DO UPDATE SET name = excluded.name, last_seen_at = excluded.last_seen_at`,
+      )
+      .run(id, name, new Date().toISOString());
     return { user: { id, name, isAdmin: true }, token: null };
+  }
+
+  /** Sample mode: the people who have signed in here recently. */
+  async publicProfiles(): Promise<PublicProfile[]> {
+    const rows = this.db
+      .prepare('SELECT user_id, name FROM seen_users ORDER BY last_seen_at DESC LIMIT 8')
+      .all() as { user_id: string; name: string }[];
+    return rows.map((r) => ({ id: r.user_id, name: r.name, hasPassword: true, image: null }));
+  }
+
+  async profileImage(): Promise<Response | null> {
+    return null;
   }
 
   /** Give a new sample user a little history so every home row has content. */

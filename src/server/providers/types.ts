@@ -5,6 +5,7 @@ import type {
   PlaybackInfo,
   PlaybackReport,
   PlaybackRequest,
+  PublicProfile,
   SessionUser,
 } from '../../shared/types.js';
 
@@ -46,6 +47,10 @@ export interface MediaProvider {
     device: { deviceId: string; deviceName: string },
   ): Promise<AuthResult>;
   logout(ctx: UserContext): Promise<void>;
+  /** Household members for the profile picker (no sign-in needed). */
+  publicProfiles(): Promise<PublicProfile[]>;
+  /** A profile's avatar image, if it has one. */
+  profileImage(id: string): Promise<Response | null>;
   /** Throws ApiError('SESSION_EXPIRED') when the token is no longer valid. */
   validate(ctx: UserContext): Promise<void>;
   serverInfo(): Promise<MediaServerInfo>;

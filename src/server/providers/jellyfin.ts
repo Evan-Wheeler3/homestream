@@ -8,6 +8,7 @@ import type {
   PlaybackInfo,
   PlaybackReport,
   PlaybackRequest,
+  PublicProfile,
   Person,
   SubtitleDelivery,
 } from '../../shared/types.js';
@@ -181,6 +182,38 @@ export class JellyfinProvider implements MediaProvider {
 
   async logout(ctx: UserContext): Promise<void> {
     await this.request('/Sessions/Logout', { method: 'POST', ctx }).catch(() => undefined);
+  }
+
+  /** Users Jellyfin shows on its own login screen (not hidden in their profile settings). */
+  async publicProfiles(): Promise<PublicProfile[]> {
+    const users = arr(await this.json('/Users/Public', { timeoutMs: 6000 }));
+    return users
+      .filter((u) => str(u.Id) && str(u.Name))
+      .map((u) => {
+        const id = String(u.Id);
+        const tag = str(u.PrimaryImageTag);
+        return {
+          id,
+          name: String(u.Name),
+          hasPassword: u.HasPassword !== false,
+          image: tag
+            ? `/api/auth/profiles/${encodeURIComponent(id)}/avatar?tag=${encodeURIComponent(tag)}`
+            : null,
+        };
+      });
+  }
+
+  async profileImage(id: string): Promise<Response | null> {
+    if (!/^[0-9a-f-]{32,36}$/i.test(id)) return null;
+    try {
+      const res = await this.fetchImpl(
+        `${this.serverUrl}/Users/${id}/Images/Primary?maxWidth=256&quality=90`,
+        { signal: AbortSignal.timeout(8000) },
+      );
+      return res.ok ? res : null;
+    } catch {
+      return null;
+    }
   }
 
   async validate(ctx: UserContext): Promise<void> {

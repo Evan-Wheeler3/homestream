@@ -1,3 +1,4 @@
+import { useLoginForm } from './helpers';
 import { expect, test, type Page } from '@playwright/test';
 
 // Runs in the "tv" project: an LG webOS browser user agent at 1920×1080.
@@ -5,6 +6,7 @@ import { expect, test, type Page } from '@playwright/test';
 async function signIn(page: Page) {
   const user = `tv-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
   await page.goto('/login');
+  await useLoginForm(page);
   await page.getByLabel('Username').fill(user);
   await page.getByLabel('Password').fill('demo');
   await page.getByRole('button', { name: 'Sign in' }).click();

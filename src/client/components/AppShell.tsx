@@ -120,7 +120,7 @@ function TvRail({
         <span className="tv-rail__avatar" aria-hidden="true">
           {session.user.name.slice(0, 1).toUpperCase()}
         </span>
-        <span className="tv-rail__label">Sign out {session.user.name}</span>
+        <span className="tv-rail__label">{session.user.name} · Switch profile</span>
       </button>
     </nav>
   );
@@ -255,7 +255,7 @@ export function AppShell({ session, prefs }: { session: SessionInfo; prefs: Pref
           </NavLink>
           <IconButton
             icon="logout"
-            label={`Sign out ${session.user.name}`}
+            label={`Switch profile (signed in as ${session.user.name})`}
             className="topbar__desktop-only"
             onClick={signOut}
           />
