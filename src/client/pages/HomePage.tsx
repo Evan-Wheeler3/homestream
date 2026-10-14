@@ -1,6 +1,7 @@
 import { Link } from 'react-router';
 import type { HomePayload, Movie, Preferences } from '../../shared/types';
 import { CollectionCard } from '../components/CollectionCard';
+import { Icon } from '../components/Icon';
 import { Hero, HeroSkeleton } from '../components/Hero';
 import { ContinueCard, PosterCard, Row } from '../components/movies';
 import { Button, ButtonLink, Skeleton, StatusView } from '../components/ui';
@@ -79,6 +80,18 @@ function Section({ section }: { section: HomePayload['sections'][number] }) {
             </li>
           ))}
         </Row>
+      );
+    case 'yearInReview':
+      return (
+        <Link to="/wrapped" className="year-promo">
+          <span className="eyebrow">Wheelhouse Wrapped</span>
+          <span className="year-promo__title display">Your {section.year} in movies</span>
+          <span className="year-promo__stats">
+            {plural(section.movies, 'movie')} ·{' '}
+            {section.hours >= 10 ? Math.round(section.hours) : section.hours} hours
+          </span>
+          <Icon name="chevronRight" size={22} />
+        </Link>
       );
     case 'randomPick':
       return <SpinPromo movie={section.movie} />;

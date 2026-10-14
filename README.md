@@ -68,6 +68,10 @@ or a large screen — with your own branding, collections, notes and home layout
   Watchlist_ row on Home, as a _Watchlist_ quick filter on Browse, and as a pool for the wheel.
 - **Because you watched…**: a Home row of unwatched films like your most recent watch (same director, cast,
   genres and era first).
+- **Wheelhouse Wrapped** (_/wrapped_, and a Home card): your year in movies — films and hours watched,
+  favourite genre and decade, month-by-month, top directors and actors, longest sit, most rewatched — for
+  any year or all time. Wheelhouse keeps its own viewing history from its player; movies watched elsewhere
+  count once at their last-played date.
 - **People**: every director and actor name opens their page: everything of theirs in your library
   (Directed / Starring), with “Spin their movies”. Search finds people too.
 - **Search**: instant search by title or director; press <kbd>/</kbd> (or <kbd>Ctrl/⌘ K</kbd>) anywhere.

@@ -10,6 +10,7 @@ import type {
   Preferences,
   SmartRules,
 } from '../shared/types.js';
+import type { WatchEvent } from '../shared/wrapped.js';
 import { nowIso, transaction, type Db } from './db.js';
 import { ApiError, badRequest, notFound } from './errors.js';
 
@@ -99,6 +100,29 @@ export class Store {
 
   // ---------------------------------------------------------------------------
   // Personal ratings & notes
+
+  recordWatch(userId: string, itemId: string, seconds: number, finished: boolean) {
+    this.db
+      .prepare(
+        'INSERT INTO watch_events (user_id, item_id, watched_at, seconds, finished) VALUES (?, ?, ?, ?, ?)',
+      )
+      .run(userId, itemId, nowIso(), Math.round(seconds), finished ? 1 : 0);
+  }
+
+  watchEvents(userId: string): WatchEvent[] {
+    return (
+      this.db
+        .prepare(
+          'SELECT item_id, watched_at, seconds, finished FROM watch_events WHERE user_id = ? ORDER BY watched_at',
+        )
+        .all(userId) as { item_id: string; watched_at: string; seconds: number; finished: number }[]
+    ).map((r) => ({
+      itemId: r.item_id,
+      at: r.watched_at,
+      seconds: r.seconds,
+      finished: r.finished === 1,
+    }));
+  }
 
   /** Watchlist item ids, most recently added first. */
   watchlist(userId: string): string[] {

@@ -7,6 +7,7 @@ import {
   seededRandom,
   shuffle,
 } from '../shared/catalog.js';
+import { buildWrapped } from '../shared/wrapped.js';
 import { BUILTIN_SECTIONS } from '../shared/preferences.js';
 import { evaluateSmartCollection } from '../shared/rules.js';
 import type {
@@ -59,6 +60,11 @@ export class LibraryService {
   async watchlist(ctx: UserContext): Promise<Movie[]> {
     const snap = await this.snapshot(ctx);
     return this.pool(ctx, snap.movies, { watchlist: true });
+  }
+
+  async wrapped(ctx: UserContext, year: number | null) {
+    const snap = await this.snapshot(ctx);
+    return buildWrapped(snap.movies, this.store.watchEvents(ctx.userId), year);
   }
 
   setWatchlist(ctx: UserContext, id: string, on: boolean) {
@@ -345,6 +351,20 @@ export class LibraryService {
           const list = (await this.listCollections(ctx)).filter((c) => c.itemCount > 0);
           if (list.length)
             sections.push({ type: 'collections', id: 'collections', collections: list });
+          break;
+        }
+        case 'yearInReview': {
+          const year = new Date().getFullYear();
+          const w = buildWrapped(snap.movies, this.store.watchEvents(ctx.userId), year);
+          if (w.moviesWatched > 0) {
+            sections.push({
+              type: 'yearInReview',
+              id: 'yearInReview',
+              year,
+              movies: w.moviesWatched,
+              hours: w.hoursWatched,
+            });
+          }
           break;
         }
         case 'randomPick':

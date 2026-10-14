@@ -270,6 +270,7 @@ export type HomeSectionId =
   | 'unwatched'
   | 'watchlist'
   | 'becauseYouWatched'
+  | 'yearInReview'
   | `collection:${string}`;
 
 export interface HomeSectionPref {
@@ -329,6 +330,7 @@ export interface HomePayload {
         decades: { decade: number; count: number; poster: string | null }[];
       }
     | { type: 'randomPick'; id: 'randomPick'; movie: Movie | null }
+    | { type: 'yearInReview'; id: 'yearInReview'; year: number; movies: number; hours: number }
   )[];
   libraryCount: number;
 }

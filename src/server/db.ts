@@ -129,6 +129,18 @@ const MIGRATIONS: string[] = [
     PRIMARY KEY (user_id, item_id)
   );
   `,
+  // 5: watch history recorded by Wheelhouse's own player (for Wrapped)
+  `
+  CREATE TABLE watch_events (
+    id INTEGER PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    item_id TEXT NOT NULL,
+    watched_at TEXT NOT NULL,
+    seconds INTEGER NOT NULL,
+    finished INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE INDEX watch_events_user ON watch_events(user_id, watched_at);
+  `,
 ];
 
 export type Db = DatabaseSync;

@@ -44,6 +44,8 @@ for (const path of [
   '/settings',
   '/rips',
   '/spin',
+  '/wrapped',
+  '/person/Akira%20Kurosawa',
 ]) {
   test(`${path} has no serious accessibility violations`, async ({ page }) => {
     await signIn(page);

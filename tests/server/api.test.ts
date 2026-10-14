@@ -129,6 +129,37 @@ describe('catalog', () => {
     expect((await client.get('/api/movies/random?genre=Nonexistent')).json.movie).toBeNull();
   });
 
+  it('records watching through the player and sums it up in Wrapped', async () => {
+    const client = new Client(server.url);
+    await client.login(`wrap-${Date.now()}`);
+    const report = { itemId: 'ugetsu-1953', playSessionId: 'ps-1', method: 'DirectPlay' };
+    await client.post('/api/playback/start', { ...report, positionSeconds: 0 });
+    await client.post('/api/playback/stop', { ...report, positionSeconds: 30 * 60 });
+    // Too short to count.
+    await client.post('/api/playback/start', {
+      ...report,
+      itemId: 'heat-1995',
+      playSessionId: 'ps-2',
+      positionSeconds: 0,
+    });
+    await client.post('/api/playback/stop', {
+      ...report,
+      itemId: 'heat-1995',
+      playSessionId: 'ps-2',
+      positionSeconds: 20,
+    });
+    const w = (await client.get('/api/wrapped')).json;
+    expect(w.year).toBe(new Date().getFullYear());
+    expect(w.movies.map((m: { id: string }) => m.id)).toContain('ugetsu-1953');
+    expect(w.movies.map((m: { id: string }) => m.id)).not.toContain('heat-1995');
+    expect(w.hoursWatched).toBeGreaterThanOrEqual(0.5);
+    const home = (await client.get('/api/home')).json;
+    expect(home.sections.find((s: { type: string }) => s.type === 'yearInReview')).toMatchObject({
+      year: new Date().getFullYear(),
+    });
+    expect((await client.get('/api/wrapped?year=all')).json.year).toBeNull();
+  });
+
   it('keeps a per-user watchlist that drives a home row, a filter and the wheel', async () => {
     const client = new Client(server.url);
     await client.login(`wl-${Date.now()}`);

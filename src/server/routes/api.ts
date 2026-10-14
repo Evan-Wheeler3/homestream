@@ -120,6 +120,8 @@ export function apiRouter(deps: ApiDeps): Router {
   const { provider, store, catalog } = library;
   const router = Router();
   const limiter = new LoginRateLimiter();
+  /** Play-session id → position when it started. */
+  const sessionStarts = new Map<string, number>();
 
   // ---------------------------------------------------------------------------
   // Public
@@ -320,6 +322,16 @@ export function apiRouter(deps: ApiDeps): Router {
     route((req) => library.facets(ctxOf(req))),
   );
 
+  router.get(
+    '/wrapped',
+    route(async (req) => {
+      const raw = String(req.query.year ?? '');
+      const year =
+        raw === 'all' ? null : /^\d{4}$/.test(raw) ? Number(raw) : new Date().getFullYear();
+      return library.wrapped(ctxOf(req), year);
+    }),
+  );
+
   // Watchlist ---------------------------------------------------------------
 
   router.get(
@@ -462,10 +474,27 @@ export function apiRouter(deps: ApiDeps): Router {
           subtitleStreamIndex: raw.subtitleStreamIndex ?? null,
         };
         await provider.reportPlayback(ctx, event, report);
+        // Remember where each play session started, to know how much was watched.
+        if (event === 'start' && report.playSessionId) {
+          sessionStarts.set(report.playSessionId, report.positionSeconds);
+          if (sessionStarts.size > 500) sessionStarts.delete(sessionStarts.keys().next().value!);
+        }
         if (event === 'stop') {
           // Jellyfin decides resume/played state; read it back into the index.
           const state = await provider.getUserState(ctx, report.itemId).catch(() => null);
           if (state) catalog.updateUserState(ctx.userId, report.itemId, state);
+          const started = sessionStarts.get(report.playSessionId);
+          sessionStarts.delete(report.playSessionId);
+          const watched = started == null ? 0 : report.positionSeconds - started;
+          // A minute or more counts toward your history (Wheelhouse Wrapped).
+          if (watched >= 60 || state?.played) {
+            store.recordWatch(
+              ctx.userId,
+              report.itemId,
+              Math.max(0, watched),
+              Boolean(state?.played),
+            );
+          }
           return { ok: true, user: state };
         }
         return { ok: true };

@@ -221,6 +221,34 @@ test('watchlist: add from the movie page, see it on Home, spin from it', async (
   ).toHaveCount(2);
 });
 
+test('Wrapped: the year in movies, from the Home card', async ({ page }) => {
+  await signIn(page);
+  await page.evaluate(async () => {
+    const h = { 'Content-Type': 'application/json', 'X-Requested-With': 'wheelhouse' };
+    const b = { itemId: 'seven-samurai-1954', playSessionId: 'e2e-wrapped', method: 'DirectPlay' };
+    await fetch('/api/playback/start', {
+      method: 'POST',
+      headers: h,
+      body: JSON.stringify({ ...b, positionSeconds: 0 }),
+    });
+    await fetch('/api/playback/stop', {
+      method: 'POST',
+      headers: h,
+      body: JSON.stringify({ ...b, positionSeconds: 3600 }),
+    });
+  });
+  await page.goto('/');
+  await page.getByRole('link', { name: /Your \d{4} in movies/ }).click();
+  await expect(page).toHaveURL(/\/wrapped/);
+  await expect(page.getByRole('heading', { level: 1, name: /Your \d{4} in movies/ })).toBeVisible();
+  await expect(page.getByText('hours watched')).toBeVisible();
+  await expect(
+    page.getByRole('list', { name: 'Movies watched' }).getByRole('link', { name: /Seven Samurai/ }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'All time' }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'All your movies' })).toBeVisible();
+});
+
 test('detail: favorite, rating and notes persist after reload', async ({ page }) => {
   await signIn(page);
   await page.goto('/movie/ugetsu-1953');
