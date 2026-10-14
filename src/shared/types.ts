@@ -45,6 +45,8 @@ export interface Movie {
   runtimeMinutes: number | null;
   genres: string[];
   directors: string[];
+  /** Top-billed actors (names only; full cast with photos is on MovieDetail). */
+  actors: string[];
   studios: string[];
   tags: string[];
   countries: string[];
@@ -122,6 +124,7 @@ export interface MovieQuery {
   q?: string;
   genres?: string[];
   directors?: string[];
+  actors?: string[];
   countries?: string[];
   tags?: string[];
   studios?: string[];
@@ -136,6 +139,19 @@ export interface MovieQuery {
   dir?: SortDir;
   offset?: number;
   limit?: number;
+}
+
+/** A director or actor, with what of theirs is in the library. */
+export interface PersonSummary {
+  name: string;
+  directed: number;
+  actedIn: number;
+}
+
+export interface PersonPage {
+  name: string;
+  directed: Movie[];
+  actedIn: Movie[];
 }
 
 export interface Page<T> {

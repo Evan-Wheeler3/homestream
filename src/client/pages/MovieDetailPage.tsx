@@ -47,6 +47,22 @@ function browseLink(key: string, value: string) {
   return `/browse?${key}=${encodeURIComponent(value)}`;
 }
 
+/** Names that open the person's page. */
+function PeopleLinks({ names }: { names: string[] }) {
+  return (
+    <>
+      {names.map((name, i) => (
+        <span key={name}>
+          {i > 0 && ', '}
+          <Link to={`/person/${encodeURIComponent(name)}`} className="text-link">
+            {name}
+          </Link>
+        </span>
+      ))}
+    </>
+  );
+}
+
 function LinkList({ items, param }: { items: string[]; param: string }) {
   return (
     <>
@@ -207,7 +223,7 @@ export function MovieDetailPage({ prefs }: { prefs: Preferences }) {
   if (m.directors.length)
     facts.push([
       m.directors.length > 1 ? 'Directors' : 'Director',
-      <LinkList items={m.directors} param="director" />,
+      <PeopleLinks names={m.directors} />,
     ]);
   if (m.writers.length) facts.push(['Writers', m.writers.join(', ')]);
   if (m.genres.length) facts.push(['Genres', <LinkList items={m.genres} param="genre" />]);
@@ -355,7 +371,11 @@ export function MovieDetailPage({ prefs }: { prefs: Preferences }) {
           <Row title="Cast" id="cast">
             {m.cast.map((person) => (
               <li key={`${person.name}-${person.role}`} className="person">
-                <div className="person__link">
+                <Link
+                  className="person__link"
+                  to={`/person/${encodeURIComponent(person.name)}`}
+                  state={person.image ? { photo: person.image } : undefined}
+                >
                   <span className="person__photo">
                     {person.image ? (
                       <img
@@ -376,7 +396,7 @@ export function MovieDetailPage({ prefs }: { prefs: Preferences }) {
                   </span>
                   <span className="person__name">{person.name}</span>
                   {person.role && <span className="person__role">{person.role}</span>}
-                </div>
+                </Link>
               </li>
             ))}
           </Row>

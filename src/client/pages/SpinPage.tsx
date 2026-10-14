@@ -458,6 +458,7 @@ function describeFilters(q: MovieQuery): string | null {
   if (q.q) parts.push(`matching “${q.q}”`);
   if (q.genres?.length) parts.push(q.genres.join(' or ').toLowerCase());
   if (q.directors?.length) parts.push(`directed by ${q.directors.join(' or ')}`);
+  if (q.actors?.length) parts.push(`starring ${q.actors.join(' or ')}`);
   const runtime = runtimeLabel(q);
   if (runtime) parts.push(runtime.toLowerCase());
   const decade = selectedDecade(q);

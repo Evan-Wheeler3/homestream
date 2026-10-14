@@ -174,6 +174,29 @@ test('detail: title logo art and the trailer player', async ({ page }) => {
   await expect(dialog).toBeHidden();
 });
 
+test('people: director and actor pages, from the movie page and from search', async ({ page }) => {
+  await signIn(page);
+  await page.goto('/movie/the-general-1926');
+  await page.getByRole('link', { name: 'Buster Keaton' }).first().click();
+  await expect(page).toHaveURL(/\/person\/Buster%20Keaton/);
+  await expect(page.getByRole('heading', { name: 'Buster Keaton', level: 1 })).toBeVisible();
+  const directed = page.getByRole('list', { name: 'Directed by Buster Keaton' });
+  await expect(directed.getByRole('link', { name: /Sherlock Jr/ })).toBeVisible();
+  await page.getByRole('link', { name: 'Spin their movies' }).click();
+  await expect(page).toHaveURL(/\/spin\?(director|actor)=Buster/);
+
+  await page.goto('/search');
+  await page.getByPlaceholder('Titles, directors, actors…').fill('mifune');
+  await page
+    .getByRole('region', { name: 'People' })
+    .getByRole('link', { name: /Toshiro Mifune/ })
+    .click();
+  await expect(page.getByRole('heading', { name: 'Toshiro Mifune', level: 1 })).toBeVisible();
+  await expect(
+    page.getByRole('list', { name: 'Starring Toshiro Mifune' }).getByRole('listitem'),
+  ).toHaveCount(2);
+});
+
 test('detail: favorite, rating and notes persist after reload', async ({ page }) => {
   await signIn(page);
   await page.goto('/movie/ugetsu-1953');

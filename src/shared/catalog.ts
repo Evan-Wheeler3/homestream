@@ -1,4 +1,14 @@
-import type { Facets, FacetValue, Movie, MovieQuery, Page, SortDir, SortField } from './types.js';
+import type {
+  Facets,
+  FacetValue,
+  Movie,
+  MovieQuery,
+  Page,
+  SortDir,
+  SortField,
+  PersonPage,
+  PersonSummary,
+} from './types.js';
 
 /** Lowercase, strip diacritics and punctuation so "Amélie" matches "amelie". */
 export function normalizeText(value: string): string {
@@ -40,6 +50,7 @@ export function matchesQuery(movie: Movie, query: MovieQuery): boolean {
   if (query.q && searchScore(movie, query.q) === 0) return false;
   if (!anyOf(movie.genres, query.genres)) return false;
   if (!anyOf(movie.directors, query.directors)) return false;
+  if (!anyOf(movie.actors, query.actors)) return false;
   if (!anyOf(movie.countries, query.countries)) return false;
   if (!anyOf(movie.tags, query.tags)) return false;
   if (!anyOf(movie.studios, query.studios)) return false;
@@ -182,4 +193,43 @@ export function shuffle<T>(items: T[], rand: () => number = Math.random): T[] {
     [copy[i], copy[j]] = [copy[j] as T, copy[i] as T];
   }
   return copy;
+}
+
+// -----------------------------------------------------------------------------
+// People
+
+/** Directors and actors whose names match `q`, with how much of their work is here. */
+export function searchPeople(movies: Movie[], q: string, limit = 8): PersonSummary[] {
+  const needle = normalizeText(q);
+  if (!needle) return [];
+  const people = new Map<string, PersonSummary>();
+  const add = (name: string, role: 'directed' | 'actedIn') => {
+    const key = normalizeText(name);
+    if (!key.split(' ').some((w) => w.startsWith(needle)) && !key.startsWith(needle)) return;
+    const entry = people.get(key) ?? { name, directed: 0, actedIn: 0 };
+    entry[role]++;
+    people.set(key, entry);
+  };
+  for (const m of movies) {
+    m.directors.forEach((d) => add(d, 'directed'));
+    m.actors.forEach((a) => add(a, 'actedIn'));
+  }
+  return [...people.values()]
+    .sort(
+      (a, b) => b.directed + b.actedIn - (a.directed + a.actedIn) || a.name.localeCompare(b.name),
+    )
+    .slice(0, limit);
+}
+
+/** Everything in the library a person directed or acted in, newest first. */
+export function personFilmography(movies: Movie[], name: string): PersonPage {
+  const key = normalizeText(name);
+  const byYear = (a: Movie, b: Movie) => (b.year ?? 0) - (a.year ?? 0);
+  const directed = movies.filter((m) => m.directors.some((d) => normalizeText(d) === key));
+  const actedIn = movies.filter((m) => m.actors.some((a) => normalizeText(a) === key));
+  const display =
+    [...directed.flatMap((m) => m.directors), ...actedIn.flatMap((m) => m.actors)].find(
+      (n) => normalizeText(n) === key,
+    ) ?? name;
+  return { name: display, directed: directed.sort(byYear), actedIn: actedIn.sort(byYear) };
 }

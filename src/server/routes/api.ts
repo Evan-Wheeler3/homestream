@@ -20,6 +20,7 @@ import {
   SESSION_COOKIE,
   type SessionStore,
 } from '../auth.js';
+import { personFilmography, searchPeople } from '../../shared/catalog.js';
 import { evaluateSmartCollection, parseSmartRules } from '../../shared/rules.js';
 import type { AppConfig } from '../config.js';
 import { ApiError, badRequest, notFound } from '../errors.js';
@@ -76,6 +77,7 @@ export function parseMovieQuery(q: Request['query']): MovieQuery {
     q: typeof q.q === 'string' && q.q.trim() ? q.q.trim().slice(0, 200) : undefined,
     genres: list(q.genre),
     directors: list(q.director),
+    actors: list(q.actor),
     countries: list(q.country),
     tags: list(q.tag),
     studios: list(q.studio),
@@ -315,6 +317,29 @@ export function apiRouter(deps: ApiDeps): Router {
   router.get(
     '/movies/facets',
     route((req) => library.facets(ctxOf(req))),
+  );
+
+  // People ------------------------------------------------------------------
+
+  router.get(
+    '/people',
+    route(async (req) => {
+      const q = typeof req.query.q === 'string' ? req.query.q.slice(0, 100) : '';
+      const snap = await library.snapshot(ctxOf(req));
+      return { people: searchPeople(snap.movies, q) };
+    }),
+  );
+
+  router.get(
+    '/people/:name',
+    route(async (req) => {
+      const name = String(req.params.name ?? '').slice(0, 200);
+      const snap = await library.snapshot(ctxOf(req));
+      const page = personFilmography(snap.movies, name);
+      if (!page.directed.length && !page.actedIn.length)
+        throw notFound('No movies with this person');
+      return page;
+    }),
   );
 
   router.get(

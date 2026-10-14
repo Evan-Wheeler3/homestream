@@ -50,6 +50,7 @@ export function movieQueryString(query: MovieQuery): string {
   if (query.q) params.set('q', query.q);
   multi('genre', query.genres);
   multi('director', query.directors);
+  multi('actor', query.actors);
   multi('country', query.countries);
   multi('tag', query.tags);
   multi('studio', query.studios);

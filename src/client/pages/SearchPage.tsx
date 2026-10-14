@@ -1,9 +1,11 @@
+import { useQuery } from '@tanstack/react-query';
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import type { PersonSummary } from '../../shared/types';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { Icon } from '../components/Icon';
 import { PosterCard, PosterGrid, PosterGridSkeleton } from '../components/movies';
 import { Button, Chip, Spinner, StatusView } from '../components/ui';
-import { errorMessage } from '../lib/api';
+import { api, errorMessage } from '../lib/api';
 import { plural } from '../lib/format';
 import { useDebounced, useInfiniteSentinel } from '../lib/hooks';
 import { useFacets, useMovies } from '../lib/queries';
@@ -37,6 +39,12 @@ export function SearchPage() {
   const navigate = useNavigate();
   const facets = useFacets();
   const results = useMovies({ q: query }, query.length > 0);
+  const people = useQuery({
+    queryKey: ['people', query],
+    queryFn: () => api<{ people: PersonSummary[] }>(`/people?q=${encodeURIComponent(query)}`),
+    enabled: query.length > 1,
+  });
+  const matches = query.length > 1 ? (people.data?.people ?? []) : [];
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -86,7 +94,7 @@ export function SearchPage() {
           <input
             ref={inputRef}
             type="search"
-            placeholder="Titles, directors…"
+            placeholder="Titles, directors, actors…"
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={onKeyDown}
@@ -160,12 +168,43 @@ export function SearchPage() {
         >
           <p>{errorMessage(results.error)}</p>
         </StatusView>
-      ) : items.length === 0 ? (
+      ) : items.length === 0 && matches.length === 0 ? (
         <StatusView icon="search" title={`No results for “${query}”`}>
           <p>Try a shorter search, or check the spelling.</p>
         </StatusView>
       ) : (
         <div ref={resultsRef} onClick={() => remember(query)}>
+          {matches.length > 0 && (
+            <section className="search-people" aria-label="People">
+              <h2 className="section-label">People</h2>
+              <ul className="search-people__list">
+                {matches.map((p) => (
+                  <li key={p.name}>
+                    <Link to={`/person/${encodeURIComponent(p.name)}`} className="person-chip">
+                      <span className="person-chip__initials" aria-hidden="true">
+                        {p.name
+                          .split(/\s+/)
+                          .map((w) => w[0])
+                          .slice(0, 2)
+                          .join('')}
+                      </span>
+                      <span>
+                        <strong>{p.name}</strong>
+                        <span className="faint">
+                          {[
+                            p.directed ? `Directed ${p.directed}` : null,
+                            p.actedIn ? `Acted in ${p.actedIn}` : null,
+                          ]
+                            .filter(Boolean)
+                            .join(' · ')}
+                        </span>
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
           <p className="section-label" aria-live="polite">
             {plural(total, 'result')}
           </p>

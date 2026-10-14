@@ -43,6 +43,7 @@ export function queryFromParams(params: URLSearchParams, prefs: Preferences): Mo
     q: params.get('q') ?? undefined,
     genres: listParam(params, 'genre'),
     directors: listParam(params, 'director'),
+    actors: listParam(params, 'actor'),
     countries: listParam(params, 'country'),
     tags: listParam(params, 'tag'),
     studios: listParam(params, 'studio'),
@@ -67,6 +68,7 @@ function activeFilterCount(q: MovieQuery) {
   return (
     (q.genres?.length ?? 0) +
     (q.directors?.length ?? 0) +
+    (q.actors?.length ?? 0) +
     (q.countries?.length ?? 0) +
     (q.tags?.length ?? 0) +
     (q.studios?.length ?? 0) +
@@ -360,6 +362,7 @@ export function BrowsePage({ prefs }: { prefs: Preferences }) {
       for (const key of [
         'genre',
         'director',
+        'actor',
         'country',
         'tag',
         'studio',
@@ -414,6 +417,7 @@ export function BrowsePage({ prefs }: { prefs: Preferences }) {
       activeChips.push({ key: `${key}-${v}`, label: v, remove: () => toggleList(key, v) }),
     );
   // Genre, director, runtime, decade and "unwatched" show in the quick-filter pills.
+  listChips('actor', query.actors);
   listChips('country', query.countries);
   listChips('tag', query.tags);
   listChips('studio', query.studios);

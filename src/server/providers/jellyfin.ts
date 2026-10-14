@@ -286,6 +286,10 @@ export class JellyfinProvider implements MediaProvider {
       runtimeMinutes: runtimeTicks ? Math.round(runtimeTicks / TICKS_PER_SECOND / 60) : null,
       genres: strArr(item.Genres),
       directors: people.filter((p) => p.Type === 'Director').map((p) => String(p.Name)),
+      actors: people
+        .filter((p) => p.Type === 'Actor' || p.Type === 'GuestStar')
+        .slice(0, 12)
+        .map((p) => String(p.Name)),
       studios: arr(item.Studios)
         .map((s) => String(s.Name))
         .filter(Boolean),

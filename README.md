@@ -64,6 +64,8 @@ or a large screen — with your own branding, collections, notes and home layout
   - **Kids profile:** create a Jellyfin user for the kids with **no password** (one tap to sign in), and in
     _Parental control_ set a **maximum allowed rating** (e.g. PG). Jellyfin then hides everything above
     it, everywhere in Wheelhouse — rows, search, the wheel.
+- **People**: every director and actor name opens their page: everything of theirs in your library
+  (Directed / Starring), with “Spin their movies”. Search finds people too.
 - **Search**: instant search by title or director; press <kbd>/</kbd> (or <kbd>Ctrl/⌘ K</kbd>) anywhere.
 - **Player**: plays the original file when the device can (direct play) and lets Jellyfin convert it when it
   can’t; resume, progress tracking, subtitles, audio-track switching, keyboard shortcuts, lock-screen controls.

@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   buildFacets,
   normalizeText,
+  personFilmography,
   queryMovies,
+  searchPeople,
   searchScore,
   sortKey,
 } from '../../src/shared/catalog';
@@ -154,5 +156,58 @@ describe('facets', () => {
     const facets = buildFacets([]);
     expect(facets.yearRange).toBeNull();
     expect(facets.genres).toEqual([]);
+  });
+});
+
+describe('people', () => {
+  const films = [
+    movie({
+      id: 'g',
+      title: 'The General',
+      year: 1926,
+      directors: ['Buster Keaton'],
+      actors: ['Buster Keaton', 'Marion Mack'],
+    }),
+    movie({
+      id: 's',
+      title: 'Sherlock Jr.',
+      year: 1924,
+      directors: ['Buster Keaton'],
+      actors: ['Buster Keaton'],
+    }),
+    movie({
+      id: 'l',
+      title: 'Limelight',
+      year: 1952,
+      directors: ['Charlie Chaplin'],
+      actors: ['Charlie Chaplin', 'Buster Keaton'],
+    }),
+    movie({
+      id: 'm',
+      title: 'Metropolis',
+      year: 1927,
+      directors: ['Fritz Lang'],
+      actors: ['Brigitte Helm'],
+    }),
+  ];
+
+  it('finds people by any part of their name, busiest first', () => {
+    expect(searchPeople(films, 'keat')).toEqual([
+      { name: 'Buster Keaton', directed: 2, actedIn: 3 },
+    ]);
+    expect(searchPeople(films, 'b').map((p) => p.name)).toEqual(['Buster Keaton', 'Brigitte Helm']);
+    expect(searchPeople(films, '')).toEqual([]);
+  });
+
+  it('lists what a person directed and acted in, newest first, ignoring case and accents', () => {
+    const page = personFilmography(films, 'buster keaton');
+    expect(page.name).toBe('Buster Keaton');
+    expect(page.directed.map((m) => m.id)).toEqual(['g', 's']);
+    expect(page.actedIn.map((m) => m.id)).toEqual(['l', 'g', 's']);
+    expect(personFilmography(films, 'Nobody').directed).toEqual([]);
+  });
+
+  it('filters the library by actor', () => {
+    expect(queryMovies(films, { actors: ['Buster Keaton'] }).total).toBe(3);
   });
 });

@@ -12,6 +12,7 @@ export function movie(overrides: Partial<Movie> & { title: string }): Movie {
     runtimeMinutes: null,
     genres: [],
     directors: [],
+    actors: [],
     studios: [],
     tags: [],
     countries: [],

@@ -129,6 +129,19 @@ describe('catalog', () => {
     expect((await client.get('/api/movies/random?genre=Nonexistent')).json.movie).toBeNull();
   });
 
+  it('serves person pages and people search from the library', async () => {
+    const client = new Client(server.url);
+    await client.login();
+    const keaton = await client.get('/api/people/Buster%20Keaton');
+    expect(keaton.status).toBe(200);
+    expect(keaton.json.directed.map((m: { title: string }) => m.title)).toContain('The General');
+    expect(keaton.json.actedIn.length).toBeGreaterThan(0);
+    expect((await client.get('/api/people/No%20Such%20Person')).status).toBe(404);
+    const found = await client.get('/api/people?q=kurosawa');
+    expect(found.json.people[0]).toMatchObject({ name: 'Akira Kurosawa' });
+    expect((await client.get('/api/movies?actor=Toshiro%20Mifune')).json.total).toBeGreaterThan(0);
+  });
+
   it('samples distinct movies for the wheel, honouring filters', async () => {
     const client = new Client(server.url);
     await client.login();

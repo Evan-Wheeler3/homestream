@@ -174,6 +174,7 @@ export class MockProvider implements MediaProvider {
       runtimeMinutes: film.runtime,
       genres: film.genres,
       directors: film.directors,
+      actors: film.cast,
       studios: [],
       tags: film.tags,
       countries: film.countries,
