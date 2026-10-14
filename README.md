@@ -76,6 +76,10 @@ or a large screen — with your own branding, collections, notes and home layout
   favourite genre and decade, month-by-month, top directors and actors, longest sit, most rewatched — for
   any year or all time. Wheelhouse keeps its own viewing history from its player; movies watched elsewhere
   count once at their last-played date.
+- **Film series**: Jellyfin's collections (box sets such as _Star Wars Collection_) show as a _Film
+  series_ row on Home, a page per series in release order with “Up next”, and “Part of …” on each movie.
+  Turn on _Dashboard → Libraries → Movies → Automatically add movies to collections_ in Jellyfin (it needs
+  two films from a series before it creates the collection), then rescan.
 - **People**: every director and actor name opens their page: everything of theirs in your library
   (Directed / Starring), with “Spin their movies”. Search finds people too.
 - **Search**: instant search by title or director; press <kbd>/</kbd> (or <kbd>Ctrl/⌘ K</kbd>) anywhere.
@@ -263,7 +267,8 @@ Frankenstein (1974).mp4`, which makes Jellyfin match the exact film.
    opens the movie in Wheelhouse.
 
 The **Discs** page shows progress. It asks for your help instead of guessing when a disc has many
-same-length titles (copy protection: pick the right one), when the name is uncertain (several films share
+same-length titles (copy protection: pick the right one), when it looks like a TV series disc (several
+episode-length titles — Wheelhouse only files movies), when the name is uncertain (several films share
 a title, or the label is cryptic), or when something fails (with **Retry**). Nothing is deleted unless the
 compressed movie checks out, and a finished movie in the Movies folder is never touched by **Dismiss**.
 
@@ -280,7 +285,8 @@ compressed movie checks out, and a finished movie in the Movies folder is never 
 Keep the MakeMKV app closed while Wheelhouse is watching (it locks the drive). If macOS asks whether
 **node** may access files on a removable volume, click **Allow**. Ripping takes about 20–30 minutes per DVD
 and compression 30–60 minutes, depending on the computer. MakeMKV reads DVDs for free; Blu-ray needs a
-MakeMKV key. Rip only discs you own.
+MakeMKV key (free while MakeMKV is in beta: the current key is posted on the MakeMKV forum, enter it in
+_MakeMKV → Help → Register_). Rip only discs you own.
 
 ## Keep it running
 
@@ -381,23 +387,25 @@ minute. Collections are private unless you mark them shared (others can view, no
 
 ## Troubleshooting
 
-| Symptom                                                      | What to check                                                                                                                                                                                                      |
-| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| “Cannot reach the Wheelhouse server”                         | Is the host computer on and awake, and is `npm start` / the service running? Same network? Correct address/port? Firewall prompt allowed?                                                                          |
-| “Jellyfin is not responding” banner                          | Start Jellyfin (or wait ~30 s after a restart). The app keeps showing your cached library and recovers on its own. `npm run check:jellyfin` tests the connection.                                                  |
-| Sign-in says “Incorrect username or password”                | Use your **Jellyfin** account. Test the same login at <http://localhost:8096>.                                                                                                                                     |
-| “Your session expired”                                       | This browser was removed from Jellyfin’s device list (or its sign-in was revoked). Sign in again.                                                                                                                  |
-| Library empty                                                | Check the Jellyfin library is type **Movies** and has finished scanning; then _Settings → Server → Refresh library now_. Your Jellyfin user must have access to that library (_Dashboard → Users → Access_).       |
-| A film won’t play / “could not be decoded on this device”    | Settings → Diagnostics shows what your browser can decode and recent errors. Make sure Jellyfin transcoding works (_Dashboard → Playback_); check Jellyfin’s logs (_Dashboard → Logs_) for ffmpeg errors.          |
-| Playback stutters                                            | Lower _Settings → Playback → Maximum streaming quality_; enable hardware acceleration in Jellyfin; prefer wired Ethernet for the host.                                                                             |
-| Resume point not saved                                       | Jellyfin ignores very short videos and the first 5 % of a film (see Jellyfin _Dashboard → Playback → Resume_).                                                                                                     |
-| `Port 8787 is already in use`                                | Something else uses the port (maybe a second copy). Stop it or set another `PORT` in `.env`.                                                                                                                       |
-| `Configuration error: JELLYFIN_URL must start with http…`    | Fix the address in `.env`, e.g. `JELLYFIN_URL=http://127.0.0.1:8096`.                                                                                                                                              |
-| Node prints `.env not found. Continuing without it.`         | Harmless: there is no `.env` yet, so defaults (sample library) are used. Run `npm run setup`.                                                                                                                      |
-| Discs page: “MakeMKV can’t see the disc”                     | Close the MakeMKV app (it locks the drive), take the disc out and put it back in.                                                                                                                                  |
-| Discs page: “macOS blocked access to …”                      | _System Settings → Privacy & Security → Files and Folders_ (or _Full Disk Access_): allow **node** to access removable volumes, then restart Wheelhouse.                                                           |
-| Discs page: “opened in OS access mode … Failed to open disc” | macOS blocked the drive: _System Settings → Privacy & Security → Full Disk Access_ → turn on **node** (`/usr/local/bin/node`, or the output of `which node`) and **MakeMKV**; restart Wheelhouse; press **Retry**. |
-| No phone notification                                        | Discs page → **Test notification**. The ntfy app must be subscribed to exactly the `NTFY_TOPIC` in `.env`.                                                                                                         |
+| Symptom                                                      | What to check                                                                                                                                                                                                                                      |
+| ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| “Cannot reach the Wheelhouse server”                         | Is the host computer on and awake, and is `npm start` / the service running? Same network? Correct address/port? Firewall prompt allowed?                                                                                                          |
+| “Jellyfin is not responding” banner                          | Start Jellyfin (or wait ~30 s after a restart). The app keeps showing your cached library and recovers on its own. `npm run check:jellyfin` tests the connection.                                                                                  |
+| Sign-in says “Incorrect username or password”                | Use your **Jellyfin** account. Test the same login at <http://localhost:8096>.                                                                                                                                                                     |
+| “Your session expired”                                       | This browser was removed from Jellyfin’s device list (or its sign-in was revoked). Sign in again.                                                                                                                                                  |
+| Library empty                                                | Check the Jellyfin library is type **Movies** and has finished scanning; then _Settings → Server → Refresh library now_. Your Jellyfin user must have access to that library (_Dashboard → Users → Access_).                                       |
+| A film won’t play / “could not be decoded on this device”    | Settings → Diagnostics shows what your browser can decode and recent errors. Make sure Jellyfin transcoding works (_Dashboard → Playback_); check Jellyfin’s logs (_Dashboard → Logs_) for ffmpeg errors.                                          |
+| Playback stutters                                            | Lower _Settings → Playback → Maximum streaming quality_; enable hardware acceleration in Jellyfin; prefer wired Ethernet for the host.                                                                                                             |
+| Resume point not saved                                       | Jellyfin ignores very short videos and the first 5 % of a film (see Jellyfin _Dashboard → Playback → Resume_).                                                                                                                                     |
+| `Port 8787 is already in use`                                | Something else uses the port (maybe a second copy). Stop it or set another `PORT` in `.env`.                                                                                                                                                       |
+| `Configuration error: JELLYFIN_URL must start with http…`    | Fix the address in `.env`, e.g. `JELLYFIN_URL=http://127.0.0.1:8096`.                                                                                                                                                                              |
+| Node prints `.env not found. Continuing without it.`         | Harmless: there is no `.env` yet, so defaults (sample library) are used. Run `npm run setup`.                                                                                                                                                      |
+| Discs page: “MakeMKV can’t see the disc”                     | Close the MakeMKV app (it locks the drive), take the disc out and put it back in.                                                                                                                                                                  |
+| Discs page: “macOS blocked access to …”                      | _System Settings → Privacy & Security → Files and Folders_ (or _Full Disk Access_): allow **node** to access removable volumes, then restart Wheelhouse.                                                                                           |
+| Discs page: “opened in OS access mode … Failed to open disc” | macOS blocked the drive: _System Settings → Privacy & Security → Full Disk Access_ → turn on **node** (`open -R "$(readlink -f "$(which node)")"` shows it in Finder; drag it into the list) and **MakeMKV**; restart Wheelhouse; press **Retry**. |
+| Discs page: “registration key” / “too old” / “expired”       | MakeMKV's beta key ran out (Blu-ray). Get the current key from the MakeMKV forum and enter it in _MakeMKV → Help → Register_, or update MakeMKV; press **Retry**.                                                                                  |
+| Discs page: “looks like a TV series disc”                    | Wheelhouse files movies only. Rip series with the MakeMKV app; if it really is a movie, pick its title on the Discs page.                                                                                                                          |
+| No phone notification                                        | Discs page → **Test notification**. The ntfy app must be subscribed to exactly the `NTFY_TOPIC` in `.env`.                                                                                                                                         |
 
 ## Verification status and limitations
 

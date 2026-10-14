@@ -5,6 +5,7 @@ import {
   parseDiscInfo,
   parseDrives,
   parseProgress,
+  readErrorHint,
   splitFields,
   type DiscTitle,
 } from '../../src/server/ripper/makemkv';
@@ -86,6 +87,32 @@ describe('MakeMKV robot output', () => {
     const decoys = [0, 1, 2, 3, 4].map((i) => title(i, 105, `1,${i + 5}`));
     expect(chooseMainTitle(decoys).kind).toBe('ambiguous');
     expect(chooseMainTitle([title(0, 22), title(1, 23)]).kind).toBe('ambiguous');
+  });
+
+  it('recognises TV series discs, with or without a "play all" title', () => {
+    const episodes = [0, 1, 2, 3].map((i) => title(i, 44 + i));
+    const plain = chooseMainTitle(episodes);
+    expect(plain.kind).toBe('ambiguous');
+    expect(plain.kind === 'ambiguous' && plain.reason).toMatch(/TV series disc \(4 episodes\)/);
+    const playAll = chooseMainTitle([...episodes, title(9, 44 + 45 + 46 + 47)]);
+    expect(playAll.kind === 'ambiguous' && playAll.reason).toMatch(/TV series/);
+  });
+
+  it('still picks the movie when a disc also has episode-length extras', () => {
+    const extras = [1, 2, 3].map((i) => title(i, 25));
+    expect(chooseMainTitle([title(0, 118), ...extras])).toMatchObject({
+      kind: 'main',
+      title: { index: 0 },
+    });
+  });
+
+  it('explains MakeMKV errors people can fix', () => {
+    expect(readErrorHint('Drive opened in OS access mode. Failed to open disc')).toMatch(
+      /Full Disk Access/,
+    );
+    expect(readErrorHint('This application version is too old.')).toMatch(/Register/);
+    expect(readErrorHint('The evaluation period has expired.')).toMatch(/beta key/);
+    expect(readErrorHint('Read error')).toBe('');
   });
 });
 

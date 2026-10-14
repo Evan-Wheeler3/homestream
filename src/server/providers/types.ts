@@ -1,4 +1,5 @@
 import type {
+  Franchise,
   Movie,
   MovieDetail,
   MovieUserState,
@@ -32,7 +33,10 @@ export interface MediaServerInfo {
   error: string | null;
 }
 
-export type ProviderDetail = Omit<MovieDetail, 'personal' | 'collections' | 'onWatchlist'>;
+export type ProviderDetail = Omit<
+  MovieDetail,
+  'personal' | 'collections' | 'onWatchlist' | 'franchises'
+>;
 
 /**
  * The boundary between this app and the media server. The Jellyfin implementation
@@ -55,6 +59,8 @@ export interface MediaProvider {
   validate(ctx: UserContext): Promise<void>;
   serverInfo(): Promise<MediaServerInfo>;
   listMovies(ctx: UserContext): Promise<Movie[]>;
+  /** Film series (Jellyfin box sets). */
+  listFranchises(ctx: UserContext): Promise<Franchise[]>;
   getMovie(ctx: UserContext, id: string): Promise<ProviderDetail | null>;
   similar(ctx: UserContext, id: string): Promise<string[]>;
   getUserState(ctx: UserContext, id: string): Promise<MovieUserState>;

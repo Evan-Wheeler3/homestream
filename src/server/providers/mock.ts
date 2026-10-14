@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { seededRandom, sortKey } from '../../shared/catalog.js';
 import type {
+  Franchise,
   Movie,
   MovieUserState,
   PlaybackInfo,
@@ -193,6 +194,11 @@ export class MockProvider implements MediaProvider {
       user: this.userState(film, row),
       available: true,
     };
+  }
+
+  /** The sample library has no film series. */
+  async listFranchises(): Promise<Franchise[]> {
+    return [];
   }
 
   async listMovies(ctx: UserContext): Promise<Movie[]> {

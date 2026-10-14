@@ -12,6 +12,7 @@ import {
   parseMessages,
   parseProgress,
   type DiscTitle,
+  readErrorHint,
 } from './makemkv.js';
 import { guessTitle, identify, movieFileNames } from './naming.js';
 import type { Runner } from './process.js';
@@ -282,12 +283,11 @@ export class Ripper {
     const result = await run(c.makemkvcon, ['-r', 'info', `disc:${drive.index}`]);
     const info = parseDiscInfo(result.output);
     if (info.titles.length === 0) {
-      const why = parseMessages(result.output).slice(-2).join(' ');
-      // "OS access mode" / "Failed to open disc": macOS refused raw access to the drive.
-      const permission = /OS access mode|Failed to open disc/i.test(why)
-        ? ' macOS is probably blocking access to the drive: in System Settings → Privacy & Security → Full Disk Access, turn on “node” (/usr/local/bin/node) and MakeMKV, restart Wheelhouse, then press Retry.'
-        : '';
-      throw new UserError(`MakeMKV couldn’t read the disc. ${why}${permission}`.trim());
+      const messages = parseMessages(result.output);
+      const why = messages.slice(-2).join(' ');
+      throw new UserError(
+        `MakeMKV couldn’t read the disc. ${why} ${readErrorHint(messages.join(' '))}`.trim(),
+      );
     }
 
     const guess = guessTitle(info.name, job.discLabel);
@@ -351,8 +351,9 @@ export class Ripper {
     );
     const mkv = this.findFile(dir, '.mkv');
     if (result.code !== 0 || !mkv) {
-      const why = parseMessages(result.output).slice(-2).join(' ');
-      throw new UserError(`Ripping failed. ${why}`.trim());
+      const messages = parseMessages(result.output);
+      const why = messages.slice(-2).join(' ');
+      throw new UserError(`Ripping failed. ${why} ${readErrorHint(messages.join(' '))}`.trim());
     }
 
     await this.eject(job.mountPath);

@@ -1808,3 +1808,39 @@
 .vote__done p {
   color: var(--text-2);
 }
+
+/* Film series ------------------------------------------------------------ */
+
+.franchise-page {
+  position: relative;
+}
+
+.franchise-page__backdrop {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 420px;
+  overflow: hidden;
+  z-index: -1;
+  pointer-events: none;
+}
+
+.franchise-page__backdrop img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.35;
+  mask-image: linear-gradient(to bottom, #000 30%, transparent);
+}
+
+.franchise-page__header {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 48px 0 32px;
+}
+
+.franchise-page__meta {
+  color: var(--text-2);
+  margin: 0 0 8px;
+}

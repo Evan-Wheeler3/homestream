@@ -9,6 +9,7 @@ import type {
   PlaybackInfo,
   PlaybackReport,
   PlaybackRequest,
+  Franchise,
   PublicProfile,
   Trailer,
   Person,
@@ -309,6 +310,56 @@ export class JellyfinProvider implements MediaProvider {
       user: this.mapUserState(item),
       available: locationType !== 'Virtual' && item.IsMissing !== true,
     };
+  }
+
+  async listFranchises(ctx: UserContext): Promise<Franchise[]> {
+    const sets = arr(
+      (
+        await this.json(
+          `/Items?${new URLSearchParams({
+            userId: ctx.userId,
+            recursive: 'true',
+            includeItemTypes: 'BoxSet',
+            enableImageTypes: 'Primary,Backdrop',
+            imageTypeLimit: '1',
+            sortBy: 'SortName',
+            limit: '200',
+          })}`,
+          { ctx },
+        )
+      ).Items,
+    );
+    const franchises: Franchise[] = [];
+    for (const set of sets) {
+      const id = str(set.Id);
+      if (!id) continue;
+      const children = arr(
+        (
+          await this.json(
+            `/Items?${new URLSearchParams({
+              userId: ctx.userId,
+              parentId: id,
+              includeItemTypes: 'Movie',
+              recursive: 'true',
+              enableImages: 'false',
+              enableUserData: 'false',
+              limit: '100',
+            })}`,
+            { ctx },
+          )
+        ).Items,
+      );
+      const imageTags = (set.ImageTags ?? {}) as Record<string, string>;
+      const backdrops = strArr(set.BackdropImageTags);
+      franchises.push({
+        id,
+        name: String(set.Name ?? 'Collection'),
+        movieIds: children.map((c) => str(c.Id)).filter((x): x is string => Boolean(x)),
+        poster: this.imageUrl(id, 'Primary', imageTags.Primary ?? null),
+        backdrop: this.imageUrl(id, 'Backdrop', backdrops[0] ?? null, 0),
+      });
+    }
+    return franchises;
   }
 
   async listMovies(ctx: UserContext): Promise<Movie[]> {

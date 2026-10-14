@@ -370,6 +370,19 @@ export function MovieDetailPage({ prefs }: { prefs: Preferences }) {
             <p className="detail__overview faint">No synopsis is available for this movie.</p>
           )}
 
+          {m.franchises.length > 0 && (
+            <div className="detail__collections">
+              <span className="eyebrow">Part of</span>
+              <div className="chip-list">
+                {m.franchises.map((f) => (
+                  <Link key={f.id} to={`/franchise/${encodeURIComponent(f.id)}`} className="chip">
+                    {f.name}
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
+
           {m.collections.length > 0 && (
             <div className="detail__collections">
               <span className="eyebrow">In your collections</span>

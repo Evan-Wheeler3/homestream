@@ -200,6 +200,34 @@ describe('JellyfinProvider', () => {
     expect(calls).toHaveLength(2);
   });
 
+  it('lists box sets as film series with their movies', async () => {
+    const { impl, calls } = fakeFetch((url) => {
+      if (url.searchParams.get('includeItemTypes') === 'BoxSet') {
+        return json({
+          Items: [
+            {
+              Id: 'set1',
+              Name: 'Star Wars Collection',
+              ImageTags: { Primary: 'p1' },
+              BackdropImageTags: ['b1'],
+            },
+          ],
+        });
+      }
+      expect(url.searchParams.get('parentId')).toBe('set1');
+      return json({ Items: [{ Id: 'm1' }, { Id: 'm2' }] });
+    });
+    const [series] = await new JellyfinProvider('http://jf.local', '1', impl).listFranchises(ctx);
+    expect(series).toMatchObject({
+      id: 'set1',
+      name: 'Star Wars Collection',
+      movieIds: ['m1', 'm2'],
+    });
+    expect(series!.poster).toContain('/Items/set1/Images/Primary');
+    expect(series!.backdrop).toContain('/Items/set1/Images/Backdrop');
+    expect(calls).toHaveLength(2);
+  });
+
   it('returns a direct-play URL when the browser supports the file', async () => {
     const { impl, calls } = fakeFetch(() =>
       json({

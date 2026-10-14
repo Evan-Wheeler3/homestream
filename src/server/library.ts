@@ -13,6 +13,9 @@ import { evaluateSmartCollection } from '../shared/rules.js';
 import type {
   Collection,
   CollectionDetail,
+  Franchise,
+  FranchiseDetail,
+  FranchiseSummary,
   HomePayload,
   HomeRow,
   Movie,
@@ -26,6 +29,7 @@ import type { MediaProvider, ProviderDetail, UserContext } from './providers/typ
 import type { CollectionRow, Store } from './store.js';
 
 const ROW_LIMIT = 20;
+const FRANCHISE_TTL_MS = 10 * 60_000;
 
 function dayKey() {
   return new Date().toISOString().slice(0, 10);
@@ -38,8 +42,74 @@ export class LibraryService {
     readonly store: Store,
   ) {}
 
+  private franchiseCache = new Map<string, { at: number; list: Franchise[] }>();
+
   snapshot(ctx: UserContext, force = false): Promise<CatalogSnapshot> {
+    if (force) this.franchiseCache.delete(ctx.userId);
     return this.catalog.get(ctx, { force });
+  }
+
+  /**
+   * Film series from the media server, cached briefly. A series only counts
+   * when at least two of its films are in the library; if the server can't
+   * list them, there are simply none (they're a nice-to-have).
+   */
+  private async rawFranchises(ctx: UserContext): Promise<Franchise[]> {
+    const cached = this.franchiseCache.get(ctx.userId);
+    if (cached && Date.now() - cached.at < FRANCHISE_TTL_MS) return cached.list;
+    let list: Franchise[];
+    try {
+      list = await this.provider.listFranchises(ctx);
+    } catch {
+      return cached?.list ?? [];
+    }
+    this.franchiseCache.set(ctx.userId, { at: Date.now(), list });
+    return list;
+  }
+
+  /** Each franchise's films that are in the library, oldest first. */
+  private async franchiseMovies(ctx: UserContext, snap: CatalogSnapshot) {
+    return (await this.rawFranchises(ctx))
+      .map((f) => ({
+        franchise: f,
+        movies: f.movieIds
+          .map((id) => snap.byId.get(id))
+          .filter((m): m is Movie => Boolean(m))
+          .sort((a, b) => (a.year ?? 9999) - (b.year ?? 9999) || a.title.localeCompare(b.title)),
+      }))
+      .filter((f) => f.movies.length >= 2);
+  }
+
+  async franchises(ctx: UserContext): Promise<FranchiseSummary[]> {
+    const snap = await this.snapshot(ctx);
+    return (await this.franchiseMovies(ctx, snap))
+      .map(({ franchise, movies }) => ({
+        id: franchise.id,
+        name: franchise.name,
+        count: movies.length,
+        image:
+          franchise.backdrop ??
+          movies.find((m) => m.images.backdrop)?.images.backdrop ??
+          franchise.poster ??
+          movies[0]?.images.poster ??
+          null,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  async franchise(ctx: UserContext, id: string): Promise<FranchiseDetail> {
+    const snap = await this.snapshot(ctx);
+    const found = (await this.franchiseMovies(ctx, snap)).find((f) => f.franchise.id === id);
+    if (!found) throw notFound('That film series isn’t in the library.');
+    const { franchise, movies } = found;
+    return {
+      id: franchise.id,
+      name: franchise.name,
+      poster: franchise.poster,
+      backdrop:
+        franchise.backdrop ?? movies.find((m) => m.images.backdrop)?.images.backdrop ?? null,
+      movies,
+    };
   }
 
   /** Narrow to the user's watchlist when the query asks for it (kept in watchlist order). */
@@ -128,12 +198,19 @@ export class LibraryService {
     }
     if (!detail) throw notFound('This movie is not in the library (it may have been removed).');
     if (!stale) this.catalog.updateUserState(ctx.userId, id, detail.user);
+    const snap = this.catalog.peek(ctx.userId);
+    const franchises = snap
+      ? (await this.franchiseMovies(ctx, snap))
+          .filter((f) => f.movies.some((m) => m.id === id))
+          .map((f) => ({ id: f.franchise.id, name: f.franchise.name }))
+      : [];
     return {
       detail: {
         ...detail,
         personal: this.store.getPersonal(ctx.userId, id),
         collections: this.store.collectionsContaining(ctx.userId, id),
         onWatchlist: this.store.watchlist(ctx.userId).includes(id),
+        franchises,
       },
       stale,
     };
@@ -355,6 +432,12 @@ export class LibraryService {
           const list = (await this.listCollections(ctx)).filter((c) => c.itemCount > 0);
           if (list.length)
             sections.push({ type: 'collections', id: 'collections', collections: list });
+          break;
+        }
+        case 'franchises': {
+          const list = await this.franchises(ctx);
+          if (list.length)
+            sections.push({ type: 'franchises', id: 'franchises', franchises: list });
           break;
         }
         case 'yearInReview': {

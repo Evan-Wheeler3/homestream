@@ -171,6 +171,14 @@ export function chooseMainTitle(titles: DiscTitle[], minMinutes = 40): TitleChoi
   const byLength = [...titles].sort(
     (a, b) => b.durationSeconds - a.durationSeconds || b.sizeBytes - a.sizeBytes,
   );
+  const episodes = seriesEpisodes(byLength);
+  if (episodes) {
+    return {
+      kind: 'ambiguous',
+      reason: `This looks like a TV series disc (${episodes.length} episodes), and Wheelhouse only files movies. Rip it with the MakeMKV app instead, or pick a title if it really is a movie.`,
+      candidates: byLength.slice(0, 12),
+    };
+  }
   const longest = byLength[0];
   if (!longest || longest.durationSeconds < minMinutes * 60) {
     return {
@@ -190,6 +198,44 @@ export function chooseMainTitle(titles: DiscTitle[], minMinutes = 40): TitleChoi
     };
   }
   return { kind: 'main', title: longest };
+}
+
+/**
+ * Episodes of a TV series disc: three or more titles of episode length
+ * (18–65 minutes) that are close to each other in length, and no title that
+ * is a feature in its own right — apart from a "play all" title that is just
+ * the episodes back to back.
+ */
+export function seriesEpisodes(byLength: DiscTitle[]): DiscTitle[] | null {
+  const episodeLength = byLength.filter(
+    (t) => t.durationSeconds >= 18 * 60 && t.durationSeconds <= 65 * 60,
+  );
+  if (episodeLength.length < 3) return null;
+  const sorted = episodeLength.map((t) => t.durationSeconds).sort((a, b) => a - b);
+  const median = sorted[Math.floor(sorted.length / 2)]!;
+  const episodes = episodeLength.filter(
+    (t) => Math.abs(t.durationSeconds - median) <= median * 0.2,
+  );
+  if (episodes.length < 3) return null;
+  const total = episodes.reduce((sum, t) => sum + t.durationSeconds, 0);
+  const longer = byLength.filter((t) => t.durationSeconds > 65 * 60);
+  // A long title that isn't roughly all the episodes in a row is a movie.
+  const feature = longer.some((t) => Math.abs(t.durationSeconds - total) > total * 0.1);
+  return feature ? null : episodes;
+}
+
+/**
+ * A plain-English hint for MakeMKV's errors when it can't read a disc, or
+ * an empty string when there's nothing useful to add.
+ */
+export function readErrorHint(messages: string): string {
+  if (/OS access mode|Failed to open disc/i.test(messages)) {
+    return 'macOS is probably blocking access to the drive: in System Settings → Privacy & Security → Full Disk Access, turn on “node” (run  open -R "$(readlink -f "$(which node)")"  in Terminal to find it) and MakeMKV, restart Wheelhouse, then press Retry.';
+  }
+  if (/registration key|evaluation period|too old|has expired/i.test(messages)) {
+    return 'MakeMKV needs a key: Blu-ray reading is free while MakeMKV is in beta, but the beta key changes every month or two. Get the current one from the MakeMKV forum (“MakeMKV is free while in beta”) and enter it in MakeMKV → Help → Register, or update MakeMKV, then press Retry.';
+  }
+  return '';
 }
 
 /** Progress from PRGV lines: current/max as a 0–1 fraction. */

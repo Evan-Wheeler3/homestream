@@ -114,6 +114,8 @@ export interface MovieDetail extends Movie {
   collections: { id: string; name: string }[];
   /** On this user's watchlist (Wheelhouse-only, like notes). */
   onWatchlist: boolean;
+  /** Series this film belongs to. */
+  franchises: { id: string; name: string }[];
 }
 
 // ---------------------------------------------------------------------------
@@ -145,6 +147,32 @@ export interface MovieQuery {
   dir?: SortDir;
   offset?: number;
   limit?: number;
+}
+
+/** A film series grouped by Jellyfin (a "box set", e.g. Star Wars Collection). */
+export interface Franchise {
+  id: string;
+  name: string;
+  movieIds: string[];
+  poster: string | null;
+  backdrop: string | null;
+}
+
+export interface FranchiseSummary {
+  id: string;
+  name: string;
+  count: number;
+  /** Artwork: the franchise's own, or its first film's. */
+  image: string | null;
+}
+
+export interface FranchiseDetail {
+  id: string;
+  name: string;
+  poster: string | null;
+  backdrop: string | null;
+  /** Oldest first. */
+  movies: Movie[];
 }
 
 /** A director or actor, with what of theirs is in the library. */
@@ -273,6 +301,7 @@ export type HomeSectionId =
   | 'watchlist'
   | 'becauseYouWatched'
   | 'yearInReview'
+  | 'franchises'
   | `collection:${string}`;
 
 export interface HomeSectionPref {
@@ -333,6 +362,7 @@ export interface HomePayload {
       }
     | { type: 'randomPick'; id: 'randomPick'; movie: Movie | null }
     | { type: 'yearInReview'; id: 'yearInReview'; year: number; movies: number; hours: number }
+    | { type: 'franchises'; id: 'franchises'; franchises: FranchiseSummary[] }
   )[];
   libraryCount: number;
 }

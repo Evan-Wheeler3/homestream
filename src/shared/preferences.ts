@@ -31,6 +31,7 @@ export const BUILTIN_SECTIONS: { id: HomeSectionId; label: string }[] = [
   { id: 'becauseYouWatched', label: 'Because You Watched' },
   { id: 'favorites', label: 'Personal Favorites' },
   { id: 'collections', label: 'Your Collections' },
+  { id: 'franchises', label: 'Film Series' },
   { id: 'randomPick', label: 'Spin the wheel' },
   { id: 'yearInReview', label: 'Your Year in Movies' },
   { id: 'unwatched', label: 'Not Yet Watched' },

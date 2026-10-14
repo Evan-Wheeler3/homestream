@@ -82,6 +82,24 @@ function Section({ section }: { section: HomePayload['sections'][number] }) {
           ))}
         </Row>
       );
+    case 'franchises':
+      return (
+        <Row title="Film series" wide id="franchises">
+          {section.franchises.map((f) => (
+            <li key={f.id}>
+              <Link to={`/franchise/${encodeURIComponent(f.id)}`} className="tile">
+                {f.image && (
+                  <img src={sizedImage(f.image, 480)} alt="" loading="lazy" decoding="async" />
+                )}
+                <span className="tile__label">
+                  <span className="tile__name">{f.name}</span>
+                  <span className="tile__count">{plural(f.count, 'film')}</span>
+                </span>
+              </Link>
+            </li>
+          ))}
+        </Row>
+      );
     case 'yearInReview':
       return (
         <Link to="/wrapped" className="year-promo">

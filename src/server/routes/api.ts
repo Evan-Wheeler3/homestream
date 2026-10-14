@@ -420,6 +420,18 @@ export function apiRouter(deps: ApiDeps): Router {
     }),
   );
 
+  // Film series -------------------------------------------------------------
+
+  router.get(
+    '/franchises',
+    route(async (req) => ({ franchises: await library.franchises(ctxOf(req)) })),
+  );
+
+  router.get(
+    '/franchises/:id',
+    route((req) => library.franchise(ctxOf(req), String(req.params.id ?? '').slice(0, 100))),
+  );
+
   // People ------------------------------------------------------------------
 
   router.get(
