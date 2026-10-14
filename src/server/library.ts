@@ -77,6 +77,7 @@ export class LibraryService {
       detail = {
         ...cached,
         cast: [],
+        trailers: [],
         writers: [],
         producers: [],
         mediaInfo: null,

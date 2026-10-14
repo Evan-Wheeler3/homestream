@@ -24,7 +24,7 @@ import { evaluateSmartCollection, parseSmartRules } from '../../shared/rules.js'
 import type { AppConfig } from '../config.js';
 import { ApiError, badRequest, notFound } from '../errors.js';
 import type { LibraryService } from '../library.js';
-import { backdropSvg, posterSvg } from '../providers/mockArt.js';
+import { backdropSvg, logoSvg, posterSvg } from '../providers/mockArt.js';
 import { MockProvider } from '../providers/mock.js';
 import type { UserContext } from '../providers/types.js';
 import { toPublicJob } from '../ripper/jobs.js';
@@ -591,10 +591,16 @@ export function apiRouter(deps: ApiDeps): Router {
       route((req, res) => {
         const film = mock.film(String(req.params.id));
         const kind = String(req.params.kind);
-        if (!film || (kind !== 'poster.svg' && kind !== 'backdrop.svg')) throw notFound();
+        if (!film || !['poster.svg', 'backdrop.svg', 'logo.svg'].includes(kind)) throw notFound();
         res.type('image/svg+xml');
         res.setHeader('Cache-Control', 'private, max-age=86400');
-        res.send(kind === 'poster.svg' ? posterSvg(film) : backdropSvg(film));
+        res.send(
+          kind === 'poster.svg'
+            ? posterSvg(film)
+            : kind === 'logo.svg'
+              ? logoSvg(film)
+              : backdropSvg(film),
+        );
       }),
     );
   }

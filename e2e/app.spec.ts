@@ -161,6 +161,19 @@ test('spin the wheel with reduced motion stops almost at once', async ({ page })
   await expect(page).toHaveURL(/\/movie\//);
 });
 
+test('detail: title logo art and the trailer player', async ({ page }) => {
+  await signIn(page);
+  await page.goto('/movie/charade-1963');
+  // The title is logo art, still announced as the page heading.
+  const heading = page.getByRole('heading', { name: 'Charade', level: 1 });
+  await expect(heading.getByRole('img', { name: 'Charade' })).toBeVisible();
+  await page.getByRole('button', { name: 'Trailer' }).click();
+  const dialog = page.getByRole('dialog', { name: /Trailer/ });
+  await expect(dialog.locator('video')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+});
+
 test('detail: favorite, rating and notes persist after reload', async ({ page }) => {
   await signIn(page);
   await page.goto('/movie/ugetsu-1953');

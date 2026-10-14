@@ -221,6 +221,8 @@ export function createApp({
           "worker-src 'self' blob:",
           "connect-src 'self'",
           "font-src 'self' data:",
+          // Trailers play in YouTube's privacy-enhanced (no-cookie) player.
+          'frame-src https://www.youtube-nocookie.com',
           "frame-ancestors 'none'",
           "base-uri 'self'",
           "form-action 'self'",

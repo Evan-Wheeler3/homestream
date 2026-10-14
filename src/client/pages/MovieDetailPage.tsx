@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router';
 import type { MovieDetail, Preferences } from '../../shared/types';
 import { AddToCollectionDialog } from '../components/AddToCollectionDialog';
 import { MetaLine } from '../components/Hero';
+import { RatingBadges, TitleArt, TrailerButton } from '../components/MovieExtras';
 import { Icon } from '../components/Icon';
 import {
   Backdrop,
@@ -256,8 +257,9 @@ export function MovieDetailPage({ prefs }: { prefs: Preferences }) {
           <Poster movie={m} eager sizes="(max-width: 900px) 40vw, 300px" />
         </div>
         <div className="detail__main">
-          <h1 className="detail__title display">{m.title}</h1>
+          <TitleArt movie={m} className="detail__title" />
           <MetaLine movie={m} />
+          <RatingBadges movie={m} />
           {m.tagline && <p className="detail__tagline">{m.tagline}</p>}
 
           {!m.available && (
@@ -290,6 +292,7 @@ export function MovieDetailPage({ prefs }: { prefs: Preferences }) {
                 Resume
               </ButtonLink>
             )}
+            <TrailerButton trailers={m.trailers} title={m.title} />
             <IconButton
               icon={m.user.favorite ? 'heartFilled' : 'heart'}
               label={m.user.favorite ? 'Remove from favorites' : 'Add to favorites'}

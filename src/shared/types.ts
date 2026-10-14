@@ -92,8 +92,18 @@ export interface MediaInfo {
   subtitleTracks: MediaTrack[];
 }
 
+export interface Trailer {
+  name: string;
+  /** youtube: shown embedded (privacy-enhanced mode); video: a direct video URL; link: opens elsewhere. */
+  kind: 'youtube' | 'video' | 'link';
+  url: string;
+  /** For youtube: the embeddable URL. */
+  embedUrl: string | null;
+}
+
 export interface MovieDetail extends Movie {
   cast: Person[];
+  trailers: Trailer[];
   writers: string[];
   producers: string[];
   mediaInfo: MediaInfo | null;

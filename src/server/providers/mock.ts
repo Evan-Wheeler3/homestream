@@ -54,6 +54,10 @@ function dateAdded(film: SampleFilm, index: number): string {
  * every interaction works and persists, but playback always uses one bundled
  * sample clip — it is clearly labelled as mock playback in the UI.
  */
+export function hasLogo(film: SampleFilm): boolean {
+  return [...film.id].reduce((n, c) => n + c.charCodeAt(0), 0) % 2 === 0;
+}
+
 export class MockProvider implements MediaProvider {
   readonly kind = 'mock' as const;
   readonly serverUrl = null;
@@ -182,7 +186,8 @@ export class MockProvider implements MediaProvider {
       images: {
         poster: `/api/mock/art/${film.id}/poster.svg`,
         backdrop: film.genres.length ? `/api/mock/art/${film.id}/backdrop.svg` : null,
-        logo: null,
+        // Half the sample films get title-logo art, so both looks can be seen.
+        logo: hasLogo(film) ? `/api/mock/art/${film.id}/logo.svg` : null,
       },
       user: this.userState(film, row),
       available: true,
@@ -201,6 +206,15 @@ export class MockProvider implements MediaProvider {
     return {
       ...movie,
       cast: film.cast.map((name) => ({ id: null, name, role: null, type: 'Actor', image: null })),
+      // The sample clip stands in for a trailer (and says so).
+      trailers: [
+        {
+          name: 'Sample clip (trailer stand-in)',
+          kind: 'video',
+          url: '/api/mock/sample.mp4',
+          embedUrl: null,
+        },
+      ],
       writers: film.writers ?? [],
       producers: [],
       mediaInfo: {

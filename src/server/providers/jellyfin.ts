@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { sortKey } from '../../shared/catalog.js';
+import { toTrailer } from '../../shared/trailers.js';
 import type {
   MediaInfo,
   MediaTrack,
@@ -9,6 +10,7 @@ import type {
   PlaybackReport,
   PlaybackRequest,
   PublicProfile,
+  Trailer,
   Person,
   SubtitleDelivery,
 } from '../../shared/types.js';
@@ -45,7 +47,7 @@ const LIST_FIELDS = [
   'PremiereDate',
 ].join(',');
 
-const DETAIL_FIELDS = `${LIST_FIELDS},MediaSources,MediaStreams,ExternalUrls`;
+const DETAIL_FIELDS = `${LIST_FIELDS},MediaSources,MediaStreams,ExternalUrls,RemoteTrailers`;
 
 // Jellyfin JSON is PascalCase, but some endpoints (e.g. /System/Info/Public on 12.x)
 // return camelCase. Normalise everything to PascalCase so mapping code has one shape.
@@ -391,9 +393,19 @@ export class JellyfinProvider implements MediaProvider {
         type: String(p.Type),
         image: str(p.Id) ? this.imageUrl(String(p.Id), 'Primary', str(p.PrimaryImageTag)) : null,
       }));
+    const seenTrailers = new Set<string>();
+    const trailers = arr(item.RemoteTrailers)
+      .map((t) => toTrailer(String(t.Name ?? ''), String(t.Url ?? '')))
+      .filter((t): t is Trailer => {
+        if (!t || seenTrailers.has(t.url)) return false;
+        seenTrailers.add(t.url);
+        return true;
+      })
+      .slice(0, 5);
     return {
       ...movie,
       cast,
+      trailers,
       writers: people.filter((p) => p.Type === 'Writer').map((p) => String(p.Name)),
       producers: people.filter((p) => p.Type === 'Producer').map((p) => String(p.Name)),
       mediaInfo: this.mapMediaInfo(item),

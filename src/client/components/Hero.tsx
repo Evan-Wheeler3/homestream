@@ -3,6 +3,7 @@ import type { Movie, Preferences } from '../../shared/types';
 import { formatRuntime, timeLeft } from '../lib/format';
 import { usePrefersReducedMotion } from '../lib/hooks';
 import { Backdrop, isInProgress, playHref, primaryPlay } from './movies';
+import { TitleArt } from './MovieExtras';
 import { ButtonLink, ProgressBar } from './ui';
 
 const EYEBROW: Record<Preferences['heroSource'], string> = {
@@ -70,7 +71,7 @@ export function Hero({ movies, prefs }: { movies: Movie[]; prefs: Preferences })
       </div>
       <div className="hero__content" key={movie.id} aria-live="polite">
         <p className="eyebrow hero__eyebrow">{EYEBROW[prefs.heroSource]}</p>
-        <h1 className="hero__title display">{movie.title}</h1>
+        <TitleArt movie={movie} className="hero__title" />
         <MetaLine movie={movie} extra />
         {movie.overview && <p className="hero__overview">{movie.overview}</p>}
         {isInProgress(movie) && (

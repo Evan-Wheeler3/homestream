@@ -150,3 +150,22 @@ export function backdropSvg(film: SampleFilm): string {
   <rect width="${W}" height="${H}" filter="url(#grain)"/>
 </svg>`;
 }
+
+/** Title-logo art: the title on a transparent background, like the logos Jellyfin downloads. */
+export function logoSvg(film: SampleFilm): string {
+  const { palette } = setup(film);
+  const accent = palette[2];
+  const lines = wrap(film.title.toUpperCase(), 16);
+  const W = 1000;
+  const size = Math.min(150, Math.floor(940 / Math.max(...lines.map((l) => l.length), 5) / 0.72));
+  const H = Math.round(lines.length * size * 1.02 + 40);
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">
+  ${lines
+    .map(
+      (line, i) =>
+        `<text x="0" y="${(i + 1) * size * 1.0}" fill="#f6f1e7" stroke="${accent}" stroke-width="2" paint-order="stroke" font-family="${SERIF}" font-weight="bold" font-size="${size}" letter-spacing="6">${escapeXml(line)}</text>`,
+    )
+    .join('')}
+  <rect x="2" y="${H - 18}" width="${Math.min(W - 4, size * 3)}" height="6" fill="${accent}"/>
+</svg>`;
+}

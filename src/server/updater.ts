@@ -77,6 +77,19 @@ export class Updater {
     if (!force && this.checked && Date.now() - this.checked.at < CHECK_TTL_MS) {
       return { ...this.checked, state: this.state };
     }
+    // Never run git alongside an update in progress (they would fight over the repository).
+    if (this.state.running) {
+      return {
+        supported: true,
+        reason: null,
+        branch: this.checked?.branch ?? null,
+        current: this.checked?.current ?? null,
+        behind: this.checked?.behind ?? 0,
+        changes: this.checked?.changes ?? [],
+        checkedAt: this.checked?.checkedAt ?? null,
+        state: this.state,
+      };
+    }
     try {
       const branch = await this.git(['rev-parse', '--abbrev-ref', 'HEAD']);
       const [sha = '', date = '', ...subject] = (
