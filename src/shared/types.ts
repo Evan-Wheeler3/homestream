@@ -112,6 +112,8 @@ export interface MovieDetail extends Movie {
   externalLinks: { name: string; url: string }[];
   personal: PersonalData;
   collections: { id: string; name: string }[];
+  /** On this user's watchlist (Wheelhouse-only, like notes). */
+  onWatchlist: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -135,6 +137,8 @@ export interface MovieQuery {
   runtimeMax?: number;
   watched?: 'watched' | 'unwatched' | 'inProgress';
   favorite?: boolean;
+  /** Only movies on the signed-in user's watchlist. */
+  watchlist?: boolean;
   sort?: SortField;
   dir?: SortDir;
   offset?: number;
@@ -264,6 +268,8 @@ export type HomeSectionId =
   | 'genres'
   | 'decades'
   | 'unwatched'
+  | 'watchlist'
+  | 'becauseYouWatched'
   | `collection:${string}`;
 
 export interface HomeSectionPref {

@@ -88,6 +88,7 @@ export function parseMovieQuery(q: Request['query']): MovieQuery {
     runtimeMax: int(q.runtimeMax),
     watched,
     favorite: q.favorite === '1' || q.favorite === 'true' ? true : undefined,
+    watchlist: q.watchlist === '1' || q.watchlist === 'true' ? true : undefined,
     sort,
     dir: q.dir === 'asc' || q.dir === 'desc' ? q.dir : undefined,
     offset: int(q.offset),
@@ -317,6 +318,23 @@ export function apiRouter(deps: ApiDeps): Router {
   router.get(
     '/movies/facets',
     route((req) => library.facets(ctxOf(req))),
+  );
+
+  // Watchlist ---------------------------------------------------------------
+
+  router.get(
+    '/watchlist',
+    route(async (req) => ({ movies: await library.watchlist(ctxOf(req)) })),
+  );
+
+  router.put(
+    '/movies/:id/watchlist',
+    route((req) => {
+      const on = (req.body as { on?: unknown })?.on;
+      if (typeof on !== 'boolean') throw badRequest('Send { "on": true | false }.');
+      library.setWatchlist(ctxOf(req), itemId(req), on);
+      return { onWatchlist: on };
+    }),
   );
 
   // People ------------------------------------------------------------------

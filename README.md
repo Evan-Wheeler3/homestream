@@ -64,6 +64,10 @@ or a large screen — with your own branding, collections, notes and home layout
   - **Kids profile:** create a Jellyfin user for the kids with **no password** (one tap to sign in), and in
     _Parental control_ set a **maximum allowed rating** (e.g. PG). Jellyfin then hides everything above
     it, everywhere in Wheelhouse — rows, search, the wheel.
+- **Watchlist**: bookmark movies to watch later (per person, kept in Wheelhouse); they show in a _My
+  Watchlist_ row on Home, as a _Watchlist_ quick filter on Browse, and as a pool for the wheel.
+- **Because you watched…**: a Home row of unwatched films like your most recent watch (same director, cast,
+  genres and era first).
 - **People**: every director and actor name opens their page: everything of theirs in your library
   (Directed / Starring), with “Spin their movies”. Search finds people too.
 - **Search**: instant search by title or director; press <kbd>/</kbd> (or <kbd>Ctrl/⌘ K</kbd>) anywhere.

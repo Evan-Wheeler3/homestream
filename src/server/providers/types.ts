@@ -32,7 +32,7 @@ export interface MediaServerInfo {
   error: string | null;
 }
 
-export type ProviderDetail = Omit<MovieDetail, 'personal' | 'collections'>;
+export type ProviderDetail = Omit<MovieDetail, 'personal' | 'collections' | 'onWatchlist'>;
 
 /**
  * The boundary between this app and the media server. The Jellyfin implementation

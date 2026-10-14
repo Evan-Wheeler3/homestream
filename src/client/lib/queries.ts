@@ -61,6 +61,7 @@ export function movieQueryString(query: MovieQuery): string {
   if (query.runtimeMax != null) params.set('runtimeMax', String(query.runtimeMax));
   if (query.watched) params.set('watched', query.watched);
   if (query.favorite) params.set('favorite', '1');
+  if (query.watchlist) params.set('watchlist', '1');
   if (query.sort) params.set('sort', query.sort);
   if (query.dir) params.set('dir', query.dir);
   return params.toString();
@@ -185,6 +186,26 @@ export function useToggleFavorite(id: string) {
     onSuccess: (user) => {
       patchMovieUser(qc, id, user);
       invalidateLibraryViews(qc);
+    },
+  });
+}
+
+export function useToggleWatchlist(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (on: boolean) =>
+      api<{ onWatchlist: boolean }>(`/movies/${id}/watchlist`, { method: 'PUT', body: { on } }),
+    onMutate: (on) => {
+      const previous = qc.getQueryData<MovieDetail>(keys.movie(id));
+      if (previous) qc.setQueryData(keys.movie(id), { ...previous, onWatchlist: on });
+      return { previous };
+    },
+    onError: (_e, _v, context) => {
+      if (context?.previous) qc.setQueryData(keys.movie(id), context.previous);
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.home });
+      void qc.invalidateQueries({ queryKey: ['movies'] });
     },
   });
 }

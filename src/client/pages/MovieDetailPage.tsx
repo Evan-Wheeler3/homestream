@@ -40,6 +40,7 @@ import {
   useSavePersonal,
   useSimilar,
   useToggleFavorite,
+  useToggleWatchlist,
   useTogglePlayed,
 } from '../lib/queries';
 
@@ -184,6 +185,7 @@ export function MovieDetailPage({ prefs }: { prefs: Preferences }) {
   const movie = useMovie(id);
   const similar = useSimilar(id);
   const favorite = useToggleFavorite(id);
+  const watchlist = useToggleWatchlist(id);
   const played = useTogglePlayed(id);
   const toast = useToast();
   const [addOpen, setAddOpen] = useState(false);
@@ -309,6 +311,23 @@ export function MovieDetailPage({ prefs }: { prefs: Preferences }) {
               </ButtonLink>
             )}
             <TrailerButton trailers={m.trailers} title={m.title} />
+            <IconButton
+              icon={m.onWatchlist ? 'bookmarkFilled' : 'bookmark'}
+              label={m.onWatchlist ? 'Remove from watchlist' : 'Add to watchlist'}
+              pressed={m.onWatchlist}
+              variant="outline"
+              size={22}
+              className={m.onWatchlist ? 'is-favorite' : ''}
+              onClick={() =>
+                watchlist.mutate(!m.onWatchlist, {
+                  onSuccess: (r) =>
+                    toast.show(
+                      r.onWatchlist ? 'Added to your watchlist' : 'Removed from your watchlist',
+                    ),
+                  onError: (e) => toast.show(errorMessage(e), 'error'),
+                })
+              }
+            />
             <IconButton
               icon={m.user.favorite ? 'heartFilled' : 'heart'}
               label={m.user.favorite ? 'Remove from favorites' : 'Add to favorites'}

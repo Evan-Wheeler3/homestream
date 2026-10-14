@@ -1,4 +1,12 @@
-import { buildFacets, decadeOf, queryMovies, seededRandom, shuffle } from '../shared/catalog.js';
+import {
+  buildFacets,
+  decadeOf,
+  lastWatched,
+  queryMovies,
+  recommendLike,
+  seededRandom,
+  shuffle,
+} from '../shared/catalog.js';
 import { BUILTIN_SECTIONS } from '../shared/preferences.js';
 import { evaluateSmartCollection } from '../shared/rules.js';
 import type {
@@ -33,9 +41,28 @@ export class LibraryService {
     return this.catalog.get(ctx, { force });
   }
 
+  /** Narrow to the user's watchlist when the query asks for it (kept in watchlist order). */
+  private pool(ctx: UserContext, movies: Movie[], query: MovieQuery): Movie[] {
+    if (!query.watchlist) return movies;
+    const byId = new Map(movies.map((m) => [m.id, m]));
+    return this.store
+      .watchlist(ctx.userId)
+      .map((id) => byId.get(id))
+      .filter((m): m is Movie => Boolean(m));
+  }
+
   async query(ctx: UserContext, query: MovieQuery) {
     const snap = await this.snapshot(ctx);
-    return { page: queryMovies(snap.movies, query), stale: snap.stale };
+    return { page: queryMovies(this.pool(ctx, snap.movies, query), query), stale: snap.stale };
+  }
+
+  async watchlist(ctx: UserContext): Promise<Movie[]> {
+    const snap = await this.snapshot(ctx);
+    return this.pool(ctx, snap.movies, { watchlist: true });
+  }
+
+  setWatchlist(ctx: UserContext, id: string, on: boolean) {
+    this.store.setWatchlist(ctx.userId, id, on);
   }
 
   async facets(ctx: UserContext) {
@@ -45,9 +72,11 @@ export class LibraryService {
 
   async random(ctx: UserContext, query: MovieQuery): Promise<Movie | null> {
     const snap = await this.snapshot(ctx);
-    const pool = queryMovies(snap.movies, { ...query, offset: 0, limit: 100_000 }).items.filter(
-      (m) => m.available,
-    );
+    const pool = queryMovies(this.pool(ctx, snap.movies, query), {
+      ...query,
+      offset: 0,
+      limit: 100_000,
+    }).items.filter((m) => m.available);
     if (pool.length === 0) return null;
     return pool[Math.floor(Math.random() * pool.length)] ?? null;
   }
@@ -55,9 +84,11 @@ export class LibraryService {
   /** Up to `count` different playable movies matching the query, in random order. */
   async sample(ctx: UserContext, query: MovieQuery, count: number): Promise<Movie[]> {
     const snap = await this.snapshot(ctx);
-    const pool = queryMovies(snap.movies, { ...query, offset: 0, limit: 100_000 }).items.filter(
-      (m) => m.available,
-    );
+    const pool = queryMovies(this.pool(ctx, snap.movies, query), {
+      ...query,
+      offset: 0,
+      limit: 100_000,
+    }).items.filter((m) => m.available);
     return shuffle(pool).slice(0, count);
   }
 
@@ -92,6 +123,7 @@ export class LibraryService {
         ...detail,
         personal: this.store.getPersonal(ctx.userId, id),
         collections: this.store.collectionsContaining(ctx.userId, id),
+        onWatchlist: this.store.watchlist(ctx.userId).includes(id),
       },
       stale,
     };
@@ -249,6 +281,33 @@ export class LibraryService {
             movies: inProgress(movies).slice(0, ROW_LIMIT),
           });
           break;
+        case 'watchlist': {
+          const byId = new Map(movies.map((m) => [m.id, m]));
+          pushRow({
+            id: section.id,
+            title,
+            kind: 'movies',
+            href: '/browse?watchlist=1&sort=dateAdded&dir=desc',
+            movies: this.store
+              .watchlist(ctx.userId)
+              .map((id) => byId.get(id))
+              .filter((m): m is Movie => Boolean(m))
+              .slice(0, ROW_LIMIT),
+          });
+          break;
+        }
+        case 'becauseYouWatched': {
+          const seed = lastWatched(movies);
+          if (!seed) break;
+          pushRow({
+            id: section.id,
+            title: `Because you watched ${seed.title}`,
+            kind: 'movies',
+            href: `/movie/${seed.id}`,
+            movies: recommendLike(movies, seed, ROW_LIMIT),
+          });
+          break;
+        }
         case 'recentlyAdded':
           pushRow({
             id: section.id,

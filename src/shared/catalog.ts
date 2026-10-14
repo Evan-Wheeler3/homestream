@@ -233,3 +233,39 @@ export function personFilmography(movies: Movie[], name: string): PersonPage {
     ) ?? name;
   return { name: display, directed: directed.sort(byYear), actedIn: actedIn.sort(byYear) };
 }
+
+// -----------------------------------------------------------------------------
+// Recommendations
+
+/**
+ * Movies like `seed` that you haven't watched: shared directors count most,
+ * then shared actors, genres and era; ties go to better-rated films.
+ */
+export function recommendLike(movies: Movie[], seed: Movie, limit = 16): Movie[] {
+  const decade = (y: number | null) => (y == null ? null : Math.floor(y / 10));
+  const scored = movies
+    .filter((m) => m.id !== seed.id && m.available && !m.user.played)
+    .map((m) => {
+      let score = 0;
+      score += 4 * m.directors.filter((d) => seed.directors.includes(d)).length;
+      score += 2 * m.actors.filter((a) => seed.actors.includes(a)).length;
+      score += 1.5 * m.genres.filter((g) => seed.genres.includes(g)).length;
+      if (decade(m.year) != null && decade(m.year) === decade(seed.year)) score += 1;
+      if (m.countries.some((c) => seed.countries.includes(c))) score += 0.5;
+      score += (m.communityRating ?? 0) / 20;
+      return { m, score };
+    })
+    .filter((x) => x.score >= 1.5);
+  scored.sort((a, b) => b.score - a.score || a.m.sortTitle.localeCompare(b.m.sortTitle));
+  return scored.slice(0, limit).map((x) => x.m);
+}
+
+/** The most recently watched (or started) movie, to base recommendations on. */
+export function lastWatched(movies: Movie[]): Movie | null {
+  let best: Movie | null = null;
+  for (const m of movies) {
+    if (!m.user.lastPlayed || !(m.user.played || m.user.positionSeconds > 0)) continue;
+    if (!best || m.user.lastPlayed > best.user.lastPlayed!) best = m;
+  }
+  return best;
+}

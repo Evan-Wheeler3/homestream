@@ -26,7 +26,9 @@ export const THEMES: { value: ThemeName; label: string; description: string }[] 
 export const BUILTIN_SECTIONS: { id: HomeSectionId; label: string }[] = [
   { id: 'hero', label: 'Featured movie' },
   { id: 'continueWatching', label: 'Continue Watching' },
+  { id: 'watchlist', label: 'My Watchlist' },
   { id: 'recentlyAdded', label: 'Recently Added' },
+  { id: 'becauseYouWatched', label: 'Because You Watched' },
   { id: 'favorites', label: 'Personal Favorites' },
   { id: 'collections', label: 'Your Collections' },
   { id: 'randomPick', label: 'Spin the wheel' },
@@ -89,10 +91,17 @@ function sanitizeSections(input: unknown): HomeSectionPref[] {
       });
     }
   }
-  // Newly introduced built-in sections appear at the end, visible.
-  for (const section of BUILTIN_SECTIONS) {
-    if (!seen.has(section.id)) out.push({ id: section.id, visible: true });
-  }
+  // Newly introduced built-in sections appear, visible, right after the section
+  // that comes before them by default (so they land in a sensible spot).
+  BUILTIN_SECTIONS.forEach((section, i) => {
+    if (seen.has(section.id)) return;
+    const before = BUILTIN_SECTIONS.slice(0, i)
+      .reverse()
+      .find((b) => seen.has(b.id));
+    const at = before ? out.findIndex((o) => o.id === before.id) + 1 : 0;
+    out.splice(at, 0, { id: section.id, visible: true });
+    seen.add(section.id);
+  });
   return out;
 }
 

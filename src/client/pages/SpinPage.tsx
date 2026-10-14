@@ -26,7 +26,7 @@ const SLICES: { fill: string; ink: string }[] = [
 const SPIN_MS = 5600;
 const SOUND_KEY = 'wh-wheel-sound';
 
-type Pool = 'unwatched' | 'all' | 'favorites';
+type Pool = 'unwatched' | 'all' | 'favorites' | 'watchlist';
 
 /** A short "tick" like a flapper hitting a peg (Web Audio, no files). */
 function useTicker(enabled: boolean) {
@@ -148,11 +148,13 @@ export default function SpinPage({ prefs }: { prefs: Preferences }) {
     const q = queryFromParams(params, prefs);
     return { ...q, sort: undefined, dir: undefined, offset: undefined, limit: undefined };
   }, [params, prefs]);
-  const pool: Pool = filters.favorite
-    ? 'favorites'
-    : filters.watched === 'unwatched'
-      ? 'unwatched'
-      : 'all';
+  const pool: Pool = filters.watchlist
+    ? 'watchlist'
+    : filters.favorite
+      ? 'favorites'
+      : filters.watched === 'unwatched'
+        ? 'unwatched'
+        : 'all';
   const count = Math.min(12, Math.max(4, Number(params.get('slots')) || 8));
   const [nonce, setNonce] = useState(0);
 
@@ -247,8 +249,10 @@ export default function SpinPage({ prefs }: { prefs: Preferences }) {
     const p = new URLSearchParams(params);
     p.delete('favorite');
     p.delete('watched');
+    p.delete('watchlist');
     if (next === 'unwatched') p.set('watched', 'unwatched');
     if (next === 'favorites') p.set('favorite', '1');
+    if (next === 'watchlist') p.set('watchlist', '1');
     setParams(p, { replace: true });
     resetRound();
   };
@@ -402,6 +406,7 @@ export default function SpinPage({ prefs }: { prefs: Preferences }) {
                     { value: 'unwatched', label: 'Unwatched' },
                     { value: 'all', label: 'Everything' },
                     { value: 'favorites', label: 'Favorites' },
+                    { value: 'watchlist', label: 'Watchlist' },
                   ]}
                 />
               </div>

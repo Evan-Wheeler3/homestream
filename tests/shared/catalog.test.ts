@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   buildFacets,
   normalizeText,
+  lastWatched,
   personFilmography,
   queryMovies,
+  recommendLike,
   searchPeople,
   searchScore,
   sortKey,
@@ -209,5 +211,67 @@ describe('people', () => {
 
   it('filters the library by actor', () => {
     expect(queryMovies(films, { actors: ['Buster Keaton'] }).total).toBe(3);
+  });
+});
+
+describe('recommendations', () => {
+  const seen = movie({
+    id: 'seen',
+    title: 'Seven Samurai',
+    year: 1954,
+    genres: ['Action', 'Drama'],
+    directors: ['Akira Kurosawa'],
+    actors: ['Toshiro Mifune'],
+    countries: ['Japan'],
+    user: { played: true, lastPlayed: '2026-10-01T20:00:00Z' } as never,
+  });
+  const films = [
+    seen,
+    movie({
+      id: 'yojimbo',
+      title: 'Yojimbo',
+      year: 1961,
+      genres: ['Action'],
+      directors: ['Akira Kurosawa'],
+      actors: ['Toshiro Mifune'],
+      countries: ['Japan'],
+    }),
+    movie({
+      id: 'rashomon',
+      title: 'Rashomon',
+      year: 1950,
+      genres: ['Drama'],
+      directors: ['Akira Kurosawa'],
+      countries: ['Japan'],
+    }),
+    movie({ id: 'heat', title: 'Heat', year: 1995, genres: ['Action', 'Crime'] }),
+    movie({ id: 'kid', title: 'The Kid', year: 1921, genres: ['Comedy'] }),
+    movie({
+      id: 'watched',
+      title: 'Ikiru',
+      year: 1952,
+      directors: ['Akira Kurosawa'],
+      user: { played: true } as never,
+    }),
+    movie({
+      id: 'older',
+      title: 'Charade',
+      year: 1963,
+      user: { positionSeconds: 60, lastPlayed: '2026-09-01T20:00:00Z' } as never,
+    }),
+  ];
+
+  it('bases "Because you watched" on the most recent watch', () => {
+    expect(lastWatched(films)?.id).toBe('seen');
+    expect(lastWatched([films[3]!])).toBeNull();
+  });
+
+  it('ranks unwatched films by shared director, cast, genre and era', () => {
+    const ids = recommendLike(films, seen).map((m) => m.id);
+    expect(ids.slice(0, 2)).toEqual(['yojimbo', 'rashomon']);
+    expect(ids).toContain('heat'); // shares a genre
+    expect(ids).not.toContain('kid'); // nothing in common
+    expect(ids).not.toContain('watched'); // already seen
+    expect(ids).not.toContain('seen');
   });
 });

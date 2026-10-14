@@ -129,6 +129,32 @@ describe('catalog', () => {
     expect((await client.get('/api/movies/random?genre=Nonexistent')).json.movie).toBeNull();
   });
 
+  it('keeps a per-user watchlist that drives a home row, a filter and the wheel', async () => {
+    const client = new Client(server.url);
+    await client.login(`wl-${Date.now()}`);
+    for (const id of ['ugetsu-1953', 'heat-1995', 'the-kid-1921']) {
+      expect((await client.put(`/api/movies/${id}/watchlist`, { on: true })).status).toBe(200);
+    }
+    await client.put('/api/movies/heat-1995/watchlist', { on: false });
+    const list = await client.get('/api/watchlist');
+    expect(list.json.movies.map((m: { id: string }) => m.id)).toEqual([
+      'the-kid-1921',
+      'ugetsu-1953',
+    ]);
+    expect((await client.get('/api/movies/ugetsu-1953')).json.onWatchlist).toBe(true);
+    expect((await client.get('/api/movies?watchlist=1')).json.total).toBe(2);
+    const wheel = await client.get('/api/movies/sample?count=8&watchlist=1');
+    expect(wheel.json.movies).toHaveLength(2);
+    const home = await client.get('/api/home');
+    const row = home.json.sections.find((s: { row?: { id: string } }) => s.row?.id === 'watchlist');
+    expect(row.row.title).toBe('My Watchlist');
+    expect((await client.put('/api/movies/ugetsu-1953/watchlist', { on: 'yes' })).status).toBe(400);
+    // Another person's watchlist is separate.
+    const other = new Client(server.url);
+    await other.login(`wl2-${Date.now()}`);
+    expect((await other.get('/api/watchlist')).json.movies).toEqual([]);
+  });
+
   it('serves person pages and people search from the library', async () => {
     const client = new Client(server.url);
     await client.login();
@@ -195,10 +221,17 @@ describe('preferences sync across devices', () => {
   it('applies home section order and visibility', async () => {
     const client = new Client(server.url);
     await client.login('layout-user');
+    // Settings always saves the full list: here Favorites moved to the top, Recently Added hidden.
+    const current = (await client.get('/api/preferences')).json.homeSections as {
+      id: string;
+      visible: boolean;
+    }[];
     await client.patch('/api/preferences', {
       homeSections: [
         { id: 'favorites', visible: true },
-        { id: 'recentlyAdded', visible: false },
+        ...current
+          .filter((s) => s.id !== 'favorites')
+          .map((s) => (s.id === 'recentlyAdded' ? { ...s, visible: false } : s)),
       ],
     });
     const home = await client.get('/api/home');

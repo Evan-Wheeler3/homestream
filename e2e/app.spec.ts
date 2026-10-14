@@ -197,6 +197,30 @@ test('people: director and actor pages, from the movie page and from search', as
   ).toHaveCount(2);
 });
 
+test('watchlist: add from the movie page, see it on Home, spin from it', async ({ page }) => {
+  await signIn(page);
+  for (const id of ['ugetsu-1953', 'the-kid-1921']) {
+    await page.goto(`/movie/${id}`);
+    await page.getByRole('button', { name: 'Add to watchlist' }).click();
+    await expect(page.getByRole('button', { name: 'Remove from watchlist' })).toBeVisible();
+  }
+  await page.goto('/');
+  const row = page.getByRole('region', { name: 'My Watchlist' });
+  await expect(row.getByRole('link', { name: /Ugetsu/ })).toBeVisible();
+  await expect(row.getByRole('link', { name: /The Kid/ })).toBeVisible();
+  // Recommendations based on what was watched most recently.
+  await expect(page.getByRole('heading', { name: /^Because you watched / })).toBeVisible();
+
+  await page.goto('/spin?watchlist=1');
+  await expect(page.getByRole('radio', { name: 'Watchlist' })).toHaveAttribute(
+    'aria-checked',
+    'true',
+  );
+  await expect(
+    page.getByRole('list', { name: 'Movies on the wheel' }).getByRole('listitem'),
+  ).toHaveCount(2);
+});
+
 test('detail: favorite, rating and notes persist after reload', async ({ page }) => {
   await signIn(page);
   await page.goto('/movie/ugetsu-1953');

@@ -120,6 +120,15 @@ const MIGRATIONS: string[] = [
     last_seen_at TEXT NOT NULL
   );
   `,
+  // 4: per-user watchlist
+  `
+  CREATE TABLE watchlist (
+    user_id TEXT NOT NULL,
+    item_id TEXT NOT NULL,
+    added_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, item_id)
+  );
+  `,
 ];
 
 export type Db = DatabaseSync;

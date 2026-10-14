@@ -57,6 +57,7 @@ export function queryFromParams(params: URLSearchParams, prefs: Preferences): Mo
         ? watched
         : undefined,
     favorite: params.get('favorite') === '1' || undefined,
+    watchlist: params.get('watchlist') === '1' || undefined,
     sort: sort ?? (params.get('q') ? undefined : prefs.defaultSort),
     dir:
       (params.get('dir') as 'asc' | 'desc' | null) ??
@@ -76,7 +77,8 @@ function activeFilterCount(q: MovieQuery) {
     (q.yearMin != null || q.yearMax != null ? 1 : 0) +
     (q.runtimeMin != null || q.runtimeMax != null ? 1 : 0) +
     (q.watched ? 1 : 0) +
-    (q.favorite ? 1 : 0)
+    (q.favorite ? 1 : 0) +
+    (q.watchlist ? 1 : 0)
   );
 }
 
@@ -198,6 +200,14 @@ function QuickFilters({
           onClick={() => setValue('watched', query.watched === 'unwatched' ? null : 'unwatched')}
         >
           Unwatched
+        </button>
+        <button
+          type="button"
+          className={`pill ${query.watchlist ? 'is-active' : ''}`}
+          aria-pressed={Boolean(query.watchlist)}
+          onClick={() => setValue('watchlist', query.watchlist ? null : '1')}
+        >
+          Watchlist
         </button>
         {pills.map((pill) => (
           <button
@@ -373,6 +383,7 @@ export function BrowsePage({ prefs }: { prefs: Preferences }) {
         'runtimeMax',
         'watched',
         'favorite',
+        'watchlist',
       ]) {
         p.delete(key);
       }

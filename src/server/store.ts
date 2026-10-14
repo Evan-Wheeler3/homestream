@@ -100,6 +100,26 @@ export class Store {
   // ---------------------------------------------------------------------------
   // Personal ratings & notes
 
+  /** Watchlist item ids, most recently added first. */
+  watchlist(userId: string): string[] {
+    const rows = this.db
+      .prepare('SELECT item_id FROM watchlist WHERE user_id = ? ORDER BY added_at DESC, rowid DESC')
+      .all(userId) as { item_id: string }[];
+    return rows.map((r) => r.item_id);
+  }
+
+  setWatchlist(userId: string, itemId: string, on: boolean) {
+    if (on) {
+      this.db
+        .prepare('INSERT OR IGNORE INTO watchlist (user_id, item_id, added_at) VALUES (?, ?, ?)')
+        .run(userId, itemId, nowIso());
+    } else {
+      this.db
+        .prepare('DELETE FROM watchlist WHERE user_id = ? AND item_id = ?')
+        .run(userId, itemId);
+    }
+  }
+
   getPersonal(userId: string, itemId: string): PersonalData {
     const row = this.db
       .prepare(
