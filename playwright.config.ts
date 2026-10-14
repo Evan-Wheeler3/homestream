@@ -21,9 +21,20 @@ export default defineConfig({
     {
       name: 'desktop',
       use: { ...devices['Desktop Chrome'], viewport: { width: 1366, height: 860 } },
-      grepInvert: /@phone/,
+      grepInvert: /@phone|@tv/,
     },
     { name: 'phone', use: { ...devices['Pixel 7'] }, grep: /@phone/ },
+    {
+      // The new LG webOS browser, which TV mode must detect on its own.
+      name: 'tv',
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 1920, height: 1080 },
+        userAgent:
+          'Mozilla/5.0 (Linux; NetCast; U) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.79 Safari/537.36 SmartTV/10.0 Colt/2.0',
+      },
+      grep: /@tv/,
+    },
   ],
   webServer: {
     command: 'npm run build && node dist/server/index.js',

@@ -1,0 +1,93 @@
+/*
+  TV mode (html[data-tv]): set by lib/tv.ts on smart-TV browsers, or from
+  Settings → Appearance → TV mode. Everything is read from across the room
+  and driven by a remote, so text and posters are larger and the focused
+  item is always unmistakable.
+*/
+
+html[data-tv] {
+  font-size: 125%;
+  --row-card: clamp(150px, 13vw, 270px);
+  --row-wide: clamp(300px, 25vw, 500px);
+  --poster-min: 200px;
+  --focus-ring: 0 0 0 3px var(--bg), 0 0 0 7px var(--accent);
+  --nav-height: 84px;
+}
+
+/* Focus comes from the remote, so show it whenever something has focus. */
+html[data-tv] :focus {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--r-sm);
+}
+
+/* Cards: ring and lift the artwork rather than the whole card. */
+html[data-tv] .poster-card:focus,
+html[data-tv] .collection-card:focus,
+html[data-tv] .continue-card__art:focus {
+  box-shadow: none;
+}
+html[data-tv] .poster-card:focus .poster-card__art,
+html[data-tv] .collection-card:focus .collection-art {
+  box-shadow: var(--focus-ring), var(--shadow-2);
+  transform: scale(1.05);
+}
+html[data-tv] .continue-card__art:focus {
+  box-shadow: var(--focus-ring), var(--shadow-2);
+}
+html[data-tv] .poster-card__art,
+html[data-tv] .collection-art {
+  /* Grow upwards so the enlarged poster never covers its own title. */
+  transform-origin: 50% 100%;
+  transition:
+    transform var(--dur-2) var(--ease-out),
+    box-shadow var(--dur-2) var(--ease-out);
+}
+html[data-tv] .poster-card:focus .poster-card__title {
+  color: var(--accent);
+}
+
+/* Rows scroll with focus; leave room for the enlarged focused card. */
+html[data-tv] .row__track {
+  padding-top: 26px;
+  padding-bottom: 18px;
+  scroll-snap-type: none;
+}
+
+/* Pointer-only or phone-only controls get in the remote's way. */
+html[data-tv] .row__nav,
+html[data-tv] .skip-link,
+html[data-tv] .tabbar {
+  display: none !important;
+}
+html[data-tv] .main {
+  padding-bottom: var(--s-8);
+}
+
+/* Player: bigger targets, no volume slider (the TV remote sets the volume). */
+html[data-tv] .player__volume input {
+  display: none;
+}
+html[data-tv] .player__controls .icon-btn {
+  width: 60px;
+  height: 60px;
+}
+html[data-tv] .player__controls .icon-btn svg {
+  width: 30px;
+  height: 30px;
+}
+html[data-tv] .player__top .icon-btn {
+  width: 60px;
+  height: 60px;
+}
+html[data-tv] .seek__input:focus {
+  box-shadow: none;
+}
+html[data-tv] .seek:focus-within {
+  box-shadow: var(--focus-ring);
+  border-radius: var(--r-pill);
+}
+html[data-tv] .player__menu button {
+  padding-block: 14px;
+  font-size: var(--text-lg);
+}

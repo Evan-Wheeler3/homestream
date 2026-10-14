@@ -11,6 +11,7 @@ import { recordError } from '../lib/diagnostics';
 import { formatClock, languageName } from '../lib/format';
 import { sizedImage } from '../lib/images';
 import { useMovie } from '../lib/queries';
+import { isTvMode, remoteKey, type RemoteKey } from '../lib/tv';
 
 interface StartOptions {
   startSeconds: number;
@@ -388,22 +389,32 @@ export default function PlayerPage({ prefs }: { prefs: Preferences }) {
 
   const totalDuration = duration || info?.durationSeconds || 0;
 
+  const hideControls = useCallback(() => {
+    setControlsVisible(false);
+    // On a TV, hidden controls must not keep focus, or OK would press an invisible button.
+    const active = document.activeElement as HTMLElement | null;
+    if (isTvMode() && active && containerRef.current?.contains(active)) active.blur();
+  }, []);
+
   const showControls = useCallback(() => {
     setControlsVisible(true);
     window.clearTimeout(hideTimer.current);
-    hideTimer.current = window.setTimeout(() => {
-      if (videoRef.current && !videoRef.current.paused) setControlsVisible(false);
-    }, HIDE_CONTROLS_MS);
-  }, []);
+    hideTimer.current = window.setTimeout(
+      () => {
+        if (videoRef.current && !videoRef.current.paused) hideControls();
+      },
+      isTvMode() ? HIDE_CONTROLS_MS * 2 : HIDE_CONTROLS_MS,
+    );
+  }, [hideControls]);
 
   // Controls are always shown while paused (see className); when playback starts, hide
   // them after a moment of inactivity.
   useEffect(() => {
     if (!playing) return;
     window.clearTimeout(hideTimer.current);
-    hideTimer.current = window.setTimeout(() => setControlsVisible(false), HIDE_CONTROLS_MS);
+    hideTimer.current = window.setTimeout(hideControls, HIDE_CONTROLS_MS);
     return () => window.clearTimeout(hideTimer.current);
-  }, [playing]);
+  }, [playing, hideControls]);
 
   const togglePlay = useCallback(() => {
     const video = videoRef.current;
@@ -459,10 +470,83 @@ export default function PlayerPage({ prefs }: { prefs: Preferences }) {
     setTextTrack(next);
   }, [info, textTrack, setTextTrack]);
 
+  /**
+   * TV remote: with the controls hidden, left/right seek, OK plays/pauses and
+   * up/down reveal the controls. Once a control has focus, the arrows move
+   * between controls (handled by spatial navigation) and OK presses it.
+   * Returns true when the key needs no further handling here.
+   */
+  const handleRemoteKey = useCallback(
+    (key: RemoteKey, event: KeyboardEvent) => {
+      const video = videoRef.current;
+      const container = containerRef.current;
+      if (!video || !container) return false;
+      const active = document.activeElement as HTMLElement | null;
+      const inControls =
+        !!active && active !== container && active !== video && container.contains(active);
+      const onSeekBar = active?.classList.contains('seek__input') ?? false;
+      showControls();
+      const consume = () => {
+        event.preventDefault();
+        return true;
+      };
+      switch (key) {
+        case 'back':
+          if (menu) setMenu(null);
+          else if (inControls && !video.paused) hideControls();
+          else goBack();
+          return consume();
+        case 'play':
+          void video.play().catch(() => setNeedsTap(true));
+          return consume();
+        case 'pause':
+          video.pause();
+          return consume();
+        case 'playPause':
+          togglePlay();
+          return consume();
+        case 'stop':
+          goBack();
+          return consume();
+        case 'fastForward':
+          seekBy(30);
+          return consume();
+        case 'rewind':
+          seekBy(-10);
+          return consume();
+        case 'enter':
+          if (!inControls) {
+            togglePlay();
+            return consume();
+          }
+          return true;
+        case 'up':
+        case 'down':
+          if (!inControls && !menu) {
+            container.querySelector<HTMLElement>('.player__controls button')?.focus();
+            return consume();
+          }
+          return true;
+        case 'left':
+        case 'right':
+          if (!menu && (!inControls || onSeekBar)) {
+            seekBy(key === 'left' ? -10 : 10);
+            return consume();
+          }
+          return true;
+      }
+    },
+    [menu, showControls, hideControls, goBack, togglePlay, seekBy],
+  );
+
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const video = videoRef.current;
       if (!video || event.metaKey || event.ctrlKey || event.altKey) return;
+      if (isTvMode()) {
+        const key = remoteKey(event);
+        if (key && handleRemoteKey(key, event)) return;
+      }
       const target = event.target as HTMLElement;
       if (target.tagName === 'INPUT' && (target as HTMLInputElement).type !== 'range') return;
       let handled = true;
@@ -516,9 +600,19 @@ export default function PlayerPage({ prefs }: { prefs: Preferences }) {
         showControls();
       }
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [togglePlay, seekBy, toggleFullscreen, cycleSubtitles, goBack, showControls, menu]);
+    // Capture phase, so the player sees keys before the app-wide remote navigation.
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [
+    togglePlay,
+    seekBy,
+    toggleFullscreen,
+    cycleSubtitles,
+    goBack,
+    showControls,
+    menu,
+    handleRemoteKey,
+  ]);
 
   // Lock-screen / headset controls.
   useEffect(() => {

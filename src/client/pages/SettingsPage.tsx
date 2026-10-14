@@ -25,6 +25,32 @@ import { recentErrors } from '../lib/diagnostics';
 import { relativeTime, SUBTITLE_LANGUAGE_OPTIONS } from '../lib/format';
 import { useCollections, useRefreshCatalog, useStatus, useUpdatePreferences } from '../lib/queries';
 import { SORT_OPTIONS } from './BrowsePage';
+import { setTvSetting, useTvMode } from '../lib/tv';
+
+/** TV mode is a per-device choice (a phone and a TV share one account). */
+function TvModeField() {
+  const tv = useTvMode();
+  return (
+    <div className="field">
+      <span className="field__label">TV mode</span>
+      <Segmented
+        label="TV mode"
+        value={tv.setting}
+        onChange={setTvSetting}
+        options={[
+          { value: 'auto', label: 'Automatic' },
+          { value: 'on', label: 'On' },
+          { value: 'off', label: 'Off' },
+        ]}
+      />
+      <p className="field__hint">
+        Larger layout you can drive with a TV remote: arrows to move, OK to select, Back to go back.
+        Automatic turns it on for smart-TV browsers. This setting only affects this device
+        {tv.enabled ? ', where it is currently on.' : '.'}
+      </p>
+    </div>
+  );
+}
 
 function Section({
   id,
@@ -531,6 +557,7 @@ export default function SettingsPage({
             ]}
           />
         </div>
+        <TvModeField />
       </Section>
 
       <Section

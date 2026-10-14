@@ -4,6 +4,8 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import type { Preferences, SessionInfo } from '../../shared/types';
 import { api } from '../lib/api';
 import { connection, useConnection } from '../lib/connection';
+import { focusFirst } from '../lib/spatialNav';
+import { isTvMode } from '../lib/tv';
 import { Icon, type IconName } from './Icon';
 import { IconButton } from './ui';
 
@@ -104,10 +106,22 @@ export function AppShell({ session, prefs }: { session: SessionInfo; prefs: Pref
     return () => window.removeEventListener('keydown', onKey);
   }, [navigate, location.pathname]);
 
-  // Move focus to the main region on navigation for screen-reader users.
   useEffect(() => {
     window.scrollTo({ top: 0 });
   }, [location.pathname]);
+
+  // On a TV, put focus on the page's first control once it has loaded so the
+  // remote has a starting point.
+  useEffect(() => {
+    if (!isTvMode() || onPlayer) return;
+    let tries = 0;
+    const id = window.setInterval(() => {
+      const active = document.activeElement;
+      const idle = !active || active === document.body || active.id === 'main';
+      if (!idle || focusFirst() || ++tries > 25) window.clearInterval(id);
+    }, 120);
+    return () => window.clearInterval(id);
+  }, [location.pathname, onPlayer]);
 
   const signOut = async () => {
     try {

@@ -205,6 +205,20 @@ HDMI. Built-in smart-TV browsers vary a lot; they are _not_ guaranteed to work (
 living-room TV, Jellyfin’s own official apps (Android TV, Fire TV, Roku, webOS, Tizen, Apple TV via Swiftfin)
 read the same Jellyfin library and watch progress — but not Wheelhouse’s collections or notes.
 
+**TV mode.** In a smart-TV browser (LG webOS, Samsung Tizen, Fire TV, Android/Google TV), Wheelhouse
+switches to a larger layout you drive with the remote:
+
+| Remote button             | Browsing                         | Player                                                 |
+| ------------------------- | -------------------------------- | ------------------------------------------------------ |
+| Arrows                    | Move between posters and buttons | Left/right skip 10 s; up/down show the controls        |
+| OK                        | Open / press                     | Play/pause (or press the focused control)              |
+| Back                      | Close a dialog, previous page    | Close a menu → hide the controls → leave the player    |
+| Play, Pause, ⏩, ⏪, Stop | —                                | Play, pause, forward 30 s, back 10 s, leave the player |
+
+Starting a movie in TV mode goes full screen, which hides the TV browser’s toolbar. TV mode is detected
+automatically; to force it on or off for one device, use **Settings → Appearance → TV mode** (it is a
+per-device setting, so your phone is unaffected).
+
 ## Keep it running
 
 `npm start` runs until you close the window. To start Wheelhouse automatically with the computer:
@@ -317,8 +331,8 @@ artwork, sidecar and embedded subtitles, two audio tracks, H.264/MP4, H.264/MKV,
 - A device **revoked in Jellyfin** is signed out within a minute and can sign in again.
 - Favorites toggled in Jellyfin and restored; collections referencing real Jellyfin IDs.
 
-**Automated tests:** 84 unit/integration tests (`npm test`), 9 live Jellyfin tests (`npm run test:jellyfin`),
-and 20 browser end-to-end checks including accessibility audits with axe (`npm run test:e2e`).
+**Automated tests:** 95 unit/integration tests (`npm test`), 9 live Jellyfin tests (`npm run test:jellyfin`),
+and 23 browser end-to-end checks (including TV-remote navigation with an LG webOS user agent) including accessibility audits with axe (`npm run test:e2e`).
 
 **Not verified / limitations — please read:**
 
