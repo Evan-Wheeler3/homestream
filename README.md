@@ -298,13 +298,24 @@ backup, free space on each drive (with a warning, and a phone notification, when
   To restore: stop Wheelhouse, copy `wheelhouse.db` and `artwork/` from the backup into `data/`,
   start it again.
 
-**Updating Wheelhouse:**
+**Updating Wheelhouse:** if you installed it with `git clone`, open _Settings → Updates_ (administrators
+only): it lists what’s new and **Update now** downloads, installs, builds and restarts Wheelhouse by itself
+(when it runs as a service: launchd on a Mac, systemd on Linux; otherwise restart it yourself afterwards).
+By hand, it is the same thing:
 
 ```bash
 git pull
 npm install
 npm run build
 # then restart it (or restart the service / scheduled task)
+```
+
+Installed from a downloaded zip instead? Switch to git once, keeping your settings and data:
+
+```bash
+cd ~ && git clone -b claude/peaceful-cray-8hwjin https://github.com/Evan-Wheeler3/homestream.git wheelhouse-git
+cp -R wheelhouse/.env wheelhouse/data wheelhouse-git/ && mv wheelhouse wheelhouse-old && mv wheelhouse-git wheelhouse
+cd wheelhouse && npm install && npm run build   # then restart the service
 ```
 
 The database upgrades itself on start. Back up first, out of habit.

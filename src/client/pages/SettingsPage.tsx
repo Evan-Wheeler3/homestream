@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import {
@@ -7,7 +7,14 @@ import {
   BUILTIN_SECTIONS,
   THEMES,
 } from '../../shared/preferences';
-import type { HomeSectionPref, Preferences, SessionInfo, SortField } from '../../shared/types';
+import type {
+  HomeSectionPref,
+  Preferences,
+  ServerStatus,
+  SessionInfo,
+  SortField,
+  UpdateStatus,
+} from '../../shared/types';
 import { Icon } from '../components/Icon';
 import { useToast } from '../components/Toasts';
 import {
@@ -26,6 +33,107 @@ import { formatBytes, relativeTime, SUBTITLE_LANGUAGE_OPTIONS } from '../lib/for
 import { useCollections, useRefreshCatalog, useStatus, useUpdatePreferences } from '../lib/queries';
 import { SORT_OPTIONS } from './BrowsePage';
 import { setTvSetting, useTvMode } from '../lib/tv';
+
+/** Check for and install updates (git installs; administrators only). */
+function UpdatesPanel() {
+  const toast = useToast();
+  const [force, setForce] = useState(0);
+  const [startedAt, setStartedAt] = useState<string | null>(null);
+  const status = useQuery({
+    queryKey: ['update-status', force],
+    queryFn: () => api<UpdateStatus>(`/system/update${force ? '?force=1' : ''}`),
+    refetchInterval: (q) => {
+      const st = q.state.data?.state;
+      return st?.running || st?.restarting ? 1500 : false;
+    },
+  });
+  const start = useMutation({
+    mutationFn: () => api<UpdateStatus>('/system/update', { method: 'POST' }),
+    onSuccess: () => void status.refetch(),
+    onError: (e) => toast.show(errorMessage(e), 'error'),
+  });
+
+  // After an update the server restarts; reload once the new version answers.
+  const restarting = status.data?.state.restarting;
+  useEffect(() => {
+    if (!restarting) return;
+    const id = window.setInterval(async () => {
+      try {
+        const s = await api<ServerStatus>('/status');
+        if (startedAt && s.app.startedAt !== startedAt) window.location.reload();
+        if (!startedAt) setStartedAt(s.app.startedAt);
+      } catch {
+        /* still restarting */
+      }
+    }, 2000);
+    return () => window.clearInterval(id);
+  }, [restarting, startedAt]);
+
+  if (status.isPending) return <Spinner label="Checking for updates" />;
+  if (status.isError) return <p className="field__error">{errorMessage(status.error)}</p>;
+  const u = status.data;
+  const st = u.state;
+
+  if (!u.supported) return <p className="field__hint">{u.reason}</p>;
+
+  return (
+    <div className="updates">
+      {u.current && (
+        <p className="field__hint">
+          Installed: <code>{u.current.sha}</code> · {u.current.subject} ·{' '}
+          {relativeTime(u.current.date)}
+        </p>
+      )}
+      {u.reason && <p className="field__error">{u.reason}</p>}
+      {st.running || st.restarting ? (
+        <p className="updates__progress" aria-live="polite">
+          <Spinner size={18} /> {st.step}…
+        </p>
+      ) : st.error ? (
+        <p className="field__error">Update failed: {st.error}</p>
+      ) : st.step ? (
+        <p className="status-ok">{st.step}</p>
+      ) : u.behind > 0 ? (
+        <>
+          <p>
+            <strong>{u.behind === 1 ? '1 new change' : `${u.behind} new changes`}</strong>{' '}
+            available:
+          </p>
+          <ul className="updates__changes">
+            {u.changes.map((c, i) => (
+              <li key={i}>{c}</li>
+            ))}
+          </ul>
+        </>
+      ) : (
+        u.checkedAt && (
+          <p className="status-ok">Up to date (checked {relativeTime(u.checkedAt)}).</p>
+        )
+      )}
+      <div className="button-row">
+        {u.behind > 0 && !st.running && !st.restarting && (
+          <Button
+            variant="primary"
+            icon="arrowDown"
+            busy={start.isPending}
+            onClick={() => start.mutate()}
+          >
+            Update now
+          </Button>
+        )}
+        <Button
+          variant="secondary"
+          icon="refresh"
+          busy={status.isFetching && !st.running}
+          disabled={st.running || st.restarting}
+          onClick={() => setForce((n) => n + 1)}
+        >
+          Check for updates
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 /** TV mode is a per-device choice (a phone and a TV share one account). */
 function TvModeField() {
@@ -548,6 +656,7 @@ export default function SettingsPage({
           ['playback', 'Playback'],
           ['server', 'Server'],
           ['discs', 'Discs'],
+          ['updates', 'Updates'],
           ['diagnostics', 'Diagnostics'],
           ['account', 'Account'],
         ].map(([id, label]) => (
@@ -730,6 +839,16 @@ export default function SettingsPage({
       <Section id="server" title="Server" description="Connection to your media server.">
         <ServerStatusPanel />
       </Section>
+
+      {session.user.isAdmin && (
+        <Section
+          id="updates"
+          title="Updates"
+          description="Get the newest Wheelhouse. Your library, collections and settings are kept."
+        >
+          <UpdatesPanel />
+        </Section>
+      )}
 
       <Section
         id="discs"

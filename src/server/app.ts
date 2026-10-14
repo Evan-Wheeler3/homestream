@@ -16,6 +16,7 @@ import type { Db } from './db.js';
 import { ApiError } from './errors.js';
 import { LibraryService } from './library.js';
 import { Maintenance } from './maintenance.js';
+import { isSupervised, Updater } from './updater.js';
 import { JellyfinProvider } from './providers/jellyfin.js';
 import { MockProvider } from './providers/mock.js';
 import type { MediaProvider } from './providers/types.js';
@@ -46,6 +47,8 @@ export interface AppOptions {
   ripperRunner?: Runner;
   ripperNotifier?: Notifier;
   ripperFetch?: typeof fetch;
+  /** Test seams for in-app updates. */
+  updater?: Updater;
 }
 
 export function createApp({
@@ -56,6 +59,7 @@ export function createApp({
   ripperRunner = runProcess,
   ripperNotifier,
   ripperFetch = fetch,
+  updater: injectedUpdater,
 }: AppOptions) {
   const provider: MediaProvider =
     injected ??
@@ -121,6 +125,15 @@ export function createApp({
           logger,
         });
 
+  // In-app updates. Exiting with a non-zero code makes launchd/systemd start the new version.
+  const updater =
+    injectedUpdater ??
+    new Updater({
+      root: ROOT,
+      restart: isSupervised() ? () => process.exit(75) : undefined,
+      logger,
+    });
+
   const app = express();
   app.disable('x-powered-by');
   app.set('trust proxy', config.trustProxy);
@@ -173,6 +186,7 @@ export function createApp({
       ripper,
       ntfy: ripperNotifier ?? ntfy,
       maintenance,
+      updater,
     }),
   );
 

@@ -430,6 +430,26 @@ export interface RipJob {
   finishedAt: string | null;
 }
 
+export interface UpdateStatus {
+  /** False for installs that didn't come from git (reason explains). */
+  supported: boolean;
+  reason: string | null;
+  branch: string | null;
+  current: { sha: string; date: string; subject: string } | null;
+  /** How many new changes are available. */
+  behind: number;
+  /** Their descriptions, newest first. */
+  changes: string[];
+  checkedAt: string | null;
+  state: {
+    running: boolean;
+    step: string | null;
+    error: string | null;
+    finishedAt: string | null;
+    restarting: boolean;
+  };
+}
+
 export interface DriveStatus {
   label: string;
   path: string;

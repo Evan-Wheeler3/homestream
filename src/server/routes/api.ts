@@ -31,6 +31,7 @@ import { toPublicJob } from '../ripper/jobs.js';
 import type { Ripper } from '../ripper/ripper.js';
 import type { Notifier } from '../ripper/services.js';
 import type { Maintenance } from '../maintenance.js';
+import type { Updater } from '../updater.js';
 
 type Handler = (req: Request, res: Response) => Promise<unknown> | unknown;
 
@@ -108,6 +109,7 @@ export interface ApiDeps {
   /** Phone notifications, for the "send a test notification" button. */
   ntfy?: Notifier | null;
   maintenance?: Maintenance | null;
+  updater?: Updater | null;
 }
 
 export function apiRouter(deps: ApiDeps): Router {
@@ -224,6 +226,35 @@ export function apiRouter(deps: ApiDeps): Router {
         ripper: deps.ripper?.health() ?? null,
       };
       return status;
+    }),
+  );
+
+  const requireAdmin = (req: Request, what: string) => {
+    if (!req.session?.user.isAdmin) {
+      throw new ApiError('FORBIDDEN', `Only a Jellyfin administrator can ${what}.`);
+    }
+  };
+
+  router.get(
+    '/system/update',
+    route(async (req) => {
+      requireAdmin(req, 'update Wheelhouse');
+      if (!deps.updater) throw notFound();
+      return deps.updater.status(req.query.force === '1');
+    }),
+  );
+
+  router.post(
+    '/system/update',
+    route(async (req) => {
+      requireAdmin(req, 'update Wheelhouse');
+      if (!deps.updater) throw notFound();
+      try {
+        deps.updater.start();
+      } catch (error) {
+        throw badRequest(error instanceof Error ? error.message : String(error));
+      }
+      return deps.updater.status();
     }),
   );
 

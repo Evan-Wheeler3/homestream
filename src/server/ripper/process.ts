@@ -10,6 +10,8 @@ export interface RunOptions {
   /** Called for every line (split on \n and \r, since progress lines use \r). */
   onLine?: (line: string) => void;
   signal?: AbortSignal;
+  cwd?: string;
+  env?: NodeJS.ProcessEnv;
 }
 
 export type Runner = (command: string, args: string[], options?: RunOptions) => Promise<RunResult>;
@@ -22,6 +24,8 @@ export const runProcess: Runner = (command, args, options = {}) =>
     const child = spawn(command, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
       signal: options.signal,
+      cwd: options.cwd,
+      env: options.env,
     });
     let output = '';
     let partial = '';
