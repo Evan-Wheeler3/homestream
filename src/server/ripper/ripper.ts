@@ -283,7 +283,11 @@ export class Ripper {
     const info = parseDiscInfo(result.output);
     if (info.titles.length === 0) {
       const why = parseMessages(result.output).slice(-2).join(' ');
-      throw new UserError(`MakeMKV couldn’t read the disc. ${why}`.trim());
+      // "OS access mode" / "Failed to open disc": macOS refused raw access to the drive.
+      const permission = /OS access mode|Failed to open disc/i.test(why)
+        ? ' macOS is probably blocking access to the drive: in System Settings → Privacy & Security → Full Disk Access, turn on “node” (/usr/local/bin/node) and MakeMKV, restart Wheelhouse, then press Retry.'
+        : '';
+      throw new UserError(`MakeMKV couldn’t read the disc. ${why}${permission}`.trim());
     }
 
     const guess = guessTitle(info.name, job.discLabel);
@@ -593,6 +597,16 @@ export class Ripper {
         progress: null,
       });
       this.kickEncoder();
+    } else if (fs.existsSync(job.mountPath)) {
+      // Failed while reading the disc, and it is still in the drive: start again.
+      if (this.discBusy)
+        throw new UserError('The drive is busy with another disc. Try again shortly.');
+      this.deps.jobs.update(id, {
+        status: 'scanning',
+        message: 'Reading the disc…',
+        progress: null,
+      });
+      void this.runDisc(id);
     } else {
       throw new UserError('Nothing was saved from this disc. Insert it again to start over.');
     }

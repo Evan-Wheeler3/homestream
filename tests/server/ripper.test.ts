@@ -37,6 +37,7 @@ class FakeHardware {
   disc: Disc | null = null;
   calls: string[] = [];
   failNextEncode = false;
+  failNextInfo = false;
   encodedSeconds = FEATURE_SECONDS;
 
   constructor(private readonly volumes: string) {}
@@ -56,6 +57,17 @@ class FakeHardware {
           ? `DRV:0,2,999,1,"USB DVD","${this.disc.label}","/dev/rdisk4"\nDRV:1,256,999,0,"","",""`
           : `DRV:0,0,999,1,"USB DVD","",""`;
         return { code: 0, output };
+      }
+      if (args.includes('info') && this.failNextInfo) {
+        this.failNextInfo = false;
+        return {
+          code: 0,
+          output: [
+            'MSG:1011,0,1,"Using LibreDrive mode (v06.3 id=1)"',
+            'MSG:2003,0,1,"Optical drive \\"DVD+R-DL Dell DVD+/-RW DW316\\" opened in OS access mode."',
+            'MSG:5010,0,0,"Failed to open disc"',
+          ].join('\n'),
+        };
       }
       if (args.includes('info')) {
         return { code: 0, output: this.disc ? discInfo(this.disc) : 'MSG:5010,0,0,"No disc"' };
@@ -311,6 +323,22 @@ describe('automatic disc ripping', () => {
 
     expect((await client.post(`/api/rips/${failed.id}/retry`)).status).toBe(200);
     await waitFor('done');
+  });
+
+  it('explains a blocked drive, and Retry starts again while the disc is still in', async () => {
+    await boot();
+    hw.failNextInfo = true;
+    hw.insert({ label: 'A_NEW_HOPE', titles: [{ duration: FEATURE }] });
+    await server.ripper!.poll();
+    const failed = await waitFor('failed');
+    expect(String(failed.message)).toMatch(/Failed to open disc/);
+    expect(String(failed.message)).toMatch(/Full Disk Access/);
+
+    expect((await client.post(`/api/rips/${failed.id}/retry`)).status).toBe(200);
+    // Read, ripped and compressed this time; "A New Hope" then just needs its name confirmed.
+    const next = await waitFor('needs_name');
+    expect(next.id).toBe(failed.id);
+    expect(next.guess).toBe('A New Hope');
   });
 
   it('refuses to file an incomplete compressed movie', async () => {
