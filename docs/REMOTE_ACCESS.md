@@ -16,6 +16,11 @@ plan is free.
    `100.x.y.z` address is shown in the Tailscale app.
 3. That’s it. Sign in with your Jellyfin account as usual.
 
+**An address that never changes:** in the Tailscale admin console (_DNS_) leave **MagicDNS** on and rename the
+computer to something short, e.g. `wheelhouse` (_Machines → … → Edit machine name_). Then
+`http://wheelhouse:8787` works from any of your devices, at home or away, whatever Wi-Fi the computer is on.
+Its `100.x.y.z` address doesn't change either.
+
 ### Optional: HTTPS with Tailscale Serve
 
 For a proper `https://` address (and Secure cookies), let Tailscale terminate HTTPS:
@@ -37,6 +42,25 @@ private to your tailnet (do **not** use `tailscale funnel`, which makes it publi
 **Bandwidth:** away from home your upload speed is the limit. Set _Settings → Playback → Maximum streaming
 quality_ to 4 Mbps or less on that device so Jellyfin sends a smaller stream (this needs transcoding, so enable
 hardware acceleration in Jellyfin if you can).
+
+## Working on the server from anywhere
+
+Tailscale also lets you look after the Wheelhouse computer when you're out (say, someone at home puts discs in
+while you watch the Discs page from work). With Tailscale on both devices:
+
+- **See the screen:** on the Mac, _System Settings → General → Sharing → Screen Sharing_ on. From another Mac
+  use Finder → _Go → Connect to Server_ → `vnc://wheelhouse`; from a phone use any VNC viewer (e.g. RealVNC
+  Viewer) with the Mac's Tailscale name.
+- **A terminal:** turn on _Sharing → Remote Login_ and connect with `ssh you@wheelhouse` (on a phone: an SSH
+  app such as Termius). Handy commands, in the Wheelhouse folder: `git pull && npm ci && npm run build`, then
+  `launchctl kickstart -k gui/$(id -u)/com.wheelhouse.app` to restart, and `tail -f /tmp/wheelhouse.log` to
+  watch its log (macOS, with the supplied launchd file).
+- **Updates without a terminal:** _Settings → Updates_ in Wheelhouse (when it was installed with `git clone`).
+- **Claude Code:** run `claude remote-control` in the Wheelhouse folder on the Mac and pick the session up
+  from the Claude app on your phone or at <https://claude.ai/code>.
+
+Keep the Mac awake for all of this: _System Settings → Energy_ → _Prevent automatic sleeping when the display
+is off_.
 
 ## Alternative: your own domain behind a reverse proxy (advanced)
 

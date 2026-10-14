@@ -352,7 +352,9 @@ The database upgrades itself on start. Back up first, out of habit.
 
 Watching away from home is a **separate, optional step** — see [docs/REMOTE_ACCESS.md](docs/REMOTE_ACCESS.md).
 In short: the recommended option is **Tailscale** (a private network between your own devices; nothing exposed
-to the internet). Avoid simply forwarding a port on your router.
+to the internet), which also gives the computer a name that never changes (`http://wheelhouse:8787`),
+optional HTTPS, and a way to check on or update the server from work. Avoid simply forwarding a port on your
+router.
 
 ## Configuration reference
 
@@ -463,6 +465,9 @@ npm run check        # format check, lint, type-check, unit/integration tests
 npm run test:e2e     # browser tests (first time: npx playwright install chromium)
 JELLYFIN_TEST_URL=http://127.0.0.1:8096 JELLYFIN_TEST_USER=you JELLYFIN_TEST_PASSWORD=… npm run test:jellyfin
 ```
+
+GitHub Actions (`.github/workflows/ci.yml`) runs `npm run check` and the full Playwright suite (desktop, phone
+and TV) on every push and pull request, so a broken change shows up before you update the server with it.
 
 Project layout:
 
