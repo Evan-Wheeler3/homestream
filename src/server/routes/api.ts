@@ -33,6 +33,7 @@ import type { Ripper } from '../ripper/ripper.js';
 import type { Notifier } from '../ripper/services.js';
 import type { Maintenance } from '../maintenance.js';
 import type { Updater } from '../updater.js';
+import type { MovieNights } from '../nights.js';
 
 type Handler = (req: Request, res: Response) => Promise<unknown> | unknown;
 
@@ -89,6 +90,9 @@ export function parseMovieQuery(q: Request['query']): MovieQuery {
     watched,
     favorite: q.favorite === '1' || q.favorite === 'true' ? true : undefined,
     watchlist: q.watchlist === '1' || q.watchlist === 'true' ? true : undefined,
+    ids: list(q.ids)
+      ?.filter((id) => /^[\w-]{1,64}$/.test(id))
+      .slice(0, 50),
     sort,
     dir: q.dir === 'asc' || q.dir === 'desc' ? q.dir : undefined,
     offset: int(q.offset),
@@ -113,6 +117,7 @@ export interface ApiDeps {
   ntfy?: Notifier | null;
   maintenance?: Maintenance | null;
   updater?: Updater | null;
+  nights?: MovieNights;
 }
 
 export function apiRouter(deps: ApiDeps): Router {
@@ -217,10 +222,76 @@ export function apiRouter(deps: ApiDeps): Router {
     }),
   );
 
+  // Movie night voting from any phone (guests too): join with the code on the TV.
+  const nights = deps.nights;
+  if (nights) {
+    router.get(
+      '/public/nights/:code',
+      route((req) => {
+        const id = nights.idForCode(String(req.params.code ?? '').slice(0, 8));
+        const voter = typeof req.query.voter === 'string' ? req.query.voter : '';
+        return { night: nights.view(id), myVote: voter ? nights.myVote(id, voter) : null };
+      }),
+    );
+    router.post(
+      '/public/nights/:code/vote',
+      route((req) => {
+        const id = nights.idForCode(String(req.params.code ?? '').slice(0, 8));
+        const body = (req.body ?? {}) as { voterKey?: unknown; name?: unknown; itemId?: unknown };
+        if (typeof body.itemId !== 'string') throw badRequest('Pick a movie.');
+        nights.vote(
+          id,
+          { key: String(body.voterKey ?? ''), name: String(body.name ?? '') },
+          body.itemId,
+        );
+        return { night: nights.view(id), myVote: body.itemId };
+      }),
+    );
+  }
+
   // ---------------------------------------------------------------------------
   // Everything below requires a session
 
   router.use(requireAuth);
+
+  if (nights) {
+    router.post(
+      '/nights',
+      route(async (req) => {
+        const ctx = ctxOf(req);
+        const body = (req.body ?? {}) as { count?: unknown; pool?: unknown; ids?: unknown };
+        const count = Math.min(8, Math.max(2, Number(body.count) || 4));
+        const pool = String(body.pool ?? 'unwatched');
+        const query: MovieQuery = {
+          watched: pool === 'unwatched' ? 'unwatched' : undefined,
+          favorite: pool === 'favorites' || undefined,
+          watchlist: pool === 'watchlist' || undefined,
+        };
+        if (Array.isArray(body.ids)) query.ids = body.ids.map(String).slice(0, 8);
+        const movies = await library.sample(ctx, query, count);
+        if (movies.length < 2) {
+          throw badRequest('Not enough movies to choose from. Try “Everything”.');
+        }
+        const id = nights.create({ id: ctx.userId, name: ctx.userName }, movies);
+        return nights.view(id);
+      }),
+    );
+    router.get(
+      '/nights/current',
+      route((req) => {
+        const id = nights.currentFor(ctxOf(req).userId);
+        return { night: id ? nights.view(id) : null };
+      }),
+    );
+    router.post(
+      '/nights/:id/close',
+      route((req) => {
+        const id = String(req.params.id ?? '');
+        nights.close(id, ctxOf(req).userId);
+        return nights.view(id);
+      }),
+    );
+  }
 
   router.get(
     '/status',

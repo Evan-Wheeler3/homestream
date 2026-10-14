@@ -62,6 +62,7 @@ export function movieQueryString(query: MovieQuery): string {
   if (query.watched) params.set('watched', query.watched);
   if (query.favorite) params.set('favorite', '1');
   if (query.watchlist) params.set('watchlist', '1');
+  multi('ids', query.ids);
   if (query.sort) params.set('sort', query.sort);
   if (query.dir) params.set('dir', query.dir);
   return params.toString();

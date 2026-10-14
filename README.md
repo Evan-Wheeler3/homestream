@@ -68,6 +68,10 @@ or a large screen — with your own branding, collections, notes and home layout
   Watchlist_ row on Home, as a _Watchlist_ quick filter on Browse, and as a pool for the wheel.
 - **Because you watched…**: a Home row of unwatched films like your most recent watch (same director, cast,
   genres and era first).
+- **Movie night**: can’t agree? Start a vote (_/night_, or from the wheel): Wheelhouse picks a shortlist
+  (unwatched, everything, favorites or watchlist) and the TV shows a 4-letter code. Everyone votes on their
+  phone at `…/vote` — guests included, no account needed — and the TV updates live. Close voting to reveal
+  the winner (with Play); a tie goes to the wheel.
 - **Wheelhouse Wrapped** (_/wrapped_, and a Home card): your year in movies — films and hours watched,
   favourite genre and decade, month-by-month, top directors and actors, longest sit, most rewatched — for
   any year or all time. Wheelhouse keeps its own viewing history from its player; movies watched elsewhere

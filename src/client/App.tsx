@@ -24,11 +24,13 @@ import { PersonPage } from './pages/PersonPage';
 import { RipsPage } from './pages/RipsPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { SearchPage } from './pages/SearchPage';
+import { VotePage } from './pages/VotePage';
 
 const PlayerPage = lazy(() => import('./player/PlayerPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const SpinPage = lazy(() => import('./pages/SpinPage'));
 const WrappedPage = lazy(() => import('./pages/WrappedPage'));
+const NightPage = lazy(() => import('./pages/NightPage'));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -55,7 +57,9 @@ function AuthLostWatcher() {
   const location = useLocation();
   const qc = useQueryClient();
   useEffect(() => {
-    if (!authLost || location.pathname === '/login') return;
+    // The login and voting pages work without a session.
+    if (!authLost || location.pathname === '/login' || location.pathname.startsWith('/vote'))
+      return;
     qc.clear();
     navigate('/login', {
       replace: true,
@@ -118,6 +122,7 @@ function Protected() {
           <Route path="rips" element={<RipsPage session={session.data} />} />
           <Route path="spin" element={<SpinPage prefs={preferences} />} />
           <Route path="wrapped" element={<WrappedPage />} />
+          <Route path="night" element={<NightPage />} />
           <Route
             path="settings"
             element={<SettingsPage session={session.data} prefs={preferences} />}
@@ -142,6 +147,8 @@ export function App() {
           <AuthLostWatcher />
           <Routes>
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/vote" element={<VotePage />} />
+            <Route path="/vote/:code" element={<VotePage />} />
             <Route path="/*" element={<Protected />} />
           </Routes>
         </BrowserRouter>

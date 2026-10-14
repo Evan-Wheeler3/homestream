@@ -16,6 +16,7 @@ import type { Db } from './db.js';
 import { ApiError } from './errors.js';
 import { LibraryService } from './library.js';
 import { Maintenance } from './maintenance.js';
+import { MovieNights } from './nights.js';
 import { isSupervised, Updater } from './updater.js';
 import { JellyfinProvider } from './providers/jellyfin.js';
 import { MockProvider } from './providers/mock.js';
@@ -187,6 +188,7 @@ export function createApp({
       ntfy: ripperNotifier ?? ntfy,
       maintenance,
       updater,
+      nights: new MovieNights(db),
     }),
   );
 

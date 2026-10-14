@@ -35,7 +35,8 @@ function SpinPromo({ movie }: { movie: Movie | null }) {
         <p className="spin-promo__text">
           {movie
             ? `Tonight could be ${movie.title}… or anything else you haven’t seen. Let fate decide.`
-            : 'Let fate pick tonight’s movie from the ones you haven’t seen.'}
+            : 'Let fate pick tonight’s movie from the ones you haven’t seen.'}{' '}
+          <Link to="/night">Or put it to a vote.</Link>
         </p>
       </div>
       <ButtonLink

@@ -141,6 +141,29 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX watch_events_user ON watch_events(user_id, watched_at);
   `,
+  // 6: movie night votes
+  `
+  CREATE TABLE movie_nights (
+    id TEXT PRIMARY KEY,
+    code TEXT NOT NULL,
+    host_user_id TEXT NOT NULL,
+    host_name TEXT NOT NULL,
+    candidates TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'open',
+    winner_id TEXT,
+    created_at TEXT NOT NULL,
+    closed_at TEXT
+  );
+  CREATE INDEX movie_nights_code ON movie_nights(code, status);
+  CREATE TABLE night_votes (
+    night_id TEXT NOT NULL REFERENCES movie_nights(id) ON DELETE CASCADE,
+    voter_key TEXT NOT NULL,
+    voter_name TEXT NOT NULL,
+    item_id TEXT NOT NULL,
+    voted_at TEXT NOT NULL,
+    PRIMARY KEY (night_id, voter_key)
+  );
+  `,
 ];
 
 export type Db = DatabaseSync;

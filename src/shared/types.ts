@@ -139,6 +139,8 @@ export interface MovieQuery {
   favorite?: boolean;
   /** Only movies on the signed-in user's watchlist. */
   watchlist?: boolean;
+  /** Only these movie ids (e.g. a tie from movie night). */
+  ids?: string[];
   sort?: SortField;
   dir?: SortDir;
   offset?: number;
@@ -403,6 +405,33 @@ export interface SessionUser {
   id: string;
   name: string;
   isAdmin: boolean;
+}
+
+// -----------------------------------------------------------------------------
+// Movie night
+
+export interface NightCandidate {
+  id: string;
+  title: string;
+  year: number | null;
+  runtimeMinutes: number | null;
+  genres: string[];
+  overview: string | null;
+  /** May need a signed-in session to load (guests see a title card instead). */
+  poster: string | null;
+  votes: number;
+}
+
+export interface MovieNight {
+  id: string;
+  code: string;
+  hostName: string;
+  status: 'open' | 'closed';
+  candidates: NightCandidate[];
+  voters: { name: string }[];
+  /** Set when voting is closed. Several ids = a tie. */
+  winners: string[];
+  createdAt: string;
 }
 
 /** A household member shown on the "Who's watching?" screen. */

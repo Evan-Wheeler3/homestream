@@ -249,6 +249,42 @@ test('Wrapped: the year in movies, from the Home card', async ({ page }) => {
   await expect(page.getByRole('heading', { level: 1, name: 'All your movies' })).toBeVisible();
 });
 
+test('movie night: the TV shows a code, a guest votes on a phone, the TV reveals the winner', async ({
+  page,
+  browser,
+}) => {
+  await signIn(page);
+  await page.goto('/night');
+  await page.getByRole('radio', { name: 'Everything' }).click();
+  await page.getByRole('radio', { name: '3' }).click();
+  await page.getByRole('button', { name: 'Start movie night' }).click();
+  const codeEl = page.getByLabel(/^Code /);
+  await expect(codeEl).toBeVisible();
+  const code = (await codeEl.textContent())!.trim();
+  const choices = page.getByRole('list', { name: 'Choices' }).getByRole('listitem');
+  await expect(choices).toHaveCount(3);
+  const firstTitle = (await choices.first().locator('strong').textContent())!.trim();
+
+  // A guest's phone: no account.
+  const phone = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const guest = await phone.newPage();
+  await guest.goto('/vote');
+  await guest.getByLabel('Code on the TV').fill(code.toLowerCase());
+  await guest.getByLabel('Your name').fill('Guest');
+  await guest.getByRole('button', { name: 'Join' }).click();
+  await guest.getByRole('button', { name: new RegExp(firstTitle) }).click();
+  await expect(guest.getByRole('heading', { name: 'Vote counted' })).toBeVisible();
+  await expect(guest).toHaveURL(/\/vote/); // never sent to sign in
+
+  // The TV updates by itself, then reveals.
+  await expect(page.getByText('Voted: Guest')).toBeVisible({ timeout: 6000 });
+  await page.getByRole('button', { name: 'Close voting and reveal' }).click();
+  await expect(page.getByRole('heading', { level: 2, name: firstTitle })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Play' })).toBeVisible();
+  await expect(guest.getByRole('heading', { name: firstTitle })).toBeVisible({ timeout: 6000 });
+  await phone.close();
+});
+
 test('detail: favorite, rating and notes persist after reload', async ({ page }) => {
   await signIn(page);
   await page.goto('/movie/ugetsu-1953');

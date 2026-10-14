@@ -44,6 +44,10 @@ export class LibraryService {
 
   /** Narrow to the user's watchlist when the query asks for it (kept in watchlist order). */
   private pool(ctx: UserContext, movies: Movie[], query: MovieQuery): Movie[] {
+    if (query.ids?.length) {
+      const wanted = new Set(query.ids);
+      movies = movies.filter((m) => wanted.has(m.id));
+    }
     if (!query.watchlist) return movies;
     const byId = new Map(movies.map((m) => [m.id, m]));
     return this.store

@@ -58,6 +58,7 @@ export function queryFromParams(params: URLSearchParams, prefs: Preferences): Mo
         : undefined,
     favorite: params.get('favorite') === '1' || undefined,
     watchlist: params.get('watchlist') === '1' || undefined,
+    ids: listParam(params, 'ids'),
     sort: sort ?? (params.get('q') ? undefined : prefs.defaultSort),
     dir:
       (params.get('dir') as 'asc' | 'desc' | null) ??

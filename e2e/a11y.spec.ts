@@ -29,6 +29,11 @@ async function audit(page: Page) {
     );
 }
 
+test('voting page has no serious accessibility violations', async ({ page }) => {
+  await page.goto('/vote');
+  expect(await audit(page)).toEqual([]);
+});
+
 test('login page has no serious accessibility violations', async ({ page }) => {
   await page.goto('/login');
   await useLoginForm(page);
@@ -45,6 +50,7 @@ for (const path of [
   '/rips',
   '/spin',
   '/wrapped',
+  '/night',
   '/person/Akira%20Kurosawa',
 ]) {
   test(`${path} has no serious accessibility violations`, async ({ page }) => {

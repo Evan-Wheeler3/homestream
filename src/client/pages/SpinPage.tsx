@@ -284,7 +284,10 @@ export default function SpinPage({ prefs }: { prefs: Preferences }) {
       <header className="page-header">
         <div>
           <h1 className="page-title">Spin the wheel</h1>
-          <p>Can’t decide? Let fate pick tonight’s movie.</p>
+          <p>
+            Can’t decide? Let fate pick tonight’s movie. Or{' '}
+            <Link to="/night">put it to a vote</Link>.
+          </p>
         </div>
       </header>
 
