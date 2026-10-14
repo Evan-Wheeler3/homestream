@@ -9,10 +9,13 @@ import {
 } from '../../shared/preferences';
 import type {
   HomeSectionPref,
+  NowWatching,
   Preferences,
   ServerStatus,
   SessionInfo,
+  ShareInfo,
   SortField,
+  StreamLimit,
   UpdateStatus,
 } from '../../shared/types';
 import { Icon } from '../components/Icon';
@@ -29,7 +32,8 @@ import {
 import { api, errorMessage } from '../lib/api';
 import { detectCapabilities } from '../lib/capabilities';
 import { recentErrors } from '../lib/diagnostics';
-import { formatBytes, relativeTime, SUBTITLE_LANGUAGE_OPTIONS } from '../lib/format';
+import { formatBytes, formatClock, relativeTime, SUBTITLE_LANGUAGE_OPTIONS } from '../lib/format';
+import { sizedImage } from '../lib/images';
 import { useCollections, useRefreshCatalog, useStatus, useUpdatePreferences } from '../lib/queries';
 import { SORT_OPTIONS } from './BrowsePage';
 import { setTvSetting, useTvMode } from '../lib/tv';
@@ -356,6 +360,255 @@ function HomeSectionsEditor({
   );
 }
 
+const mbps = (bps: number) => `${Math.round((bps / 1_000_000) * 10) / 10} Mbps`;
+
+const METHOD_LABEL: Record<NowWatching['method'], string> = {
+  DirectPlay: 'Original file',
+  DirectStream: 'Original video, repackaged',
+  Transcode: 'Converted by Jellyfin',
+};
+
+/** Who's playing something right now (administrators). */
+function WatchingNow({ watching }: { watching: NowWatching[] }) {
+  return (
+    <div className="watching">
+      <h3 className="section-label">Watching now</h3>
+      {watching.length === 0 ? (
+        <p className="faint">Nobody is watching anything.</p>
+      ) : (
+        <ul className="watching__list">
+          {watching.map((w) => (
+            <li key={`${w.userName}-${w.itemId}-${w.startedAt}`} className="watching__item">
+              {w.poster ? (
+                <img src={sizedImage(w.poster, 120)} alt="" className="watching__poster" />
+              ) : (
+                <span className="watching__poster" aria-hidden="true" />
+              )}
+              <div className="watching__body">
+                <strong>
+                  {w.userName} · {w.title}
+                  {w.year ? <span className="faint"> ({w.year})</span> : null}
+                </strong>
+                <span className="faint">
+                  {w.paused ? 'Paused' : 'Playing'} at {formatClock(w.positionSeconds)}
+                  {w.runtimeSeconds ? ` of ${formatClock(w.runtimeSeconds)}` : ''} ·{' '}
+                  {w.place === 'away' ? 'Away from home' : 'At home'} · {w.device}
+                </span>
+                <span className="faint">
+                  {METHOD_LABEL[w.method]}
+                  {w.limit ? ` · limited to ${mbps(w.limit)}` : ''}
+                </span>
+                {w.runtimeSeconds ? (
+                  <span className="watching__bar" aria-hidden="true">
+                    <span
+                      style={{
+                        width: `${Math.min(100, (w.positionSeconds / w.runtimeSeconds) * 100)}%`,
+                      }}
+                    />
+                  </span>
+                ) : null}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/** Instructions and a ready-to-send message for family outside the home. */
+function SharePanel({ appName }: { appName: string }) {
+  const info = useQuery({
+    queryKey: ['share-info'],
+    queryFn: () => api<ShareInfo>('/system/share'),
+  });
+  const toast = useToast();
+  const [address, setAddress] = useState<string | null>(null);
+  if (info.isPending) return <Spinner label="Looking up addresses" />;
+  if (info.isError) return <p className="field__error">{errorMessage(info.error)}</p>;
+  const i = info.data;
+  const suggested =
+    i.addresses.find((a) => a.kind === 'tailscale')?.url ?? `http://${i.hostname}:${i.port}`;
+  const url = address ?? suggested;
+  const message = [
+    `You're invited to ${appName}, our home movie library.`,
+    '',
+    '1. Install Tailscale (tailscale.com/download) on your phone or laptop and make a free account.',
+    '2. Accept the Tailscale invite I sent you (check your email).',
+    `3. With Tailscale on, open ${url}`,
+    '4. Sign in with the username and password I give you.',
+    '',
+    'Tip: on a phone, use Add to Home Screen so it opens like an app.',
+  ].join('\n');
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(message);
+      toast.show('Invitation copied');
+    } catch {
+      toast.show('Couldn’t copy: select the text and copy it', 'error');
+    }
+  };
+  const share = async () => {
+    try {
+      await navigator.share({ title: `${appName} invitation`, text: message });
+    } catch {
+      /* cancelled */
+    }
+  };
+
+  return (
+    <>
+      <ol className="share-steps">
+        <li>
+          <strong>Tailscale on this computer.</strong>{' '}
+          {i.tailscale ? (
+            <span className="status-ok">
+              <Icon name="check" size={16} /> Running
+            </span>
+          ) : (
+            <span className="status-bad">
+              Not found. Install it from tailscale.com/download and sign in.
+            </span>
+          )}
+        </li>
+        <li>
+          <strong>Share this computer with each person:</strong> in the Tailscale admin console
+          (login.tailscale.com) open <em>Machines</em>, click <em>…</em> next to this computer →{' '}
+          <em>Share</em>, and send the invite to their email. They only get this one computer, not
+          the rest of your network.
+        </li>
+        <li>
+          <strong>Give each person their own Jellyfin account:</strong> Jellyfin{' '}
+          <em>Dashboard → Users → +</em>. Leave “administrator” off. Their history, Watchlist and
+          Wrapped are their own.
+        </li>
+        <li>
+          <strong>Send them the invitation below.</strong> If your upload is slow, give them a
+          streaming limit underneath.
+        </li>
+      </ol>
+      <Field
+        label="Address to send"
+        hint={
+          i.addresses.length
+            ? `This computer: ${i.addresses.map((a) => `${a.url}${a.kind === 'tailscale' ? ' (Tailscale)' : ' (home only)'}`).join(', ')}. If you renamed it in Tailscale (e.g. “wheelhouse”), http://wheelhouse:${i.port} works too.`
+            : undefined
+        }
+      >
+        {(id) => (
+          <input
+            id={id}
+            className="input"
+            value={url}
+            onChange={(e) => setAddress(e.target.value)}
+            spellCheck={false}
+          />
+        )}
+      </Field>
+      <pre className="share-message" aria-label="Invitation">
+        {message}
+      </pre>
+      <div className="button-row">
+        <Button icon="share" variant="secondary" onClick={copy}>
+          Copy invitation
+        </Button>
+        {'share' in navigator && (
+          <Button variant="ghost" onClick={share}>
+            Send…
+          </Button>
+        )}
+      </div>
+    </>
+  );
+}
+
+/** Per-person streaming caps (administrators). */
+function LimitsPanel() {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const people = useQuery({
+    queryKey: ['limits'],
+    queryFn: () => api<{ people: StreamLimit[] }>('/limits'),
+  });
+  const save = useMutation({
+    mutationFn: (p: { userId: string; maxBitrate: number | null; awayOnly: boolean }) =>
+      api<{ people: StreamLimit[] }>(`/limits/${encodeURIComponent(p.userId)}`, {
+        method: 'PUT',
+        body: { maxBitrate: p.maxBitrate, awayOnly: p.awayOnly },
+      }),
+    onSuccess: (data) => {
+      qc.setQueryData(['limits'], data);
+      toast.show('Limit saved');
+    },
+    onError: (e) => toast.show(errorMessage(e), 'error'),
+  });
+  if (people.isPending) return <Spinner label="Loading people" />;
+  if (people.isError) return <p className="field__error">{errorMessage(people.error)}</p>;
+  const options = BITRATE_OPTIONS.map((o) => ({
+    value: String(o.value ?? 'none'),
+    label: o.value == null ? 'No limit' : o.label,
+  }));
+  return (
+    <>
+      <p className="field__hint">
+        Caps the quality Jellyfin sends each person, so viewers away from home don’t use up your
+        home internet’s upload. 4 Mbps suits most homes; DVD rips usually play below it untouched.
+        Their own Playback setting still applies if it’s lower.
+      </p>
+      <ul className="limits">
+        {people.data.people.map((p) => (
+          <li key={p.userId} className="limits__row">
+            <div className="limits__who">
+              <strong>{p.userName}</strong>
+              {p.lastSeen && <span className="faint">Last here {relativeTime(p.lastSeen)}</span>}
+            </div>
+            <span className="select">
+              <select
+                aria-label={`Streaming limit for ${p.userName}`}
+                value={String(p.maxBitrate ?? 'none')}
+                onChange={(e) =>
+                  save.mutate({
+                    userId: p.userId,
+                    maxBitrate: e.target.value === 'none' ? null : Number(e.target.value),
+                    awayOnly: p.awayOnly,
+                  })
+                }
+              >
+                {/* Keep a custom value visible if it isn't one of the presets. */}
+                {p.maxBitrate != null && !options.some((o) => o.value === String(p.maxBitrate)) && (
+                  <option value={String(p.maxBitrate)}>{mbps(p.maxBitrate)}</option>
+                )}
+                {options.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </span>
+            <label className="limits__away">
+              <input
+                type="checkbox"
+                checked={p.awayOnly}
+                disabled={p.maxBitrate == null}
+                onChange={(e) =>
+                  save.mutate({
+                    userId: p.userId,
+                    maxBitrate: p.maxBitrate,
+                    awayOnly: e.target.checked,
+                  })
+                }
+              />
+              Only when away from home
+            </label>
+          </li>
+        ))}
+      </ul>
+      <p className="field__hint">People appear here after they’ve signed in once.</p>
+    </>
+  );
+}
+
 function ServerStatusPanel() {
   const status = useStatus();
   const backup = useMutation({ mutationFn: () => api('/backups', { method: 'POST' }) });
@@ -439,6 +692,7 @@ function ServerStatusPanel() {
           </div>
         )}
       </dl>
+      {s.watching && <WatchingNow watching={s.watching} />}
       {s.drives.length > 0 && (
         <ul className="drives" aria-label="Storage">
           {s.drives.map((d) => {
@@ -655,6 +909,7 @@ export default function SettingsPage({
           ['library', 'Library'],
           ['playback', 'Playback'],
           ['server', 'Server'],
+          ...(session.user.isAdmin ? [['sharing', 'Sharing']] : []),
           ['discs', 'Discs'],
           ['updates', 'Updates'],
           ['diagnostics', 'Diagnostics'],
@@ -842,6 +1097,18 @@ export default function SettingsPage({
 
       {session.user.isAdmin && (
         <Section
+          id="sharing"
+          title="Share with family"
+          description="Let people outside your home watch, privately, over Tailscale. Nothing is put on the public internet."
+        >
+          <SharePanel appName={prefs.appName} />
+          <h3 className="section-label">Streaming limits</h3>
+          <LimitsPanel />
+        </Section>
+      )}
+
+      {session.user.isAdmin && (
+        <Section
           id="updates"
           title="Updates"
           description="Get the newest Wheelhouse. Your library, collections and settings are kept."
@@ -882,8 +1149,11 @@ export default function SettingsPage({
           .
         </p>
         <div className="button-row">
+          <ButtonLink to="/requests" icon="plus" variant="secondary">
+            Movie requests
+          </ButtonLink>
           <Button icon="logout" variant="secondary" onClick={signOut}>
-            Sign out
+            Switch profile
           </Button>
         </div>
       </Section>

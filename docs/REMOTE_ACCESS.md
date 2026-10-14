@@ -43,6 +43,17 @@ private to your tailnet (do **not** use `tailscale funnel`, which makes it publi
 quality_ to 4 Mbps or less on that device so Jellyfin sends a smaller stream (this needs transcoding, so enable
 hardware acceleration in Jellyfin if you can).
 
+## Sharing with family outside your home
+
+Tailscale can share just the Wheelhouse computer with people on _their own_ Tailscale accounts (free):
+_Machines → … → Share_ in the admin console. They see only that computer, not the rest of your network.
+Give each person their own (non-administrator) Jellyfin account. _Settings → Share with family_ in
+Wheelhouse has the steps, the address to send and a ready-made invitation, plus per-person **streaming
+limits** — useful because everyone watching away from home is streaming from your home upload.
+
+TV browsers can't run Tailscale; on a TV, people need a laptop over HDMI or a streaming box that runs
+Tailscale (Apple TV, Google TV).
+
 ## Working on the server from anywhere
 
 Tailscale also lets you look after the Wheelhouse computer when you're out (say, someone at home puts discs in

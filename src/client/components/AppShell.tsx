@@ -94,6 +94,7 @@ function TvRail({
     { to: '/spin', label: 'Spin the wheel', icon: 'wheel' },
     { to: '/night', label: 'Movie night', icon: 'user' },
     { to: '/wrapped', label: 'Your year', icon: 'star' },
+    { to: '/requests', label: 'Requests', icon: 'plus' },
     ...(session.ripper ? [{ to: '/rips', label: 'Discs', icon: 'disc' as const }] : []),
     { to: '/settings', label: 'Settings', icon: 'settings' },
   ];

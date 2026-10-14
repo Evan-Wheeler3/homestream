@@ -76,6 +76,16 @@ or a large screen — with your own branding, collections, notes and home layout
   favourite genre and decade, month-by-month, top directors and actors, longest sit, most rewatched — for
   any year or all time. Wheelhouse keeps its own viewing history from its player; movies watched elsewhere
   count once at their last-played date.
+- **Share with family**: let people outside your home watch over Tailscale (nothing on the public
+  internet). _Settings → Share with family_ (administrators) walks through it and writes the invitation
+  to send. Each person signs in with their own Jellyfin account.
+  - **Streaming limits**: cap the quality each person gets, always or only when they're away from home,
+    so remote viewers don't use up your home internet's upload.
+  - **Watching now**: _Settings → Server_ shows who's playing what, where, and whether Jellyfin is
+    converting it.
+  - **Requests** (_/requests_, or “Ask for …” when a search finds nothing): anyone can ask for a movie.
+    Your phone gets a notification (with ntfy set up), and the request is marked _Added_ by itself when
+    the movie shows up in the library.
 - **Film series**: Jellyfin's collections (box sets such as _Star Wars Collection_) show as a _Film
   series_ row on Home, a page per series in release order with “Up next”, and “Part of …” on each movie.
   Turn on _Dashboard → Libraries → Movies → Automatically add movies to collections_ in Jellyfin (it needs

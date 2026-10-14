@@ -17,6 +17,8 @@ import { ApiError } from './errors.js';
 import { LibraryService } from './library.js';
 import { Maintenance } from './maintenance.js';
 import { MovieNights } from './nights.js';
+import { MovieRequests } from './requests.js';
+import { NowPlaying, StreamLimits } from './sharing.js';
 import { isSupervised, Updater } from './updater.js';
 import { JellyfinProvider } from './providers/jellyfin.js';
 import { MockProvider } from './providers/mock.js';
@@ -70,14 +72,8 @@ export function createApp({
 
   const store = new Store(db, config.dataDir === ':memory:' ? ':memory:' : config.dataDir);
   const catalog = new CatalogCache(provider, config.catalogTtlSeconds * 1000);
-  catalog.onRefresh = (movies) => {
-    try {
-      store.recordSnapshots(movies);
-    } catch (error) {
-      logger.warn('Could not record item snapshots', error);
-    }
-  };
   const library = new LibraryService(provider, catalog, store);
+  const requests = new MovieRequests(db);
   const sessions = new SessionStore(db, config);
   sessions.purgeExpired();
 
@@ -87,6 +83,29 @@ export function createApp({
   const notifier =
     ripperNotifier ??
     new MultiNotifier([new MacNotifier(ripperRunner), ...(ntfy ? [ntfy] : [])], logger);
+  // Requests are marked done when the movie appears; tell the household's phone.
+  const requestNotifier = ripperNotifier ?? (ntfy ? notifier : null);
+  catalog.onRefresh = (movies) => {
+    try {
+      store.recordSnapshots(movies);
+    } catch (error) {
+      logger.warn('Could not record item snapshots', error);
+    }
+    try {
+      for (const r of requests.fulfil(movies)) {
+        void requestNotifier
+          ?.send({
+            title: `${r.title} is in Wheelhouse`,
+            message: `Requested by ${r.userName}.`,
+            tags: ['movie_camera'],
+            click: rc.publicUrl && r.itemId ? `${rc.publicUrl}/movie/${r.itemId}` : undefined,
+          })
+          .catch((error: unknown) => logger.warn('Request notification failed', error));
+      }
+    } catch (error) {
+      logger.warn('Could not check movie requests', error);
+    }
+  };
   if (rc.enabled) {
     ripper = new Ripper({
       config: rc,
@@ -189,6 +208,10 @@ export function createApp({
       maintenance,
       updater,
       nights: new MovieNights(db),
+      requests,
+      requestNotifier,
+      limits: new StreamLimits(db),
+      nowPlaying: new NowPlaying(),
     }),
   );
 

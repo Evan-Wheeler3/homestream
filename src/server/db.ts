@@ -164,6 +164,29 @@ const MIGRATIONS: string[] = [
     PRIMARY KEY (night_id, voter_key)
   );
   `,
+  // 7: sharing with family: per-person streaming limits and movie requests
+  `
+  CREATE TABLE stream_limits (
+    user_id TEXT PRIMARY KEY,
+    user_name TEXT NOT NULL,
+    max_bitrate INTEGER,
+    away_only INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL
+  );
+  CREATE TABLE movie_requests (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    user_name TEXT NOT NULL,
+    title TEXT NOT NULL,
+    year INTEGER,
+    note TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'open',
+    item_id TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX movie_requests_status ON movie_requests(status, created_at);
+  `,
 ];
 
 export type Db = DatabaseSync;

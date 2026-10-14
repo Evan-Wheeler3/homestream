@@ -416,6 +416,44 @@ test('search page: keyboard shortcut, Enter opens the top result', async ({ page
   await expect(page).toHaveURL('/movie/rashomon-1950');
 });
 
+test('requests: ask for a missing movie from search and mark it added', async ({ page }) => {
+  await signIn(page);
+  const title = `Zork ${Date.now().toString(36)}`;
+  await page.goto(`/search?q=${encodeURIComponent(title)}`);
+  await page.getByRole('link', { name: `Ask for “${title}”` }).click();
+  await expect(page).toHaveURL(/\/requests/);
+  await expect(page.getByLabel('Movie')).toHaveValue(title);
+  await page.getByLabel('Year (optional)').fill('1999');
+  await page.getByRole('button', { name: 'Ask for it' }).click();
+  const request = page.locator('.request', { hasText: title });
+  await expect(request).toContainText('Asked for');
+  await request.getByRole('button', { name: 'Added' }).click();
+  await expect(request).toContainText('Added');
+  await expect(request.getByRole('button', { name: 'Reopen' })).toBeVisible();
+});
+
+test('sharing: invitation, streaming limits and who is watching', async ({ page, browser }) => {
+  const viewer = uniqueUser('brother');
+  const other = await newDevice(browser, viewer);
+  await other.page.goto('/movie/his-girl-friday-1940');
+  await other.page.getByRole('link', { name: 'Play', exact: true }).click();
+  await expect(other.page).toHaveURL(/\/play\//);
+
+  await signIn(page);
+  await page.goto('/settings#sharing');
+  await expect(page.getByRole('heading', { name: 'Share with family' })).toBeVisible();
+  await expect(page.getByLabel('Invitation')).toContainText('Install Tailscale');
+  await page.getByLabel(`Streaming limit for ${viewer}`).selectOption({ label: '4 Mbps — 720p' });
+  await expect(page.getByText('Limit saved')).toBeVisible();
+  await page.reload();
+  await expect(page.getByLabel(`Streaming limit for ${viewer}`)).toHaveValue('4000000');
+  await expect(page.locator('.watching__item', { hasText: viewer })).toContainText(
+    'His Girl Friday',
+    { timeout: 15_000 },
+  );
+  await other.context.close();
+});
+
 test('shows a clear offline banner and recovers when the server is back', async ({ page }) => {
   await signIn(page);
   await page.goto('/browse');

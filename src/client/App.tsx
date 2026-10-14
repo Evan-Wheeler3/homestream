@@ -21,6 +21,7 @@ import { HomePage } from './pages/HomePage';
 import { LoginPage } from './pages/LoginPage';
 import { MovieDetailPage } from './pages/MovieDetailPage';
 import { FranchisePage } from './pages/FranchisePage';
+import { RequestsPage } from './pages/RequestsPage';
 import { PersonPage } from './pages/PersonPage';
 import { RipsPage } from './pages/RipsPage';
 import { NotFoundPage } from './pages/NotFoundPage';
@@ -125,6 +126,7 @@ function Protected() {
           <Route path="spin" element={<SpinPage prefs={preferences} />} />
           <Route path="wrapped" element={<WrappedPage />} />
           <Route path="night" element={<NightPage />} />
+          <Route path="requests" element={<RequestsPage session={session.data} />} />
           <Route
             path="settings"
             element={<SettingsPage session={session.data} prefs={preferences} />}

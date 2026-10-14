@@ -34,6 +34,14 @@ import type { Notifier } from '../ripper/services.js';
 import type { Maintenance } from '../maintenance.js';
 import type { Updater } from '../updater.js';
 import type { MovieNights } from '../nights.js';
+import type { MovieRequests } from '../requests.js';
+import {
+  effectiveBitrate,
+  networkPlace,
+  shareInfo,
+  type NowPlaying,
+  type StreamLimits,
+} from '../sharing.js';
 
 type Handler = (req: Request, res: Response) => Promise<unknown> | unknown;
 
@@ -118,6 +126,11 @@ export interface ApiDeps {
   maintenance?: Maintenance | null;
   updater?: Updater | null;
   nights?: MovieNights;
+  requests?: MovieRequests;
+  /** Tells the administrator's phone about new requests. */
+  requestNotifier?: Notifier | null;
+  limits?: StreamLimits;
+  nowPlaying?: NowPlaying;
 }
 
 export function apiRouter(deps: ApiDeps): Router {
@@ -323,6 +336,7 @@ export function apiRouter(deps: ApiDeps): Router {
         drives: deps.maintenance?.drives() ?? [],
         backups: deps.maintenance?.backups() ?? null,
         ripper: deps.ripper?.health() ?? null,
+        watching: req.session?.user.isAdmin ? (deps.nowPlaying?.list() ?? []) : null,
       };
       return status;
     }),
@@ -420,6 +434,99 @@ export function apiRouter(deps: ApiDeps): Router {
     }),
   );
 
+  // Sharing with family ---------------------------------------------------------
+
+  router.get(
+    '/system/share',
+    route((req) => {
+      requireAdmin(req, 'see sharing details');
+      return shareInfo(config.port);
+    }),
+  );
+
+  router.get(
+    '/limits',
+    route((req) => {
+      requireAdmin(req, 'see streaming limits');
+      return { people: deps.limits?.list() ?? [] };
+    }),
+  );
+
+  router.put(
+    '/limits/:userId',
+    route((req) => {
+      requireAdmin(req, 'set streaming limits');
+      if (!deps.limits) throw notFound();
+      const userId = String(req.params.userId ?? '');
+      const name = deps.limits.knownName(userId);
+      if (!name) throw notFound('That person hasn’t signed in to Wheelhouse yet.');
+      const body = (req.body ?? {}) as { maxBitrate?: unknown; awayOnly?: unknown };
+      const maxBitrate = body.maxBitrate === null ? null : Number(body.maxBitrate);
+      deps.limits.set({ id: userId, name }, maxBitrate, Boolean(body.awayOnly));
+      return { people: deps.limits.list() };
+    }),
+  );
+
+  // Movie requests -------------------------------------------------------------
+
+  const requestsOf = () => {
+    if (!deps.requests) throw notFound();
+    return deps.requests;
+  };
+  const viewerOf = (req: Request) => ({
+    id: ctxOf(req).userId,
+    isAdmin: Boolean(req.session?.user.isAdmin),
+  });
+
+  router.get(
+    '/requests',
+    route((req) => ({ requests: requestsOf().list(viewerOf(req)) })),
+  );
+
+  router.post(
+    '/requests',
+    route(async (req, res) => {
+      const ctx = ctxOf(req);
+      const snap = await library.snapshot(ctx);
+      const created = requestsOf().create(
+        { id: ctx.userId, name: ctx.userName },
+        (req.body ?? {}) as Record<string, unknown>,
+        snap.movies,
+      );
+      const year = created.year ? ` (${created.year})` : '';
+      void deps.requestNotifier
+        ?.send({
+          title: `Movie request: ${created.title}${year}`,
+          message: `${created.userName} asked for it${created.note ? `: “${created.note}”` : '.'}`,
+          tags: ['clapper'],
+          click: config.ripper.publicUrl ? `${config.ripper.publicUrl}/requests` : undefined,
+        })
+        .catch(() => undefined);
+      res.status(201);
+      return created;
+    }),
+  );
+
+  router.patch(
+    '/requests/:id',
+    route((req) => {
+      requireAdmin(req, 'answer requests');
+      const status = (req.body as { status?: unknown } | undefined)?.status;
+      if (status !== 'open' && status !== 'added' && status !== 'declined') {
+        throw badRequest('Status must be open, added or declined.');
+      }
+      return requestsOf().setStatus(String(req.params.id), status, ctxOf(req).userId);
+    }),
+  );
+
+  router.delete(
+    '/requests/:id',
+    route((req, res) => {
+      requestsOf().remove(String(req.params.id), viewerOf(req));
+      res.status(204).end();
+    }),
+  );
+
   // Film series -------------------------------------------------------------
 
   router.get(
@@ -513,7 +620,10 @@ export function apiRouter(deps: ApiDeps): Router {
     '/movies/:id/playback',
     route(async (req) => {
       const ctx = ctxOf(req);
-      const prefs = store.getPreferences(ctx.userId).playback;
+      const own = store.getPreferences(ctx.userId).playback;
+      // An administrator's limit for this person (e.g. only when away from home) wins.
+      const limit = deps.limits?.limitFor(ctx.userId, networkPlace(req.ip)) ?? null;
+      const prefs = { ...own, maxBitrate: effectiveBitrate(own.maxBitrate, limit) };
       const body = (req.body ?? {}) as PlaybackRequest;
       const optionalIndex = (v: unknown) =>
         v === null || v === undefined || !Number.isInteger(Number(v)) ? null : Number(v);
@@ -557,6 +667,26 @@ export function apiRouter(deps: ApiDeps): Router {
           subtitleStreamIndex: raw.subtitleStreamIndex ?? null,
         };
         await provider.reportPlayback(ctx, event, report);
+        const nowKey = report.playSessionId || `${ctx.userId}:${report.itemId}`;
+        if (event === 'stop') deps.nowPlaying?.stop(nowKey);
+        else if (deps.nowPlaying) {
+          const movie = catalog.peek(ctx.userId)?.byId.get(report.itemId);
+          const place = networkPlace(req.ip);
+          deps.nowPlaying.update(nowKey, {
+            userName: ctx.userName,
+            itemId: report.itemId,
+            title: movie?.title ?? 'A movie',
+            year: movie?.year ?? null,
+            poster: movie?.images.poster ?? null,
+            positionSeconds: report.positionSeconds,
+            runtimeSeconds: movie?.runtimeMinutes ? movie.runtimeMinutes * 60 : null,
+            paused: report.isPaused,
+            method: report.method,
+            place,
+            device: ctx.deviceName,
+            limit: deps.limits?.limitFor(ctx.userId, place) ?? null,
+          });
+        }
         // Remember where each play session started, to know how much was watched.
         if (event === 'start' && report.playSessionId) {
           sessionStarts.set(report.playSessionId, report.positionSeconds);

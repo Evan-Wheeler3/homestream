@@ -4,7 +4,7 @@ import type { PersonSummary } from '../../shared/types';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { Icon } from '../components/Icon';
 import { PosterCard, PosterGrid, PosterGridSkeleton } from '../components/movies';
-import { Button, Chip, Spinner, StatusView } from '../components/ui';
+import { Button, ButtonLink, Chip, Spinner, StatusView } from '../components/ui';
 import { api, errorMessage } from '../lib/api';
 import { plural } from '../lib/format';
 import { useDebounced, useInfiniteSentinel } from '../lib/hooks';
@@ -169,8 +169,16 @@ export function SearchPage() {
           <p>{errorMessage(results.error)}</p>
         </StatusView>
       ) : items.length === 0 && matches.length === 0 ? (
-        <StatusView icon="search" title={`No results for “${query}”`}>
-          <p>Try a shorter search, or check the spelling.</p>
+        <StatusView
+          icon="search"
+          title={`No results for “${query}”`}
+          action={
+            <ButtonLink to={`/requests?title=${encodeURIComponent(query)}`} icon="plus">
+              Ask for “{query}”
+            </ButtonLink>
+          }
+        >
+          <p>Try a shorter search, or check the spelling. Not in the library? Ask for it.</p>
         </StatusView>
       ) : (
         <div ref={resultsRef} onClick={() => remember(query)}>

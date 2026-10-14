@@ -601,6 +601,65 @@ export interface ServerStatus {
   drives: DriveStatus[];
   backups: BackupStatus | null;
   ripper: RipperHealth | null;
+  /** Who's playing something right now (administrators only; null for others). */
+  watching: NowWatching[] | null;
+}
+
+/** Where a request came from: the home network, or away (Tailscale / the internet). */
+export type NetworkPlace = 'home' | 'away';
+
+/** Someone playing a movie right now (shown to administrators). */
+export interface NowWatching {
+  userName: string;
+  itemId: string;
+  title: string;
+  year: number | null;
+  poster: string | null;
+  positionSeconds: number;
+  runtimeSeconds: number | null;
+  paused: boolean;
+  method: 'DirectPlay' | 'DirectStream' | 'Transcode';
+  place: NetworkPlace;
+  device: string;
+  /** The streaming limit applied to this person, if any. */
+  limit: number | null;
+  startedAt: string;
+}
+
+/** A per-person cap on streaming quality, set by an administrator. */
+export interface StreamLimit {
+  userId: string;
+  userName: string;
+  /** Bits per second; null = no limit. */
+  maxBitrate: number | null;
+  /** Only when they're away from home (over Tailscale or the internet). */
+  awayOnly: boolean;
+  lastSeen: string | null;
+}
+
+export interface ShareInfo {
+  /** Addresses Wheelhouse can be opened at, best first. */
+  addresses: { url: string; kind: 'tailscale' | 'home' }[];
+  hostname: string;
+  port: number;
+  tailscale: boolean;
+}
+
+export type MovieRequestStatus = 'open' | 'added' | 'declined';
+
+export interface MovieRequest {
+  id: string;
+  userId: string;
+  userName: string;
+  title: string;
+  year: number | null;
+  note: string;
+  status: MovieRequestStatus;
+  /** The library item, once it's added. */
+  itemId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  mine: boolean;
 }
 
 export interface ApiErrorBody {
