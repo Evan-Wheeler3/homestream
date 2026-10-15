@@ -229,6 +229,9 @@ export function seriesEpisodes(byLength: DiscTitle[]): DiscTitle[] | null {
  * an empty string when there's nothing useful to add.
  */
 export function readErrorHint(messages: string): string {
+  if (/UNRECOVERED READ ERROR|errors of type 'Read Error'|Scsi error/i.test(messages)) {
+    return 'The drive couldn’t read part of this disc. Wipe the shiny side with a soft cloth from the centre outwards and press Retry. If it fails again, the disc is scratched or copy-protected in a way this drive can’t get past: try it on another drive, or another copy of the movie.';
+  }
   if (/OS access mode|Failed to open disc/i.test(messages)) {
     return 'macOS is probably blocking access to the drive: in System Settings → Privacy & Security → Full Disk Access, turn on “node” (run  open -R "$(readlink -f "$(which node)")"  in Terminal to find it) and MakeMKV, restart Wheelhouse, then press Retry.';
   }

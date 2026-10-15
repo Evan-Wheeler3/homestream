@@ -112,6 +112,11 @@ describe('MakeMKV robot output', () => {
     );
     expect(readErrorHint('This application version is too old.')).toMatch(/Register/);
     expect(readErrorHint('The evaluation period has expired.')).toMatch(/beta key/);
+    expect(
+      readErrorHint(
+        "Error 'Scsi error - MEDIUM ERROR:UNRECOVERED READ ERROR' occurred while reading '/VIDEO_TS/VTS_02_1.VOB'",
+      ),
+    ).toMatch(/soft cloth/);
     expect(readErrorHint('Read error')).toBe('');
   });
 });
