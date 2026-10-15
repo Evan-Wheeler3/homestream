@@ -166,6 +166,12 @@ describe('naming', () => {
     expect(none.kind).toBe('unsure');
   });
 
+  it('asks when a better-known movie ranks above the exact title match', () => {
+    const hope = identify('A New Hope', [c('Star Wars', 1977, '11'), c('A New Hope', 2009, '9')]);
+    expect(hope.kind).toBe('unsure');
+    expect(hope.kind === 'unsure' && hope.candidates.map((x) => x.year)).toEqual([1977, 2009]);
+  });
+
   it('builds Jellyfin-friendly, filesystem-safe names', () => {
     expect(movieFileNames({ title: 'Young Frankenstein', year: 1974, tmdbId: '3034' })).toEqual({
       folder: 'Young Frankenstein (1974) [tmdbid-3034]',

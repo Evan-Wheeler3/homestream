@@ -250,6 +250,16 @@ export function parseProgress(line: string): number | null {
   return Math.max(0, Math.min(1, total! / max));
 }
 
+/** The name of the overall operation from PRGT lines, e.g. "Saving to MKV file". */
+export function parseProgressTitle(line: string): string | null {
+  const rec = parseLine(line);
+  if (!rec || rec.kind !== 'PRGT') return null;
+  return rec.fields[2] ?? null;
+}
+
+/** Whether MakeMKV is copying the movie (rather than opening or analysing the disc). */
+export const isCopyPhase = (title: string) => /sav|copy|writ/i.test(title);
+
 /** Human-readable error messages from MSG lines, for diagnostics. */
 export function parseMessages(output: string): string[] {
   const messages: string[] = [];

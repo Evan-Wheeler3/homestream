@@ -241,6 +241,18 @@ function RipCard({ job, canSearch }: { job: RipJob; canSearch: boolean }) {
               Retry
             </Button>
           )}
+          {(job.status === 'scanning' || job.status === 'ripping') && (
+            <Button
+              variant="ghost"
+              busy={dismiss.isPending}
+              onClick={() => {
+                if (!window.confirm('Stop this disc? It will be ejected.')) return;
+                void run(() => dismiss.mutateAsync(job.id));
+              }}
+            >
+              Stop
+            </Button>
+          )}
           {(job.status === 'done' || attention) && (
             <Button
               variant="ghost"

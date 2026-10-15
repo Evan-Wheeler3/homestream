@@ -38,6 +38,8 @@ class FakeHardware {
   calls: string[] = [];
   failNextEncode = false;
   failNextInfo = false;
+  /** Ripping gets stuck after analysing the disc, like on a scratched disc. */
+  hangRip = false;
   encodedSeconds = FEATURE_SECONDS;
 
   constructor(private readonly volumes: string) {}
@@ -72,8 +74,16 @@ class FakeHardware {
       if (args.includes('info')) {
         return { code: 0, output: this.disc ? discInfo(this.disc) : 'MSG:5010,0,0,"No disc"' };
       }
+      if (args.includes('mkv') && this.hangRip) {
+        emit('PRGT:5018,0,"Analyzing seamless segments"');
+        emit('PRGV:65536,65536,65536');
+        return new Promise((_resolve, reject) => {
+          options?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+        });
+      }
       if (args.includes('mkv')) {
         const dir = args[args.length - 1]!;
+        emit('PRGT:5018,0,"Saving to MKV file"');
         const title = Number(args[args.length - 2]);
         for (const p of [0, 2500, 65536]) emit(`PRGV:${p},${p},65536`);
         fs.writeFileSync(path.join(dir, `title_t0${title}.mkv`), 'mkv-data');
@@ -359,6 +369,27 @@ describe('automatic disc ripping', () => {
     hw.insert({ label: 'YOUNG_FRANKENSTEIN', titles: [{ duration: FEATURE }] });
     await server.ripper!.poll();
     expect(await jobs()).toHaveLength(1);
+  });
+
+  it('shows preparing instead of 100%, and Stop ends a stuck rip', async () => {
+    await boot();
+    hw.hangRip = true;
+    hw.insert({ label: 'YOUNG_FRANKENSTEIN', titles: [{ duration: FEATURE }] });
+    await server.ripper!.poll();
+    const job = await waitFor('ripping');
+    for (let i = 0; i < 100; i++) {
+      const [j] = await jobs();
+      if (String(j?.message).includes('layout')) break;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    const [current] = await jobs();
+    expect(current).toMatchObject({ progress: null });
+    expect(String(current!.message)).toMatch(/Reading the disc’s layout/);
+
+    expect((await client.delete(`/api/rips/${job.id}`)).status).toBeLessThan(300);
+    expect((await jobs()).find((j) => j.id === job.id)).toBeUndefined();
+    expect(fs.readdirSync(rips)).toEqual([]);
+    expect(sent.some((n) => /problem/.test(n.title))).toBe(false);
   });
 
   it('dismissing removes leftover files but never a finished movie', async () => {

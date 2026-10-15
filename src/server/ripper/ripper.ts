@@ -10,7 +10,9 @@ import {
   parseDiscInfo,
   parseDrives,
   parseMessages,
+  isCopyPhase,
   parseProgress,
+  parseProgressTitle,
   type DiscTitle,
   readErrorHint,
 } from './makemkv.js';
@@ -53,6 +55,8 @@ export interface RipperDeps {
 
 class UserError extends Error {}
 
+/** How long a rip may go without progress before the Discs page warns about it. */
+const STALL_MS = 15 * 60_000;
 const DISC_MARKERS = ['VIDEO_TS', 'BDMV'];
 const RECENT_DISC_MS = 6 * 3600_000;
 
@@ -80,6 +84,8 @@ export class Ripper {
   private timer: NodeJS.Timeout | null = null;
   private readonly seenMounts = new Set<string>();
   private discBusy = false;
+  /** Stops the current read or rip when its job is dismissed. */
+  private discAbort: { jobId: string; controller: AbortController } | null = null;
   private encoderBusy = false;
   private polling = false;
   private stopped = true;
@@ -230,6 +236,8 @@ export class Ripper {
 
   private async runDisc(id: string, chosenIndex?: number) {
     this.discBusy = true;
+    const abort = new AbortController();
+    this.discAbort = { jobId: id, controller: abort };
     try {
       let job = this.deps.jobs.get(id)!;
       let title: DiscTitle | RipDiscTitle | undefined;
@@ -257,6 +265,7 @@ export class Ripper {
       this.fail(this.deps.jobs.get(id)!, describe(error));
     } finally {
       this.discBusy = false;
+      this.discAbort = null;
     }
     // Another disc may have been inserted meanwhile.
     void this.poll();
@@ -280,7 +289,9 @@ export class Ripper {
       );
     }
 
-    const result = await run(c.makemkvcon, ['-r', 'info', `disc:${drive.index}`]);
+    const result = await run(c.makemkvcon, ['-r', 'info', `disc:${drive.index}`], {
+      signal: this.signalFor(job.id),
+    });
     const info = parseDiscInfo(result.output);
     if (info.titles.length === 0) {
       const messages = parseMessages(result.output);
@@ -339,16 +350,54 @@ export class Ripper {
     });
 
     const progress = this.progressWriter(job.id);
-    const result = await run(
-      c.makemkvcon,
-      ['-r', '--progress=-same', 'mkv', `disc:${job.driveIndex ?? 0}`, String(title.index), dir],
-      {
-        onLine: (line) => {
-          const p = parseProgress(line);
-          if (p !== null) progress(p);
+    // MakeMKV first opens and analyses the disc, with its own progress that
+    // reaches 100% before any copying starts; only the copy counts here.
+    let copying = true;
+    let lastActivity = Date.now();
+    let lastValue = -1;
+    let warned = false;
+    const watchdog = setInterval(() => {
+      if (warned || Date.now() - lastActivity < STALL_MS) return;
+      warned = true;
+      jobs.update(job.id, {
+        message:
+          'No progress for 15 minutes. MakeMKV is probably retrying parts of the disc it can’t read: it may be scratched or dirty. Dismiss to stop, clean the disc and insert it again.',
+      });
+    }, 60_000);
+    watchdog.unref?.();
+    let result: Awaited<ReturnType<typeof run>>;
+    try {
+      result = await run(
+        c.makemkvcon,
+        ['-r', '--progress=-same', 'mkv', `disc:${job.driveIndex ?? 0}`, String(title.index), dir],
+        {
+          signal: this.signalFor(job.id),
+          onLine: (line) => {
+            const phase = parseProgressTitle(line);
+            if (phase !== null) {
+              copying = isCopyPhase(phase);
+              lastActivity = Date.now();
+              jobs.update(job.id, {
+                progress: copying ? 0 : null,
+                message: copying ? null : 'Reading the disc’s layout (a few minutes)…',
+              });
+              return;
+            }
+            const p = parseProgress(line);
+            if (p === null || p === lastValue) return;
+            lastValue = p;
+            lastActivity = Date.now();
+            if (warned) {
+              warned = false;
+              jobs.update(job.id, { message: null });
+            }
+            if (copying) progress(p);
+          },
         },
-      },
-    );
+      );
+    } finally {
+      clearInterval(watchdog);
+    }
     const mkv = this.findFile(dir, '.mkv');
     if (result.code !== 0 || !mkv) {
       const messages = parseMessages(result.output);
@@ -616,6 +665,14 @@ export class Ripper {
 
   dismiss(id: string) {
     const job = this.requireJob(id);
+    // Reading or ripping can be stopped (e.g. a scratched disc MakeMKV is stuck on).
+    if ((job.status === 'scanning' || job.status === 'ripping') && this.discAbort?.jobId === id) {
+      this.deps.jobs.update(id, { status: 'dismissed', progress: null });
+      this.discAbort.controller.abort();
+      setTimeout(() => void this.eject(job.mountPath).catch(() => undefined), 3000).unref?.();
+      fs.rmSync(this.jobDir(id), { recursive: true, force: true });
+      return;
+    }
     if (['scanning', 'ripping', 'encoding', 'filing', 'importing'].includes(job.status)) {
       throw new UserError('This disc is still being worked on.');
     }
@@ -640,6 +697,10 @@ export class Ripper {
 
   // ---------------------------------------------------------------------------
   // Helpers
+
+  private signalFor(jobId: string): AbortSignal | undefined {
+    return this.discAbort?.jobId === jobId ? this.discAbort.controller.signal : undefined;
+  }
 
   private requireJob(id: string): JobRecord {
     const job = this.deps.jobs.get(id);
@@ -687,6 +748,8 @@ export class Ripper {
   private progressWriter(id: string) {
     let last = -1;
     return (p: number) => {
+      // A new phase starts again from 0.
+      if (p < last) last = -1;
       if (p - last < 0.02 && p < 1) return;
       last = p;
       this.deps.jobs.update(id, { progress: Math.round(p * 1000) / 1000 });

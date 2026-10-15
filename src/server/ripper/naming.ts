@@ -93,7 +93,19 @@ export type Identification =
 export function identify(guess: string, results: Candidate[]): Identification {
   const target = normalizeTitle(guess);
   const exact = results.filter((r) => normalizeTitle(r.title) === target && r.year);
-  if (exact.length === 1) return { kind: 'confident', match: exact[0]! };
+  // Only when the exact match is also the best search result: a label like
+  // A_NEW_HOPE matches an obscure film of that name, while the search ranks
+  // Star Wars (1977) first.
+  if (exact.length === 1 && results[0] === exact[0]) {
+    return { kind: 'confident', match: exact[0]! };
+  }
+  if (exact.length === 1) {
+    return {
+      kind: 'unsure',
+      reason: `Is this “${exact[0]!.title}” (${exact[0]!.year}), or another movie?`,
+      candidates: [...new Set([...results.slice(0, 7), exact[0]!])],
+    };
+  }
   if (exact.length > 1) {
     return {
       kind: 'unsure',
