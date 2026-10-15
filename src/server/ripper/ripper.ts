@@ -30,6 +30,8 @@ export interface RipperConfig {
   handbrakeCli: string;
   preset: string;
   quality: number;
+  /** Subtitle languages kept when compressing (ISO 639-2, e.g. "eng"); empty = none. */
+  subtitleLanguages: string[];
   minMinutes: number;
   minFreeGb: number;
   ntfyServer: string;
@@ -453,12 +455,16 @@ export class Ripper {
 
     const progress = this.progressWriter(job.id);
     try {
-      const result = await run(c.handbrakeCli, encodeArgs(mkv, output, c.preset, c.quality), {
-        onLine: (line) => {
-          const p = parseEncodeProgress(line);
-          if (p !== null) progress(p);
+      const result = await run(
+        c.handbrakeCli,
+        encodeArgs(mkv, output, c.preset, c.quality, c.subtitleLanguages),
+        {
+          onLine: (line) => {
+            const p = parseEncodeProgress(line);
+            if (p !== null) progress(p);
+          },
         },
-      });
+      );
       if (result.code !== 0 || !fs.existsSync(output)) {
         const tail = result.output.trim().split(/\r?\n/).slice(-1)[0] ?? '';
         throw new UserError(`HandBrake couldn’t compress the movie. ${tail}`.trim());

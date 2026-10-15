@@ -268,7 +268,8 @@ With a disc drive plugged into the Wheelhouse computer, inserting a DVD is all i
 1. Wheelhouse notices the disc within a few seconds and reads it with **MakeMKV**.
 2. It rips the main feature (the longest title) into the Rips folder, then **ejects the disc** — you can
    insert the next one while the previous movie is still being compressed.
-3. It compresses the rip with **HandBrakeCLI** (preset _Fast 1080p30_, quality 20) and checks the result is
+3. It compresses the rip with **HandBrakeCLI** (preset _Fast 1080p30_, quality 20, English subtitles kept
+   as tracks you can turn on) and checks the result is
    complete (same running time as the disc) before deleting the original rip.
 4. It names the movie from the disc label using Jellyfin's movie lookup (`YOUNG_FRANKENSTEIN` →
    `Young Frankenstein (1974)`) and files it as `Movies/Young Frankenstein (1974) [tmdbid-3034]/Young
@@ -388,6 +389,7 @@ All settings live in `.env` (copy `.env.example`; `npm run setup` writes it for 
 
 Disc ripping settings (written by `npm run setup:ripper`; see `.env.example` for all of them): `RIPPER_ENABLED`,
 `MOVIES_DIR`, `RIPS_DIR`, `MAKEMKVCON`, `HANDBRAKE_CLI`, `HANDBRAKE_PRESET`, `HANDBRAKE_QUALITY`,
+`HANDBRAKE_SUBTITLES` (default `eng`: English subtitle tracks are kept, off until you turn them on),
 `JELLYFIN_API_KEY`, `NTFY_TOPIC`, `NTFY_SERVER` and `WHEELHOUSE_PUBLIC_URL`.
 
 **Security model:** you sign in with Jellyfin credentials; Wheelhouse stores only a session (a random token

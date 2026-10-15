@@ -96,6 +96,7 @@ export function loadRipperConfig(env: NodeJS.ProcessEnv): RipperConfig {
       ]),
     preset: env.HANDBRAKE_PRESET || 'Fast 1080p30',
     quality: num(env.HANDBRAKE_QUALITY, 20),
+    subtitleLanguages: subtitleLanguages(env.HANDBRAKE_SUBTITLES),
     minMinutes: num(env.RIP_MIN_MINUTES, 40),
     minFreeGb: num(env.RIP_MIN_FREE_GB, 15),
     ntfyServer: env.NTFY_SERVER?.trim() || 'https://ntfy.sh',
@@ -109,3 +110,13 @@ export function loadRipperConfig(env: NodeJS.ProcessEnv): RipperConfig {
 }
 
 export const APP_VERSION = '1.0.0';
+
+/** "eng" (default), "eng,spa", or "none". */
+function subtitleLanguages(value: string | undefined): string[] {
+  const raw = (value ?? 'eng').trim().toLowerCase();
+  if (!raw || raw === 'none' || raw === 'off') return [];
+  return raw
+    .split(/[\s,]+/)
+    .filter((l) => /^[a-z]{3}$/.test(l))
+    .slice(0, 5);
+}

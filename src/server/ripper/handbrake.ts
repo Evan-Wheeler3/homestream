@@ -17,7 +17,22 @@ export function parseScanDuration(output: string): number | null {
   return Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]);
 }
 
-export function encodeArgs(input: string, output: string, preset: string, quality: number) {
+export function encodeArgs(
+  input: string,
+  output: string,
+  preset: string,
+  quality: number,
+  subtitleLanguages: string[] = [],
+) {
+  // DVD subtitles are kept as tracks you can switch on, never burned into the picture.
+  const subtitles = subtitleLanguages.length
+    ? [
+        '--subtitle-lang-list',
+        subtitleLanguages.join(','),
+        '--all-subtitles',
+        '--subtitle-default=none',
+      ]
+    : [];
   return [
     '-i',
     input,
@@ -31,5 +46,6 @@ export function encodeArgs(input: string, output: string, preset: string, qualit
     'av_mp4',
     // Put the index at the start of the file so playback can begin before it is all read.
     '--optimize',
+    ...subtitles,
   ];
 }

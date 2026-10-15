@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { parseEncodeProgress, parseScanDuration } from '../../src/server/ripper/handbrake';
+import {
+  encodeArgs,
+  parseEncodeProgress,
+  parseScanDuration,
+} from '../../src/server/ripper/handbrake';
+import { loadRipperConfig } from '../../src/server/config';
 import {
   chooseMainTitle,
   parseDiscInfo,
@@ -118,6 +123,22 @@ describe('MakeMKV robot output', () => {
       ),
     ).toMatch(/soft cloth/);
     expect(readErrorHint('Read error')).toBe('');
+  });
+});
+
+describe('HandBrake settings', () => {
+  it('keeps subtitle tracks in the chosen languages, switched off', () => {
+    expect(loadRipperConfig({}).subtitleLanguages).toEqual(['eng']);
+    expect(loadRipperConfig({ HANDBRAKE_SUBTITLES: 'eng, spa' }).subtitleLanguages).toEqual([
+      'eng',
+      'spa',
+    ]);
+    expect(loadRipperConfig({ HANDBRAKE_SUBTITLES: 'none' }).subtitleLanguages).toEqual([]);
+    const args = encodeArgs('in.mkv', 'out.mp4', 'Fast 1080p30', 20, ['eng']);
+    expect(args.join(' ')).toContain(
+      '--subtitle-lang-list eng --all-subtitles --subtitle-default=none',
+    );
+    expect(encodeArgs('in.mkv', 'out.mp4', 'Fast 1080p30', 20).join(' ')).not.toContain('subtitle');
   });
 });
 
