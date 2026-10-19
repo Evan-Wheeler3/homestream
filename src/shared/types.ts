@@ -511,6 +511,23 @@ export interface SessionUser {
   id: string;
   name: string;
   isAdmin: boolean;
+  /** How this profile looks (cloud edition); initials when absent. */
+  look?: ProfileLook;
+}
+
+/** A profile's avatar: a photo, or an emoji, on its colour. */
+export interface ProfileLook {
+  image: string | null;
+  emoji: string | null;
+  color: string | null;
+}
+
+/** Your own profile, as edited in Settings. */
+export interface ProfileDetails {
+  name: string;
+  look: ProfileLook;
+  tagline: string | null;
+  favoriteMovie: { id: string; title: string; year: number | null; backdrop: string | null } | null;
 }
 
 // -----------------------------------------------------------------------------
@@ -547,6 +564,10 @@ export interface PublicProfile {
   hasPassword: boolean;
   /** Same-origin avatar URL, or null for initials. */
   image: string | null;
+  look?: ProfileLook;
+  tagline?: string | null;
+  /** The favourite movie's backdrop, shown behind the profile. */
+  backdrop?: string | null;
 }
 
 export interface SessionInfo {

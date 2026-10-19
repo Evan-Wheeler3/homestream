@@ -757,3 +757,86 @@ describe('cloud: IMDb ratings', () => {
     expect(movie.communityRating).toBe(8.9);
   });
 });
+
+describe('cloud: profiles', () => {
+  const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 4]);
+
+  it('lets people choose a photo or emoji, colour, tagline and favourite movie', async () => {
+    const c = cloud();
+    const me = (await signedInAdmin(c)) as { user: { id: string } };
+    await addMovie(c);
+
+    const updated = await c.call('PATCH', '/api/profile', {
+      body: {
+        emoji: '🦖',
+        color: '#2A9D8F',
+        tagline: '  Horror after midnight ',
+        favoriteMovieId: 'tmdb-680',
+      },
+    });
+    expect(await updated.json()).toMatchObject({
+      look: { emoji: '🦖', color: '#2a9d8f', image: null },
+      tagline: 'Horror after midnight',
+      favoriteMovie: { id: 'tmdb-680', title: 'Pulp Fiction' },
+    });
+    expect((await c.call('PATCH', '/api/profile', { body: { emoji: '💩' } })).status).toBe(400);
+    expect(
+      (await c.call('PATCH', '/api/profile', { body: { favoriteMovieId: 'nope' } })).status,
+    ).toBe(400);
+
+    // A photo: stored privately, shown in the session and on "Who's watching?".
+    const put = await c.call('PUT', '/api/profile/avatar', {
+      headers: { 'content-type': 'image/jpeg' },
+      rawBody: JPEG,
+    });
+    expect(put.status).toBe(200);
+    const { look } = (await put.json()) as { look: { image: string } };
+    expect(look.image).toMatch(new RegExp(`^/api/auth/profiles/${me.user.id}/avatar\\?v=`));
+    const session = (await (await c.call('GET', '/api/auth/session')).json()) as {
+      user: { look: { image: string; emoji: string } };
+    };
+    expect(session.user.look).toMatchObject({ image: look.image, emoji: '🦖' });
+
+    const profiles = (await (await c.call('GET', '/api/auth/profiles')).json()) as {
+      profiles: { look: { image: string }; tagline: string; backdrop: string }[];
+    };
+    expect(profiles.profiles[0]).toMatchObject({ tagline: 'Horror after midnight' });
+    // Signed out, this browser still sees its own profiles' pictures…
+    await c.call('POST', '/api/auth/logout');
+    const avatar = await c.call('GET', look.image);
+    expect(avatar.status).toBe(200);
+    expect(new Uint8Array(await avatar.arrayBuffer())).toEqual(JPEG);
+    // No backdrop on the test movie: its poster is used instead.
+    expect((await c.call('GET', profiles.profiles[0]!.backdrop)).status).toBe(200);
+    // …but another browser doesn't.
+    expect((await c.call('GET', look.image, { cookies: false })).status).toBe(404);
+  });
+
+  it('refuses non-images and oversized photos, and removes the old one', async () => {
+    const c = cloud();
+    await signedInAdmin(c);
+    const bad = await c.call('PUT', '/api/profile/avatar', {
+      headers: { 'content-type': 'text/html' },
+      rawBody: JPEG,
+    });
+    expect(bad.status).toBe(400);
+    const big = await c.call('PUT', '/api/profile/avatar', {
+      headers: { 'content-type': 'image/jpeg' },
+      rawBody: new Uint8Array(2 * 1024 * 1024 + 1),
+    });
+    expect(big.status).toBe(400);
+    await c.call('PUT', '/api/profile/avatar', {
+      headers: { 'content-type': 'image/jpeg' },
+      rawBody: JPEG,
+    });
+    await c.call('PUT', '/api/profile/avatar', {
+      headers: { 'content-type': 'image/png' },
+      rawBody: JPEG,
+    });
+    const stored = (await c.media.list({ prefix: 'avatars/' })).objects;
+    expect(stored).toHaveLength(1);
+    const removed = await c.call('DELETE', '/api/profile/avatar');
+    expect(((await removed.json()) as { look: { image: null } }).look.image).toBeNull();
+    expect((await c.media.list({ prefix: 'avatars/' })).objects).toHaveLength(0);
+  });
+});

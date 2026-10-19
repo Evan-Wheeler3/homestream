@@ -43,6 +43,7 @@ import {
   StoragePanel,
   SubtitlesPanel,
 } from './CloudSettings';
+import { ProfilePanel } from './ProfileSettings';
 import { setTvSetting, useTvMode } from '../lib/tv';
 
 /** Check for and install updates (git installs; administrators only). */
@@ -916,11 +917,12 @@ export default function SettingsPage({
       </header>
       <nav className="settings-nav" aria-label="Settings sections">
         {[
+          ...(cloud ? [['profile', 'Profile']] : []),
           ['appearance', 'Appearance'],
           ['home', 'Home'],
           ['library', 'Library'],
           ['playback', 'Playback'],
-          ['server', cloud ? 'Library' : 'Server'],
+          ['server', cloud ? 'Status' : 'Server'],
           ...(admin ? [['sharing', cloud ? 'People' : 'Sharing']] : []),
           ...(admin && cloud
             ? [
@@ -938,6 +940,16 @@ export default function SettingsPage({
           </a>
         ))}
       </nav>
+
+      {cloud && (
+        <Section
+          id="profile"
+          title="Your profile"
+          description="How you look on “Who’s watching?”, in the menu and to everyone you watch with."
+        >
+          <ProfilePanel prefs={prefs} />
+        </Section>
+      )}
 
       <Section
         id="appearance"
@@ -1115,7 +1127,7 @@ export default function SettingsPage({
 
       <Section
         id="server"
-        title={cloud ? 'Library' : 'Server'}
+        title={cloud ? 'Status' : 'Server'}
         description={cloud ? 'Your movies in the cloud.' : 'Connection to your media server.'}
       >
         <ServerStatusPanel />

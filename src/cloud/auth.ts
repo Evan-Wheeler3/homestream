@@ -1,6 +1,7 @@
 import type { SessionUser } from '../shared/types.js';
 import { ApiError, badRequest } from '../server/errors.js';
 import { nowIso, randomId, type Sql } from './db.js';
+import { lookOf } from './profiles.js';
 
 // -----------------------------------------------------------------------------
 // Encoding and hashing
@@ -158,12 +159,18 @@ export interface UserRow {
   created_at: string;
   updated_at: string;
   last_seen_at: string | null;
+  avatar_key?: string | null;
+  avatar_emoji?: string | null;
+  profile_color?: string | null;
+  tagline?: string | null;
+  favorite_movie_id?: string | null;
 }
 
 export const toSessionUser = (u: UserRow): SessionUser => ({
   id: u.id,
   name: u.display_name,
   isAdmin: u.is_admin === 1,
+  look: lookOf(u),
 });
 
 // -----------------------------------------------------------------------------

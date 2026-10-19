@@ -131,6 +131,59 @@ test('admin settings show storage, backups and subtitles; Jellyfin options are g
   await expect(page.getByRole('heading', { name: 'Updates' })).toHaveCount(0);
 });
 
+test('profiles: pick an avatar, colour, tagline and favourite, then see it on "Who\'s watching?"', async ({
+  page,
+}) => {
+  test.skip(!local, 'Changes the profile');
+  await signIn(page);
+  await page.goto('/settings#profile');
+  await page.getByRole('radio', { name: 'Avatar 🦖' }).click();
+  await expect(page.getByRole('radio', { name: 'Avatar 🦖' })).toHaveAttribute(
+    'aria-checked',
+    'true',
+  );
+  await page.getByRole('radio', { name: 'Colour #2a9d8f' }).click();
+  await expect(page.getByRole('radio', { name: 'Colour #2a9d8f' })).toHaveAttribute(
+    'aria-checked',
+    'true',
+  );
+  await page.getByLabel('Tagline').fill('Dinosaur movies only');
+  await page.getByLabel('Tagline').press('Enter');
+  await page.getByLabel('Favourite movie').fill('pulp');
+  await page.locator('.favorite-pick .chip').first().click();
+  await expect(page.locator('.favorite-current')).toBeVisible();
+  if (process.env.SHOTS)
+    await page
+      .locator('#profile')
+      .screenshot({ path: `${process.env.SHOTS}/profile-settings.png` });
+
+  // A photo replaces the emoji.
+  const png = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+    'base64',
+  );
+  await page.getByLabel('Choose a profile photo').setInputFiles({
+    name: 'me.png',
+    mimeType: 'image/png',
+    buffer: png,
+  });
+  await expect(page.getByText('Photo updated')).toBeVisible();
+  await expect(page.locator('.topbar__profile img')).toBeVisible();
+
+  await page.locator('.topbar__profile').click();
+  await expect(page.getByRole('heading', { name: 'Who’s watching?' })).toBeVisible();
+  await expect(page.getByText('Dinosaur movies only')).toBeVisible();
+  await expect(page.locator('.profile .avatar img')).toBeVisible();
+  await expect(page.locator('.profile__art')).toBeVisible();
+  if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/whos-watching.png` });
+
+  // Back to the emoji for the other tests' screenshots.
+  await signIn(page);
+  await page.goto('/settings#profile');
+  await page.getByRole('button', { name: 'Remove photo' }).click();
+  await expect(page.getByRole('button', { name: 'Upload a photo' })).toBeVisible();
+});
+
 test('Discs shows the Mac as offline when it is not reporting', async ({ page }) => {
   test.skip(!local, 'The real Mac may be online');
   await signIn(page);

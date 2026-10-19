@@ -1,32 +1,14 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState, type FormEvent } from 'react';
+import { useState, type CSSProperties, type FormEvent } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router';
 import type { MediaSourceKind, PublicProfile, SessionInfo } from '../../shared/types';
 import { Icon } from '../components/Icon';
+import { ProfileAvatar, profileColour } from '../components/ProfileAvatar';
 import { Button, Spinner } from '../components/ui';
 import { api, ApiError, errorMessage } from '../lib/api';
 import { cachedAppName } from '../lib/appearance';
 import { connection } from '../lib/connection';
 import { keys } from '../lib/queries';
-
-const AVATAR_COLOURS = ['#d9a856', '#a8513c', '#1f3b4f', '#5d7a5e', '#4a3a5c', '#8a6d3b'];
-
-function Avatar({ profile, size = 'lg' }: { profile: PublicProfile; size?: 'lg' | 'sm' }) {
-  const [failed, setFailed] = useState(false);
-  const colour =
-    AVATAR_COLOURS[
-      [...profile.name].reduce((n, c) => n + c.charCodeAt(0), 0) % AVATAR_COLOURS.length
-    ];
-  return (
-    <span className={`avatar avatar--${size}`} style={{ background: colour }} aria-hidden="true">
-      {profile.image && !failed ? (
-        <img src={profile.image} alt="" onError={() => setFailed(true)} />
-      ) : (
-        profile.name.slice(0, 1).toUpperCase()
-      )}
-    </span>
-  );
-}
 
 interface LocationState {
   from?: string;
@@ -154,13 +136,24 @@ export function LoginPage() {
                 <li key={p.id}>
                   <button
                     type="button"
-                    className="profile"
+                    className={`profile ${p.backdrop ? 'profile--art' : ''}`}
                     onClick={() => pick(p)}
                     disabled={busy}
                     data-tv-focus={p === list[0] ? '' : undefined}
+                    style={{ '--profile-colour': profileColour(p.name, p.look) } as CSSProperties}
                   >
-                    <Avatar profile={p} />
+                    {p.backdrop && (
+                      <img
+                        className="profile__art"
+                        src={p.backdrop}
+                        alt=""
+                        loading="lazy"
+                        onError={(e) => e.currentTarget.remove()}
+                      />
+                    )}
+                    <ProfileAvatar name={p.name} look={p.look} image={p.image} />
                     <span className="profile__name">{p.name}</span>
+                    {p.tagline && <span className="profile__tagline">{p.tagline}</span>}
                   </button>
                 </li>
               ))}
@@ -178,7 +171,12 @@ export function LoginPage() {
           <form className="login__form" onSubmit={submit} noValidate>
             {profile ? (
               <div className="login__who">
-                <Avatar profile={profile} size="sm" />
+                <ProfileAvatar
+                  name={profile.name}
+                  look={profile.look}
+                  image={profile.image}
+                  size="sm"
+                />
                 <span>{profile.name}</span>
                 <button type="button" className="link-btn" onClick={() => setChosen(null)}>
                   Not you?

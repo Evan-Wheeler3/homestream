@@ -7,7 +7,7 @@ import { connection, useConnection } from '../lib/connection';
 import { focusFirst } from '../lib/spatialNav';
 import { isTvMode, useTvMode } from '../lib/tv';
 import { Icon, type IconName } from './Icon';
-import { IconButton } from './ui';
+import { ProfileAvatar } from './ProfileAvatar';
 
 const NAV: { to: string; label: string; icon: IconName; end?: boolean }[] = [
   { to: '/', label: 'Home', icon: 'home', end: true },
@@ -122,9 +122,12 @@ function TvRail({
         data-rail-item
         onClick={onSignOut}
       >
-        <span className="tv-rail__avatar" aria-hidden="true">
-          {session.user.name.slice(0, 1).toUpperCase()}
-        </span>
+        <ProfileAvatar
+          name={session.user.name}
+          look={session.user.look}
+          size="sm"
+          className="tv-rail__avatar"
+        />
         <span className="tv-rail__label">{session.user.name} · Switch profile</span>
       </button>
     </nav>
@@ -258,12 +261,15 @@ export function AppShell({ session, prefs }: { session: SessionInfo; prefs: Pref
           >
             <Icon name="settings" size={20} />
           </NavLink>
-          <IconButton
-            icon="logout"
-            label={`Switch profile (signed in as ${session.user.name})`}
-            className="topbar__desktop-only"
+          <button
+            type="button"
+            className="topbar__profile topbar__desktop-only"
+            aria-label={`Switch profile (signed in as ${session.user.name})`}
+            title={`${session.user.name} · Switch profile`}
             onClick={signOut}
-          />
+          >
+            <ProfileAvatar name={session.user.name} look={session.user.look} size="sm" />
+          </button>
         </div>
       </header>
       <OfflineBanner />

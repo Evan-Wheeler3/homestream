@@ -70,6 +70,15 @@ import type { CloudEnv } from './env.js';
 import { CloudLibrary } from './library.js';
 import { refreshRatings } from './ratings.js';
 import {
+  favoriteArt,
+  getProfile,
+  lookOf,
+  removeAvatar,
+  saveAvatar,
+  updateProfile,
+  type ProfileColumns,
+} from './profiles.js';
+import {
   checkMacToken,
   finishCommand,
   importPerson,
@@ -311,27 +320,69 @@ export function createApp() {
   });
 
   // "Who's watching?": only the people who've signed in on this browser before.
-  app.get('/auth/profiles', async (c) => {
-    const ids = (getCookie(c, PROFILES_COOKIE) ?? '')
+  /** Account ids that signed in on this browser (newest first). */
+  const knownProfiles = (c: C) =>
+    (getCookie(c, PROFILES_COOKIE) ?? '')
       .split('.')
       .filter((id) => /^[\w-]{36}$/.test(id))
       .slice(0, 8);
+
+  /** A profile's pictures are visible to its own browser, or to anyone signed in. */
+  const canSeeProfile = (c: C, id: string) =>
+    Boolean(c.get('session')) || knownProfiles(c).includes(id);
+
+  // "Who's watching?": only the people who've signed in on this browser before.
+  app.get('/auth/profiles', async (c) => {
+    const ids = knownProfiles(c);
     if (ids.length === 0) return c.json({ profiles: [] });
-    const rows = await c
-      .get('sql')
-      .all<{ id: string; display_name: string }>(
-        `SELECT id, display_name FROM users WHERE status = 'active' AND id IN (${ids.map(() => '?').join(',')})`,
-        ...ids,
-      );
+    const rows = await c.get('sql').all<ProfileColumns>(
+      `SELECT id, display_name, avatar_key, avatar_emoji, profile_color, tagline, favorite_movie_id
+         FROM users WHERE status = 'active' AND id IN (${ids.map(() => '?').join(',')})`,
+      ...ids,
+    );
     const profiles: PublicProfile[] = ids
       .map((id) => rows.find((r) => r.id === id))
-      .filter((r): r is { id: string; display_name: string } => Boolean(r))
-      .map((r) => ({ id: r.id, name: r.display_name, hasPassword: true, image: null }));
+      .filter((r): r is ProfileColumns => Boolean(r))
+      .map((r) => {
+        const look = lookOf(r);
+        return {
+          id: r.id,
+          name: r.display_name,
+          hasPassword: true,
+          image: look.image,
+          look,
+          tagline: r.tagline ?? null,
+          backdrop: r.favorite_movie_id
+            ? `/api/auth/profiles/${r.id}/backdrop?v=${encodeURIComponent(r.favorite_movie_id)}`
+            : null,
+        };
+      });
     return c.json({ profiles });
   });
 
-  app.get('/auth/profiles/:id/avatar', () => {
-    throw notFound();
+  app.get('/auth/profiles/:id/avatar', async (c) => {
+    const id = c.req.param('id');
+    if (!canSeeProfile(c, id)) throw notFound();
+    const row = await c
+      .get('sql')
+      .get<{ avatar_key: string | null }>('SELECT avatar_key FROM users WHERE id = ?', id);
+    if (!row?.avatar_key) throw notFound();
+    return serveCachedImage(c.req.raw, c.env.MEDIA, row.avatar_key, (p) =>
+      c.executionCtx.waitUntil(p),
+    );
+  });
+
+  app.get('/auth/profiles/:id/backdrop', async (c) => {
+    const id = c.req.param('id');
+    if (!canSeeProfile(c, id)) throw notFound();
+    const sql = c.get('sql');
+    const row = await sql.get<{ favorite_movie_id: string | null }>(
+      'SELECT favorite_movie_id FROM users WHERE id = ?',
+      id,
+    );
+    const art = await favoriteArt(sql, row?.favorite_movie_id);
+    if (!art?.key || !isServableKey(art.key)) throw notFound();
+    return serveCachedImage(c.req.raw, c.env.MEDIA, art.key, (p) => c.executionCtx.waitUntil(p));
   });
 
   app.get('/auth/session', (c) => {
@@ -869,6 +920,25 @@ export function createApp() {
       cacheControl: 'private, max-age=31536000, immutable',
     });
   });
+
+  app.get('/profile', async (c) => c.json(await getProfile(c.get('sql'), user(c).id)));
+  app.patch('/profile', async (c) =>
+    c.json(await updateProfile(c.get('sql'), user(c).id, await json(c))),
+  );
+  app.put('/profile/avatar', async (c) =>
+    c.json(
+      await saveAvatar(
+        c.env,
+        c.get('sql'),
+        user(c).id,
+        c.req.header('content-type') ?? '',
+        new Uint8Array(await c.req.arrayBuffer()),
+      ),
+    ),
+  );
+  app.delete('/profile/avatar', async (c) =>
+    c.json(await removeAvatar(c.env, c.get('sql'), user(c).id)),
+  );
 
   app.get('/preferences', async (c) => c.json(await store(c).getPreferences(user(c).id)));
   app.patch('/preferences', async (c) =>

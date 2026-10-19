@@ -171,16 +171,10 @@ html[data-tv] .tv-rail__item:focus {
   opacity: 1;
 }
 .tv-rail__avatar {
-  display: grid;
-  flex: none;
-  place-items: center;
   width: 30px;
   height: 30px;
   margin-left: -2px;
-  border-radius: 50%;
-  background: var(--surface);
-  color: var(--text);
-  font-weight: var(--weight-semibold);
+  font-size: 0.95rem;
 }
 html[data-tv] .offline-banner {
   left: calc(var(--tv-rail) + var(--s-4));

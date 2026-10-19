@@ -194,6 +194,8 @@ export function cloud(overrides: Partial<CloudEnv> = {}) {
     url: string,
     options: {
       body?: unknown;
+      /** Bytes sent as-is (set content-type in headers). */
+      rawBody?: Uint8Array;
       headers?: Record<string, string>;
       cookies?: boolean;
       ip?: string;
@@ -211,7 +213,12 @@ export function cloud(overrides: Partial<CloudEnv> = {}) {
       new Request(`https://wheelhouse.example${url}`, {
         method,
         headers,
-        body: options.body === undefined ? undefined : JSON.stringify(options.body),
+        body:
+          options.rawBody !== undefined
+            ? (options.rawBody as Uint8Array<ArrayBuffer>)
+            : options.body === undefined
+              ? undefined
+              : JSON.stringify(options.body),
       }),
       env,
       ctx as never,
