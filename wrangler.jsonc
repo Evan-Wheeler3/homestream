@@ -25,7 +25,7 @@
   "triggers": { "crons": ["17 4 * * *"] },
   "vars": {
     // Password hashing strength (PBKDF2-SHA256). Raise to 100000 on Workers Paid.
-    "PBKDF2_ITERATIONS": "10000",
+    "PBKDF2_ITERATIONS": "5000",
     "NTFY_SERVER": "https://ntfy.sh",
     "BACKUPS_KEEP": "14",
   },

@@ -95,7 +95,7 @@ export async function verifyPassword(
   }
   const actual = await derive(password, fromBase64url(salt), iterations, pepper);
   const ok = timingSafeEqual(actual, fromBase64url(hash));
-  return { ok, rehash: ok && iterations < wantedIterations };
+  return { ok, rehash: ok && iterations !== wantedIterations };
 }
 
 export function validateNewPassword(password: unknown): string {

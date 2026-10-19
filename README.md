@@ -19,6 +19,7 @@ or a large screen — with your own branding, collections, notes and home layout
 
 ## Contents
 
+0. [Wheelhouse on Cloudflare (watch anywhere, Mac off)](#wheelhouse-on-cloudflare)
 1. [What it does](#what-it-does)
 2. [How it fits together](#how-it-fits-together)
 3. [Quick start (try it in 5 minutes)](#quick-start)
@@ -33,6 +34,91 @@ or a large screen — with your own branding, collections, notes and home layout
 12. [Troubleshooting](#troubleshooting)
 13. [What has been verified, and known limitations](#verification-status-and-limitations)
 14. [Development](#development)
+
+## Wheelhouse on Cloudflare
+
+Wheelhouse can run entirely on Cloudflare, so you can watch from any browser, anywhere, with the Mac
+switched off. Movies, posters, subtitles and everyone's data live in your Cloudflare account. The
+Mac only rips new discs and uploads them by itself. Jellyfin isn't needed in this setup.
+
+| Piece                          | What it does                                                                   |
+| ------------------------------ | ------------------------------------------------------------------------------ |
+| Worker (`src/cloud`)           | The website and the same `/api` routes, with video streaming (seeking works)   |
+| D1 database `wheelhouse`       | Accounts, invitations, watch progress, collections, requests and movie nights  |
+| R2 bucket `wheelhouse-media`   | Video files, artwork and subtitles (private; only signed-in people can stream) |
+| Mac (`WHEELHOUSE_MODE=ripper`) | Rips discs, converts them, reads DVD subtitles and uploads to R2               |
+
+**Who can get in:** only people you invite.
+
+- **Inviting someone:** open Settings → People → Invite, then send the link it gives you. Each link
+  works once and expires.
+- **Passwords:** stored as salted PBKDF2 hashes mixed with a secret key, never as plain text.
+- **Sign-in:** sessions use secure cookies, and sign-in attempts are rate-limited.
+- **Nightly backup:** a copy of the database goes to `backups/` in R2 (Settings → Storage).
+
+**Cost:** it runs on the Workers **free** plan.
+
+- R2 includes 10 GB of storage free, then charges $0.015 per GB each month. A 1 GB movie costs about
+  1.5¢ a month, and streaming it costs nothing.
+- Settings → Storage shows how much you're using and what it costs.
+- The free plan allows each request only 10 ms of processing, which is why `PBKDF2_ITERATIONS` is 5000. On Workers Paid you can raise it to 100000.
+
+### Setting it up
+
+1. Create a free Cloudflare account, then run `npx wrangler login`.
+2. Create the database and bucket:
+
+   ```sh
+   npx wrangler d1 create wheelhouse
+   npx wrangler r2 bucket create wheelhouse-media
+   ```
+
+   Put the database id in `wrangler.jsonc`.
+
+3. Create an R2 API token with Object Read & Write on that bucket. Put it in `.env` as `R2_ACCOUNT_ID`,
+   `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` and `R2_BUCKET`, and add `TMDB_READ_TOKEN`. To use
+   OpenSubtitles too, add `OPENSUBTITLES_API_KEY`, `OPENSUBTITLES_USERNAME` and
+   `OPENSUBTITLES_PASSWORD`.
+4. Store the Worker's secrets with `npx wrangler secret put <NAME>`: `PEPPER` (random), `MAC_TOKEN`
+   (random), `TMDB_READ_TOKEN`, the OpenSubtitles values, and `NTFY_TOPIC` (optional). Put the same
+   pepper and Mac token in `.env` as `CLOUD_PEPPER` and `CLOUD_MAC_TOKEN`, and add
+   `CLOUD_URL=https://<your worker>.workers.dev`.
+5. Deploy: `npx wrangler d1 migrations apply wheelhouse --remote`, then `npm run cloud:deploy`.
+6. Create the first admin with `npm run cloud:bootstrap -- --name "Your name"`. Open the invite link
+   it prints.
+7. Upload your existing movies with `npm run cloud:upload` (try `--dry-run` first). If it stops partway,
+   run it again and it carries on from where it left off. Your local files are only read, never
+   changed.
+8. Optionally, copy over people's watch history and collections with `npm run cloud:people`.
+9. Set the Mac to rip only: add `WHEELHOUSE_MODE=ripper` to `.env`, then restart with
+   `launchctl kickstart -k gui/$(id -u)/com.wheelhouse.app`. Do this only when no rip is running.
+   From then on, new discs upload by themselves, and the cloud Discs page shows the Mac's progress (or
+   "Mac offline").
+
+**Going back to the local setup:** remove `WHEELHOUSE_MODE=ripper` from `.env`, restart the same way,
+and open Jellyfin again.
+
+**Reading DVD subtitles:** reading the subtitles from a disc at rip time needs
+`brew install tesseract mkvtoolnix`. Without these, Wheelhouse downloads subtitles from OpenSubtitles
+instead.
+
+### What doesn't work in the cloud yet
+
+- **TV shows:** only movies are uploaded, so the TV Shows page is empty.
+- **Audio tracks:** you can't switch between them; the browser plays the default track.
+- **Converting files for slow connections:** there's no transcoding, so every movie streams in its
+  original format. Movies are converted once on the Mac when needed.
+- **Profile pictures:** they aren't uploaded; profiles show initials.
+- **Signing out:** each browser remembers its own sign-ins, so there's no button that signs you out
+  of every device at once.
+- **An extra login wall:** Cloudflare Access isn't set up. You can add it, but leave `/invite*`,
+  `/vote*` and `/api/public/*` outside it.
+
+### Tests
+
+- `npm test`: the Worker's API runs against a fake D1 and R2.
+- `npm run test:e2e:cloud`: browser tests against `wrangler dev`. Set
+  `CLOUD_URL=… E2E_USERNAME=… E2E_PASSWORD=…` to run them against the live site instead.
 
 ---
 

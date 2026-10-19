@@ -148,7 +148,12 @@ export async function serveCachedImage(
   const cacheKey = new Request(request.url, { method: 'GET' });
   if (cache && request.method === 'GET' && !request.headers.has('Range')) {
     const hit = await cache.match(cacheKey).catch(() => undefined);
-    if (hit) return hit;
+    // Cached responses are immutable; copy so later middleware can add headers.
+    if (hit) {
+      const fresh = new Response(hit.body, hit);
+      fresh.headers.set('Cache-Control', cacheControl);
+      return fresh;
+    }
   }
   const response = await serveObject(request, bucket, key, { cacheControl });
   if (cache && response.status === 200 && request.method === 'GET') {
