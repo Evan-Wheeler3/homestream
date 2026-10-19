@@ -174,7 +174,11 @@ test('profiles: pick an avatar, colour, tagline and favourite, then see it on "W
   await expect(page.getByRole('heading', { name: 'Who’s watching?' })).toBeVisible();
   await expect(page.getByText('Dinosaur movies only')).toBeVisible();
   await expect(page.locator('.profile .avatar img')).toBeVisible();
-  await expect(page.locator('.profile__art')).toBeVisible();
+  // The favourite movie is behind the profile (the test movies have no artwork, so it's hidden).
+  const profiles = await page.evaluate(async () => (await fetch('/api/auth/profiles')).json());
+  expect((profiles as { profiles: { backdrop: string | null }[] }).profiles[0]!.backdrop).toMatch(
+    /\/api\/auth\/profiles\/.+\/backdrop/,
+  );
   if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/whos-watching.png` });
 
   // Back to the emoji for the other tests' screenshots.

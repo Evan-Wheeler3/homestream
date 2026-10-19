@@ -5,6 +5,7 @@ import { formatRuntime, plural, timeLeft } from '../lib/format';
 import { Icon } from './Icon';
 import { Backdrop, Poster } from './movies';
 import { IconButton, ProgressBar } from './ui';
+import { DownloadButton } from './DownloadButton';
 
 export function isEpisodeInProgress(e: Episode) {
   return e.user.positionSeconds > 0 && !e.user.played;
@@ -165,6 +166,19 @@ export function EpisodeItem({
         </p>
         {e.overview && <p className="episode__overview">{e.overview}</p>}
       </div>
+      {e.available && (
+        <DownloadButton
+          compact
+          meta={{
+            id: e.id,
+            kind: 'episode',
+            title: e.title,
+            subtitle: [e.showTitle, episodeLabel(e)].filter(Boolean).join(' · '),
+            poster: e.image,
+            runtimeMinutes: e.runtimeMinutes,
+          }}
+        />
+      )}
       {e.available && (
         <IconButton
           icon={e.user.played ? 'check' : 'eye'}

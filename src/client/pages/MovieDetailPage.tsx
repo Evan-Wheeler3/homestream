@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router';
 import type { MovieDetail, Preferences } from '../../shared/types';
 import { AddToCollectionDialog } from '../components/AddToCollectionDialog';
 import { MetaLine } from '../components/Hero';
+import { DownloadButton } from '../components/DownloadButton';
 import { RatingBadges, TitleArt, TrailerButton } from '../components/MovieExtras';
 import { Icon } from '../components/Icon';
 import {
@@ -312,6 +313,17 @@ export function MovieDetailPage({ prefs }: { prefs: Preferences }) {
               <ButtonLink to={playHref(m, m.user.positionSeconds)} variant="secondary" size="lg">
                 Resume
               </ButtonLink>
+            )}
+            {m.available && (
+              <DownloadButton
+                meta={{
+                  id: m.id,
+                  kind: 'movie',
+                  title: m.title,
+                  poster: m.images.poster,
+                  runtimeMinutes: m.runtimeMinutes,
+                }}
+              />
             )}
             <TrailerButton trailers={m.trailers} title={m.title} />
             <IconButton

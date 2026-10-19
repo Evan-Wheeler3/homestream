@@ -23,6 +23,8 @@ export default defineConfig({
   reporter: [['list']],
   globalSetup: './e2e-cloud/setup.ts',
   use: {
+    // The app's service worker (offline downloads) is only allowed in tests that use it.
+    serviceWorkers: 'block',
     baseURL: deployed ?? `http://127.0.0.1:${PORT}`,
     trace: 'retain-on-failure',
   },

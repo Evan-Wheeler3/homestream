@@ -12,9 +12,11 @@ import './styles/tv.css';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
+import { installOfflineSupport } from './lib/downloads';
 import { installSpatialNavigation } from './lib/spatialNav';
 
 installSpatialNavigation();
+installOfflineSupport();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

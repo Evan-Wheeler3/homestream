@@ -7,6 +7,7 @@ import {
 import { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router';
 import { DEFAULT_PREFERENCES } from '../shared/preferences';
+import { Icon } from './components/Icon';
 import { AppShell } from './components/AppShell';
 import { ToastProvider } from './components/Toasts';
 import { Button, PageLoader, StatusView } from './components/ui';
@@ -22,6 +23,8 @@ import { LoginPage } from './pages/LoginPage';
 import { MovieDetailPage } from './pages/MovieDetailPage';
 import { FranchisePage } from './pages/FranchisePage';
 import { RequestsPage } from './pages/RequestsPage';
+import { DownloadsPage } from './pages/DownloadsPage';
+import { getDownloads } from './lib/downloads';
 import { PersonPage } from './pages/PersonPage';
 import { RipsPage } from './pages/RipsPage';
 import { NotFoundPage } from './pages/NotFoundPage';
@@ -97,6 +100,38 @@ function Protected() {
     if (session.error instanceof ApiError && session.error.isAuth) {
       return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
     }
+    // Offline with downloads: they can still be watched.
+    if (
+      session.error instanceof ApiError &&
+      session.error.code === 'NETWORK' &&
+      getDownloads().some((d) => d.status === 'done')
+    ) {
+      return (
+        <Suspense fallback={<PageLoader />}>
+          <Routes>
+            <Route path="play/:id" element={<PlayerPage prefs={DEFAULT_PREFERENCES} />} />
+            <Route
+              path="play/episode/:id"
+              element={<PlayerPage prefs={DEFAULT_PREFERENCES} kind="episode" />}
+            />
+            <Route
+              path="*"
+              element={
+                <main id="main" className="main main--offline">
+                  <div className="offline-strip" role="status">
+                    <Icon name="offline" size={18} /> No connection.{' '}
+                    <button type="button" className="link-btn" onClick={() => session.refetch()}>
+                      Try again
+                    </button>
+                  </div>
+                  <DownloadsPage offline />
+                </main>
+              }
+            />
+          </Routes>
+        </Suspense>
+      );
+    }
     return (
       <div className="page">
         <StatusView
@@ -137,6 +172,7 @@ function Protected() {
           <Route path="wrapped" element={<WrappedPage />} />
           <Route path="night" element={<NightPage />} />
           <Route path="requests" element={<RequestsPage session={session.data} />} />
+          <Route path="downloads" element={<DownloadsPage />} />
           <Route
             path="settings"
             element={<SettingsPage session={session.data} prefs={preferences} />}

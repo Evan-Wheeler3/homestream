@@ -14,6 +14,7 @@ import { sizedImage } from '../lib/images';
 import { invalidateShows, useEpisode, useMovie } from '../lib/queries';
 import { isTvMode, remoteKey, type RemoteKey } from '../lib/tv';
 import { useRemotePlayback } from './remote';
+import { getDownload, rememberOfflineProgress } from '../lib/downloads';
 
 interface StartOptions {
   startSeconds: number;
@@ -39,6 +40,11 @@ const METHOD_LABEL: Record<PlaybackInfo['method'], string> = {
 function report(event: 'start' | 'progress' | 'stop', body: PlaybackReport) {
   return api(`/playback/${event}`, { method: 'POST', body, keepalive: event === 'stop' }).catch(
     (error) => {
+      // Offline (a downloaded movie): keep the position and send it later.
+      if (error instanceof ApiError && error.code === 'NETWORK') {
+        if (event !== 'start') rememberOfflineProgress(body);
+        return;
+      }
       recordError(`Playback ${event} report failed: ${errorMessage(error)}`);
     },
   );
@@ -73,7 +79,18 @@ export default function PlayerPage({
   const display = useMemo(() => {
     if (kind === 'episode') {
       const e = episode.data;
-      if (!e) return null;
+      if (!e) {
+        const saved = getDownload(id);
+        return saved
+          ? {
+              title: saved.subtitle?.split(' · ')[0] ?? saved.title,
+              subtitle: saved.title,
+              mediaTitle: saved.title,
+              artist: saved.subtitle ?? '',
+              art: saved.poster,
+            }
+          : null;
+      }
       const label = episodeLabel(e);
       return {
         title: e.showTitle,
@@ -84,7 +101,19 @@ export default function PlayerPage({
       };
     }
     const m = movie.data;
-    if (!m) return null;
+    if (!m) {
+      // Offline: what the download remembered.
+      const saved = getDownload(id);
+      return saved
+        ? {
+            title: saved.title,
+            subtitle: saved.subtitle,
+            mediaTitle: saved.title,
+            artist: saved.subtitle ?? '',
+            art: saved.poster,
+          }
+        : null;
+    }
     return {
       title: m.title,
       subtitle: null,
@@ -92,7 +121,7 @@ export default function PlayerPage({
       artist: m.directors.join(', '),
       art: m.images.backdrop ?? m.images.poster,
     };
-  }, [kind, episode.data, movie.data]);
+  }, [kind, id, episode.data, movie.data]);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -166,6 +195,18 @@ export default function PlayerPage({
         infoRef.current = next;
         setInfo(next);
       } catch (err) {
+        // No network: play the downloaded copy, if there is one.
+        const saved = getDownload(id);
+        if (err instanceof ApiError && err.code === 'NETWORK' && saved?.status === 'done') {
+          const offline: PlaybackInfo = {
+            ...saved.playback,
+            playSessionId: `offline-${crypto.randomUUID()}`,
+            startSeconds: options.startSeconds ?? 0,
+          };
+          infoRef.current = offline;
+          setInfo(offline);
+          return;
+        }
         const message =
           err instanceof ApiError && err.code === 'MEDIA_SERVER_UNREACHABLE'
             ? `Jellyfin is not responding, so this ${kind === 'episode' ? 'episode' : 'movie'} can’t be played right now.`

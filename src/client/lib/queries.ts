@@ -82,7 +82,9 @@ export function useSession() {
   return useQuery({
     queryKey: keys.session,
     queryFn: () => api<SessionInfo>('/auth/session'),
-    retry: (count, error) => !(error as { isAuth?: boolean }).isAuth && count < 2,
+    // Offline, go straight to the downloads instead of retrying.
+    retry: (count, error) =>
+      !(error as { isAuth?: boolean }).isAuth && count < 2 && navigator.onLine !== false,
     staleTime: 5 * 60_000,
   });
 }

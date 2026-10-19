@@ -23,6 +23,8 @@ export default defineConfig({
   workers: 1,
   reporter: [['list']],
   use: {
+    // The app's service worker (offline downloads) is only allowed in tests that use it.
+    serviceWorkers: 'block',
     baseURL: `http://127.0.0.1:${PORT}`,
     trace: 'retain-on-failure',
   },

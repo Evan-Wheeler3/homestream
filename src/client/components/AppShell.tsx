@@ -97,6 +97,7 @@ function TvRail({
     { to: '/night', label: 'Movie night', icon: 'user' },
     { to: '/wrapped', label: 'Your year', icon: 'star' },
     { to: '/requests', label: 'Requests', icon: 'plus' },
+    { to: '/downloads', label: 'Downloads', icon: 'download' },
     ...(session.ripper ? [{ to: '/rips', label: 'Discs', icon: 'disc' as const }] : []),
     { to: '/settings', label: 'Settings', icon: 'settings' },
   ];
@@ -252,6 +253,14 @@ export function AppShell({ session, prefs }: { session: SessionInfo; prefs: Pref
             title="Search (/)"
           >
             <Icon name="search" size={20} />
+          </NavLink>
+          <NavLink
+            to="/downloads"
+            className="icon-btn icon-btn--plain"
+            aria-label="Downloads"
+            title="Downloads"
+          >
+            <Icon name="download" size={20} />
           </NavLink>
           <NavLink
             to="/settings"

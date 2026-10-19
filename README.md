@@ -183,6 +183,15 @@ instead.
   favourite genre and decade, month-by-month, top directors and actors, longest sit, most rewatched — for
   any year or all time. Wheelhouse keeps its own viewing history from its player; movies watched elsewhere
   count once at their last-played date.
+- **Downloads**: press **Download** on a movie or an episode to keep it on that phone, tablet or laptop,
+  then watch it with no internet (on a flight, say) from **Downloads** (the ⤓ icon). Seeking works,
+  and where you got to is saved to your account when you're back online. Downloads are full-quality
+  copies of the file, so check the free space shown on the Downloads page. On iPhone and iPad, add
+  Wheelhouse to the Home Screen so iOS doesn't clear them.
+- **AirPlay and Cast**: in the player, the AirPlay button (Safari on iPhone, iPad and Mac) or Cast
+  button (Chrome on Android) appears when a TV is available, and sends the movie to it.
+- **Profiles** (cloud): a photo or emoji avatar, a colour, a tagline and a favourite movie whose
+  artwork sits behind your profile on “Who's watching?” (_Settings → Your profile_).
 - **Share with family**: let people outside your home watch over Tailscale (nothing on the public
   internet). _Settings → Share with family_ (administrators) walks through it and writes the invitation
   to send. Each person signs in with their own Jellyfin account.
