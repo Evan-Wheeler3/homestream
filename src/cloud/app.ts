@@ -2,7 +2,7 @@
 // already uses, backed by D1 (data) and R2 (movies, artwork, subtitles).
 import { Hono, type Context } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
-import { personFilmography, searchPeople } from '../shared/catalog.js';
+import { normalizeText, personFilmography, searchPeople } from '../shared/catalog.js';
 import { deviceNameFromUserAgent } from '../shared/devices.js';
 import { OpenSubtitles } from '../shared/opensubtitles.js';
 import { parseSmartRules } from '../shared/rules.js';
@@ -12,6 +12,8 @@ import type {
   InviteLink,
   MovieQuery,
   NowWatching,
+  Person,
+  PersonPage,
   PlaybackInfo,
   PlaybackReport,
   PublicProfile,
@@ -871,7 +873,7 @@ export function createApp() {
     const name = c.req.param('name').slice(0, 200);
     const page = personFilmography((await library(c).snapshot()).movies, name);
     if (!page.directed.length && !page.actedIn.length) throw notFound('No movies with this person');
-    return c.json(page);
+    return c.json({ ...page, photo: await personPhoto(c.get('sql'), page) });
   });
   app.get('/franchises', async (c) => c.json({ franchises: await library(c).franchises() }));
   app.get('/franchises/:id', async (c) =>
@@ -1329,4 +1331,21 @@ async function tmdbSearch(env: CloudEnv, q: string, kind: 'movie' | 'tv'): Promi
       imdbId: null,
     };
   });
+}
+
+/** A person's photo, from the cast list of one of the movies they acted in. */
+async function personPhoto(sql: Sql, page: PersonPage): Promise<string | null> {
+  const ids = page.actedIn.slice(0, 20).map((m) => m.id);
+  if (!ids.length) return null;
+  const key = normalizeText(page.name);
+  const rows = await sql.all<{ detail: string }>(
+    `SELECT detail FROM movies WHERE id IN (${ids.map(() => '?').join(',')})`,
+    ...ids,
+  );
+  for (const row of rows) {
+    const cast = (JSON.parse(row.detail || '{}') as { cast?: Person[] }).cast ?? [];
+    const found = cast.find((p) => p.image && normalizeText(p.name) === key);
+    if (found?.image) return found.image;
+  }
+  return null;
 }

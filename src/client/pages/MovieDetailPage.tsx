@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useParams } from 'react-router';
 import type { MovieDetail, Preferences } from '../../shared/types';
+import { PersonPhoto } from '../components/PersonPhoto';
 import { AddToCollectionDialog } from '../components/AddToCollectionDialog';
 import { MetaLine } from '../components/Hero';
 import { DownloadButton } from '../components/DownloadButton';
@@ -35,7 +36,6 @@ import {
   timeLeft,
 } from '../lib/format';
 import { useDocumentTitle } from '../lib/hooks';
-import { sizedImage } from '../lib/images';
 import {
   useMovie,
   useSavePersonal,
@@ -423,24 +423,7 @@ export function MovieDetailPage({ prefs }: { prefs: Preferences }) {
                   to={`/person/${encodeURIComponent(person.name)}`}
                   state={person.image ? { photo: person.image } : undefined}
                 >
-                  <span className="person__photo">
-                    {person.image ? (
-                      <img
-                        src={sizedImage(person.image, 200)}
-                        alt=""
-                        loading="lazy"
-                        decoding="async"
-                      />
-                    ) : (
-                      <span aria-hidden="true">
-                        {person.name
-                          .split(/\s+/)
-                          .map((p) => p[0])
-                          .slice(0, 2)
-                          .join('')}
-                      </span>
-                    )}
-                  </span>
+                  <PersonPhoto name={person.name} image={person.image} />
                   <span className="person__name">{person.name}</span>
                   {person.role && <span className="person__role">{person.role}</span>}
                 </Link>

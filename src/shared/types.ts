@@ -262,6 +262,8 @@ export interface PersonPage {
   name: string;
   directed: Movie[];
   actedIn: Movie[];
+  /** Their photo, from a cast list they're in (cloud edition). */
+  photo?: string | null;
 }
 
 export interface Page<T> {

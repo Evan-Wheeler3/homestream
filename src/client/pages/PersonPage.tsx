@@ -11,7 +11,7 @@ import { sizedImage } from '../lib/images';
 export function PersonPage() {
   const { name = '' } = useParams();
   // The cast row passes the person's photo along when there is one.
-  const photo = (useLocation().state as { photo?: string } | null)?.photo;
+  const passed = (useLocation().state as { photo?: string } | null)?.photo;
   const person = useQuery({
     queryKey: ['person', name],
     queryFn: () => api<PersonData>(`/people/${encodeURIComponent(name)}`),
@@ -34,6 +34,7 @@ export function PersonPage() {
     );
   }
   const p = person.data;
+  const photo = passed ?? p.photo;
   const all = new Set([...p.directed, ...p.actedIn].map((m) => m.id)).size;
   const roles = [
     p.directed.length ? `Directed ${plural(p.directed.length, 'movie')}` : null,

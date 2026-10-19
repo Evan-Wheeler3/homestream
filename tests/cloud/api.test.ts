@@ -58,6 +58,13 @@ async function addMovie(
     detail: {
       cast: [
         { id: null, name: 'John Travolta', role: 'Vincent Vega', type: 'Actor', imageKey: null },
+        {
+          id: '139',
+          name: 'Uma Thurman',
+          role: 'Mia Wallace',
+          type: 'Actor',
+          imageKey: 'people/139.jpg',
+        },
       ],
       trailers: [],
       writers: ['Quentin Tarantino'],
@@ -348,6 +355,12 @@ describe('cloud: library and playback', () => {
     expect(search.total).toBe(1);
     const person = await c.call('GET', `/api/people/${encodeURIComponent('Quentin Tarantino')}`);
     expect(person.status).toBe(200);
+    expect(((await person.json()) as { photo: string | null }).photo).toBeNull();
+    // An actor's page has their photo even when it isn't opened from a cast list.
+    const uma = await c.call('GET', `/api/people/${encodeURIComponent('uma thurman')}`);
+    expect(((await uma.json()) as { photo: string | null }).photo).toBe(
+      '/api/media/people/139.jpg',
+    );
   });
 
   it('streams video with Range requests (seeking, resuming, TV browsers)', async () => {

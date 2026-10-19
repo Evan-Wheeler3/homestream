@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useParams, useSearchParams } from 'react-router';
 import { episodeLabel } from '../../shared/episodes';
 import type { Episode, ShowDetail } from '../../shared/types';
+import { PersonPhoto } from '../components/PersonPhoto';
 import { Backdrop, Poster, Row } from '../components/movies';
 import {
   episodePlay,
@@ -14,7 +15,6 @@ import { Button, ButtonLink, PageLoader, ProgressBar, StatusView } from '../comp
 import { ApiError, errorMessage } from '../lib/api';
 import { plural, timeLeft } from '../lib/format';
 import { useDocumentTitle } from '../lib/hooks';
-import { sizedImage } from '../lib/images';
 import { useShow, useToggleEpisodePlayed } from '../lib/queries';
 
 /** Seasons in order, with Specials (season 0) last. */
@@ -229,24 +229,7 @@ export function ShowDetailPage() {
             {s.cast.map((person) => (
               <li key={`${person.name}-${person.role}`} className="person">
                 <div className="person__link">
-                  <span className="person__photo">
-                    {person.image ? (
-                      <img
-                        src={sizedImage(person.image, 200)}
-                        alt=""
-                        loading="lazy"
-                        decoding="async"
-                      />
-                    ) : (
-                      <span aria-hidden="true">
-                        {person.name
-                          .split(/\s+/)
-                          .map((p) => p[0])
-                          .slice(0, 2)
-                          .join('')}
-                      </span>
-                    )}
-                  </span>
+                  <PersonPhoto name={person.name} image={person.image} />
                   <span className="person__name">{person.name}</span>
                   {person.role && <span className="person__role">{person.role}</span>}
                 </div>
