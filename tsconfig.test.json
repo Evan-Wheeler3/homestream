@@ -7,6 +7,8 @@
   "include": [
     "tests",
     "e2e",
+    "e2e-cloud",
+    "playwright.cloud.config.ts",
     "playwright.config.ts",
     "vitest.config.ts",
     "vitest.jellyfin.config.ts",
