@@ -26,7 +26,9 @@ import type { MediaProvider } from './providers/types.js';
 import { mediaProxy } from './proxy.js';
 import { RipJobStore } from './ripper/jobs.js';
 import { runProcess, type Runner } from './ripper/process.js';
-import { Ripper } from './ripper/ripper.js';
+import { Ripper, type RipperCloud } from './ripper/ripper.js';
+import { cloudLinkFromEnv, MacReporter } from './cloud/macLink.js';
+import { ocrDiscSubtitles } from './cloud/ocr.js';
 import {
   JellyfinAdmin,
   MacNotifier,
@@ -50,6 +52,9 @@ export interface AppOptions {
   ripperRunner?: Runner;
   ripperNotifier?: Notifier;
   ripperFetch?: typeof fetch;
+  /** Test seams: the cloud upload and subtitle OCR (normally from .env). */
+  ripperCloud?: RipperCloud | null;
+  ripperOcr?: ((mkv: string, workDir: string) => Promise<string | null>) | null;
   /** Test seams for in-app updates. */
   updater?: Updater;
 }
@@ -62,6 +67,8 @@ export function createApp({
   ripperRunner = runProcess,
   ripperNotifier,
   ripperFetch = fetch,
+  ripperCloud,
+  ripperOcr,
   updater: injectedUpdater,
 }: AppOptions) {
   const provider: MediaProvider =
@@ -106,6 +113,16 @@ export function createApp({
       logger.warn('Could not check movie requests', error);
     }
   };
+  // Wheelhouse in the cloud: finished rips upload themselves (needs CLOUD_URL etc. in .env).
+  const cloudLink =
+    rc.enabled && config.dataDir !== ':memory:'
+      ? cloudLinkFromEnv({
+          run: ripperRunner,
+          handbrakeCli: rc.handbrakeCli,
+          dataDir: config.dataDir,
+          log: logger,
+        })
+      : null;
   if (rc.enabled) {
     ripper = new Ripper({
       config: rc,
@@ -118,8 +135,17 @@ export function createApp({
       notifier,
       onImported: () => catalog.invalidate(),
       logger,
+      cloud: ripperCloud !== undefined ? ripperCloud : (cloudLink?.publisher ?? null),
+      ocrSubtitles:
+        ripperOcr !== undefined
+          ? ripperOcr
+          : cloudLink
+            ? (mkv, workDir) => ocrDiscSubtitles(ripperRunner, mkv, workDir)
+            : null,
     });
   }
+  const macReporter =
+    ripper && cloudLink ? new MacReporter(cloudLink.client, ripper, logger) : null;
 
   // Daily backups and drive-space warnings (not for in-memory test databases).
   const maintenance =
@@ -286,5 +312,5 @@ export function createApp({
     res.status(apiError.status).json(body);
   });
 
-  return { app, provider, library, sessions, ripper, maintenance };
+  return { app, provider, library, sessions, ripper, maintenance, macReporter };
 }

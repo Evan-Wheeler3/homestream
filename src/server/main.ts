@@ -12,7 +12,7 @@ try {
 }
 
 const db = openDatabase(config.dataDir);
-const { app, provider, ripper, maintenance } = createApp({ config, db });
+const { app, provider, ripper, maintenance, macReporter } = createApp({ config, db });
 
 const server = app.listen(config.port, config.host, () => {
   const lanAddresses = Object.values(os.networkInterfaces())
@@ -36,6 +36,10 @@ const server = app.listen(config.port, config.host, () => {
     for (const problem of health.problems) console.warn(`    ! ${problem}`);
     for (const warning of health.warnings) console.info(`    - ${warning}`);
   }
+  if (macReporter) {
+    macReporter.start();
+    console.info(`  Cloud: new rips upload to ${process.env.CLOUD_URL}`);
+  }
 });
 
 server.on('error', (error: NodeJS.ErrnoException) => {
@@ -47,6 +51,7 @@ server.on('error', (error: NodeJS.ErrnoException) => {
 
 function shutdown() {
   ripper?.stop();
+  macReporter?.stop();
   maintenance?.stop();
   server.close(() => {
     db.close();

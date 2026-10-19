@@ -63,10 +63,31 @@ export interface RipperDeps {
   notifier: Notifier;
   /** Called after a movie is added, so Wheelhouse refreshes its library index. */
   onImported?: () => void;
+  /** Uploads finished movies to Wheelhouse in the cloud (when set up). */
+  cloud?: RipperCloud | null;
+  /** Reads the disc's English subtitles into WebVTT text (OCR), or null. */
+  ocrSubtitles?: ((mkv: string, workDir: string) => Promise<string | null>) | null;
   logger?: Pick<Console, 'info' | 'warn' | 'error'>;
 }
 
+/** What the ripper needs from the cloud: putting a filed movie online. */
+export interface RipperCloud {
+  publish(
+    movie: {
+      file: string;
+      tmdbId: string | null;
+      title: string;
+      year: number | null;
+      discSubtitles: string | null;
+    },
+    onProgress: (fraction: number) => void,
+  ): Promise<{ id: string; url: string }>;
+}
+
 class UserError extends Error {}
+
+/** The OCR'd disc subtitles saved beside the movie (Jellyfin reads these too). */
+const subtitleSidecar = (movieFile: string) => movieFile.replace(/\.mp4$/i, '') + '.en.vtt';
 
 /** How long a rip may go without progress before the Discs page warns about it. */
 const STALL_MS = 15 * 60_000;
@@ -747,6 +768,16 @@ export class Ripper {
     jobs.update(job.id, { status: 'encoding', progress: 0, message: null });
     const progress = this.progressWriter(job.id);
     await this.compress(mkv, path.join(dir, 'compressed.mp4'), job.sourceSeconds ?? 0, progress);
+    if (this.deps.ocrSubtitles) {
+      jobs.update(job.id, { progress: null, message: 'Reading the disc’s subtitles…' });
+      try {
+        const vtt = await this.deps.ocrSubtitles(mkv, dir);
+        if (vtt) fs.writeFileSync(path.join(dir, 'subtitles.en.vtt'), vtt);
+      } catch (error) {
+        // Subtitles can still be downloaded later; the movie matters more.
+        this.log.warn('Reading the disc’s subtitles failed:', describe(error));
+      }
+    }
     jobs.update(job.id, { status: 'filing', progress: null, message: null });
     await this.finish(job.id);
   }
@@ -872,12 +903,16 @@ export class Ripper {
     jobs.update(job.id, { message: 'Moving into your Movies folder…' });
     fs.mkdirSync(folder, { recursive: true });
     moveFile(source, target);
+    const subtitles = path.join(this.jobDir(job.id), 'subtitles.en.vtt');
+    if (fs.existsSync(subtitles) && !fs.existsSync(subtitleSidecar(target))) {
+      moveFile(subtitles, subtitleSidecar(target));
+    }
     // The original rip is only removed once the movie is safely in place.
     fs.rmSync(this.jobDir(job.id), { recursive: true, force: true });
     return jobs.update(job.id, {
       status: 'importing',
       moviePath: target,
-      message: 'Adding to Jellyfin…',
+      message: this.deps.cloud ? 'Uploading to the cloud…' : 'Adding to Jellyfin…',
     });
   }
 
@@ -937,7 +972,30 @@ export class Ripper {
     const tv = job.kind === 'tv';
     const label = job.year ? `${job.title} (${job.year})` : job.title!;
     let movieId: string | null = null;
-    if (jellyfin) {
+    let cloudUrl: string | null = null;
+    if (this.deps.cloud && !tv && job.moviePath) {
+      const progress = this.progressWriter(job.id);
+      jobs.update(job.id, { message: 'Uploading to the cloud…', progress: 0 });
+      const sidecar = subtitleSidecar(job.moviePath);
+      const published = await this.deps.cloud.publish(
+        {
+          file: job.moviePath,
+          tmdbId: job.tmdbId,
+          title: job.title!,
+          year: job.year,
+          discSubtitles: fs.existsSync(sidecar) ? fs.readFileSync(sidecar, 'utf8') : null,
+        },
+        progress,
+      );
+      movieId = published.id;
+      cloudUrl = published.url;
+      // Jellyfin, while it's still running, just gets told to look (no waiting).
+      if (jellyfin) {
+        await jellyfin.refreshLibrary().catch((error: unknown) => {
+          this.log.warn('Jellyfin didn’t take the library refresh:', describe(error));
+        });
+      }
+    } else if (jellyfin) {
       await jellyfin.refreshLibrary();
       const folder = tv
         ? path.basename(job.moviePath ?? '')
@@ -960,7 +1018,7 @@ export class Ripper {
       movieId,
       progress: null,
       message:
-        movieId || !jellyfin
+        movieId || !jellyfin || cloudUrl
           ? null
           : tv
             ? 'Filed. Jellyfin hasn’t listed the episodes yet; they will appear after its next scan.'
@@ -974,7 +1032,8 @@ export class Ripper {
       message: tv
         ? `${job.title} ${episodeRange(job)} ready to watch.`
         : `${label} is ready to watch.`,
-      click: base ? `${base}${page}` : undefined,
+      // The cloud copy's page when it went online, else this Mac's.
+      click: cloudUrl ?? (base ? `${base}${page}` : undefined),
       tags: [tv ? 'tv' : 'movie_camera'],
     });
     this.log.info(`Added ${label} (${done.moviePath})`);
@@ -1022,7 +1081,11 @@ export class Ripper {
     if (job.status !== 'failed') throw new UserError('Only failed rips can be retried.');
     if (job.kind === 'tv') return this.retryEpisodes(job);
     const dir = this.jobDir(job.id);
-    if (fs.existsSync(path.join(dir, 'compressed.mp4'))) {
+    if (job.moviePath && fs.existsSync(job.moviePath) && !fs.existsSync(dir)) {
+      // Already filed: only adding it (the upload to the cloud) needs repeating.
+      this.deps.jobs.update(id, { status: 'importing', message: null });
+      void this.finish(id);
+    } else if (fs.existsSync(path.join(dir, 'compressed.mp4'))) {
       // Compression finished; only the last steps need repeating.
       this.deps.jobs.update(id, { status: 'filing', message: null });
       void this.finish(id);

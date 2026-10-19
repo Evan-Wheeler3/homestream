@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadRipperConfig } from '../../src/server/config';
 import type { Runner } from '../../src/server/ripper/process';
+import type { RipperCloud } from '../../src/server/ripper/ripper';
 import type { Notification } from '../../src/server/ripper/services';
 import { Client, startServer, type TestServer } from './helpers';
 
@@ -232,7 +233,14 @@ describe('automatic disc ripping', () => {
     'the office': [{ title: 'The Office', year: 2005, tmdb: '2316' }],
   };
 
-  async function boot(env: Record<string, string> = {}, tvLibrary = true) {
+  async function boot(
+    env: Record<string, string> = {},
+    tvLibrary = true,
+    cloudSeams: {
+      ripperCloud?: RipperCloud | null;
+      ripperOcr?: ((mkv: string, dir: string) => Promise<string | null>) | null;
+    } = {},
+  ) {
     const jf = fakeJellyfin(movies, catalog, { dir: tvLibrary ? tvDir : '', shows });
     server = await startServer(
       {
@@ -261,6 +269,7 @@ describe('automatic disc ripping', () => {
         ripperRunner: hw.runner,
         ripperNotifier: { send: async (n) => void sent.push(n) },
         ripperFetch: jf.fetchImpl,
+        ...cloudSeams,
       },
     );
     client = new Client(server.url);
@@ -338,6 +347,69 @@ describe('automatic disc ripping', () => {
     expect(sent).toHaveLength(1);
     expect(sent[0]!.message).toBe('Young Frankenstein (1974) is ready to watch.');
     expect(sent[0]!.click).toBe(`http://wheelhouse.local:8787/movie/${job.movieId}`);
+  });
+
+  it('with the cloud set up, a finished rip uploads itself, with the disc’s own subtitles', async () => {
+    const published: Record<string, unknown>[] = [];
+    const vtt = 'WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nHello\n';
+    await boot({}, true, {
+      ripperOcr: async (mkv) => (mkv.endsWith('.mkv') ? vtt : null),
+      ripperCloud: {
+        publish: async (movie, onProgress) => {
+          onProgress(0.5);
+          published.push(movie);
+          return { id: 'tmdb-3034', url: 'https://wheelhouse.example/movie/tmdb-3034' };
+        },
+      },
+    });
+    hw.insert({ label: 'YOUNG_FRANKENSTEIN_WS', titles: [{ duration: FEATURE }] });
+    await server.ripper!.poll();
+    const job = await waitFor('done');
+    const file = path.join(
+      movies,
+      'Young Frankenstein (1974) [tmdbid-3034]',
+      'Young Frankenstein (1974).mp4',
+    );
+    expect(published).toEqual([
+      { file, tmdbId: '3034', title: 'Young Frankenstein', year: 1974, discSubtitles: vtt },
+    ]);
+    // The OCR'd subtitles are kept beside the local copy too.
+    expect(fs.readFileSync(file.replace('.mp4', '.en.vtt'), 'utf8')).toBe(vtt);
+    expect(job.movieId).toBe('tmdb-3034');
+    expect(sent.at(-1)).toMatchObject({
+      message: 'Young Frankenstein (1974) is ready to watch.',
+      click: 'https://wheelhouse.example/movie/tmdb-3034',
+    });
+  });
+
+  it('a failed upload leaves the movie filed locally and the rip ready to retry', async () => {
+    let cloudUp = false;
+    await boot({}, true, {
+      ripperOcr: null,
+      ripperCloud: {
+        publish: async () => {
+          if (!cloudUp) throw new Error('Cloud PUT /movies/tmdb-3034 failed (503)');
+          return { id: 'tmdb-3034', url: 'https://wheelhouse.example/movie/tmdb-3034' };
+        },
+      },
+    });
+    hw.insert({ label: 'YOUNG_FRANKENSTEIN_WS', titles: [{ duration: FEATURE }] });
+    await server.ripper!.poll();
+    const job = await waitFor('failed');
+    expect(job.message).toMatch(/503/);
+    expect(
+      fs.existsSync(
+        path.join(
+          movies,
+          'Young Frankenstein (1974) [tmdbid-3034]',
+          'Young Frankenstein (1974).mp4',
+        ),
+      ),
+    ).toBe(true);
+    // Retry repeats just the upload.
+    cloudUp = true;
+    expect((await client.post(`/api/rips/${String(job.id)}/retry`, {})).status).toBe(200);
+    expect((await waitFor('done')).movieId).toBe('tmdb-3034');
   });
 
   it('shows real progress while the title is saved, not 100% once the disc is opened', async () => {
