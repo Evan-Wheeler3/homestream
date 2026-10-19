@@ -36,7 +36,13 @@ import { formatBytes, formatClock, relativeTime, SUBTITLE_LANGUAGE_OPTIONS } fro
 import { sizedImage } from '../lib/images';
 import { useCollections, useRefreshCatalog, useStatus, useUpdatePreferences } from '../lib/queries';
 import { SORT_OPTIONS } from './BrowsePage';
-import { BackupsPanel, PeoplePanel, StoragePanel, SubtitlesPanel } from './CloudSettings';
+import {
+  BackupsPanel,
+  PeoplePanel,
+  RatingsPanel,
+  StoragePanel,
+  SubtitlesPanel,
+} from './CloudSettings';
 import { setTvSetting, useTvMode } from '../lib/tv';
 
 /** Check for and install updates (git installs; administrators only). */
@@ -1134,6 +1140,8 @@ export default function SettingsPage({
           <StoragePanel />
           <h3 className="section-label">Backups</h3>
           <BackupsPanel />
+          <h3 className="section-label">Ratings</h3>
+          <RatingsPanel />
         </Section>
       )}
 

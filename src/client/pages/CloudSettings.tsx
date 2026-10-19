@@ -341,6 +341,49 @@ export function BackupsPanel() {
   );
 }
 
+/** IMDb and Rotten Tomatoes ratings, refreshed nightly; this checks the next batch now. */
+export function RatingsPanel() {
+  const toast = useToast();
+  const qc = useQueryClient();
+  const refresh = useMutation({
+    mutationFn: () =>
+      api<{ checked: number; updated: number; remaining: number }>('/admin/ratings/refresh', {
+        method: 'POST',
+      }),
+    onSuccess: (r) => {
+      void qc.invalidateQueries();
+      toast.show(
+        r.checked === 0
+          ? 'All ratings are up to date'
+          : `Updated ${r.updated} of ${r.checked}${r.remaining ? ` · ${r.remaining} still to check` : ''}`,
+      );
+    },
+    onError: (e) => toast.show(errorMessage(e), 'error'),
+  });
+  return (
+    <>
+      <p>
+        Movie pages show the <strong>IMDb</strong> rating and the <strong>Rotten Tomatoes</strong>{' '}
+        critics score, from OMDb.{' '}
+        <span className="faint">
+          New movies get them when they’re added; the whole library is checked again every month, a
+          few dozen movies a night.
+        </span>
+      </p>
+      <div className="button-row">
+        <Button
+          icon="refresh"
+          variant="secondary"
+          busy={refresh.isPending}
+          onClick={() => refresh.mutate()}
+        >
+          Update ratings now
+        </Button>
+      </div>
+    </>
+  );
+}
+
 const STATUS_LABEL: Record<SubtitleStatus['status'], string> = {
   disc: 'From the disc',
   downloaded: 'Downloaded',

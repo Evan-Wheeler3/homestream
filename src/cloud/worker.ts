@@ -3,6 +3,7 @@
 import { backupNow } from './admin.js';
 import { createApp } from './app.js';
 import { nowIso, Sql } from './db.js';
+import { refreshRatings } from './ratings.js';
 import type { CloudEnv } from './env.js';
 
 const app = createApp();
@@ -20,7 +21,7 @@ export default {
     return env.ASSETS.fetch(request);
   },
 
-  /** Nightly: back up the database to R2 and tidy away expired records. */
+  /** Nightly: back up the database to R2, tidy away expired records, refresh some ratings. */
   async scheduled(_controller: unknown, env: CloudEnv, ctx: Ctx) {
     const sql = new Sql(env.DB);
     ctx.waitUntil(
@@ -34,6 +35,9 @@ export default {
           sql.stmt('DELETE FROM now_playing WHERE updated_at < ?', dayAgo),
           sql.stmt('DELETE FROM mac_commands WHERE created_at < ?', dayAgo),
         ]);
+        await refreshRatings(env, sql).catch((error) =>
+          console.warn('Nightly ratings refresh failed', error),
+        );
       })(),
     );
   },

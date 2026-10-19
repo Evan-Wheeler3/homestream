@@ -83,6 +83,8 @@ export interface CloudEnv {
   MAC_TOKEN?: string;
   NTFY_TOPIC?: string;
   TMDB_READ_TOKEN?: string;
+  /** omdbapi.com key: IMDb and Rotten Tomatoes ratings. */
+  OMDB_API_KEY?: string;
   OPENSUBTITLES_API_KEY?: string;
   OPENSUBTITLES_USERNAME?: string;
   OPENSUBTITLES_PASSWORD?: string;

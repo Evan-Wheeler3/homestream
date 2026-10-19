@@ -238,8 +238,11 @@ export function MovieDetailPage({ prefs }: { prefs: Preferences }) {
       new Date(m.premiereDate).toLocaleDateString(undefined, { dateStyle: 'long' }),
     ]);
   if (m.communityRating != null)
-    facts.push(['Community rating', `${m.communityRating.toFixed(1)} / 10`]);
-  if (m.criticRating != null) facts.push(['Critics', `${m.criticRating}%`]);
+    facts.push([
+      `${m.ratingSource === 'IMDb' ? 'IMDb' : 'Community'} rating`,
+      `${m.communityRating.toFixed(1)} / 10`,
+    ]);
+  if (m.criticRating != null) facts.push(['Rotten Tomatoes', `${m.criticRating}%`]);
   if (m.tags.length) facts.push(['Tags', <LinkList items={m.tags} param="tag" />]);
   if (m.dateAdded)
     facts.push([

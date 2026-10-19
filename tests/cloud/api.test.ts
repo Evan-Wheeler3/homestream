@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { applyRatings, parseOmdb, refreshRatings } from '../../src/cloud/ratings';
+import { Sql } from '../../src/cloud/db';
 import { cloud } from './fakes';
 import type { IngestMovie } from '../../src/cloud/mac';
 
@@ -683,5 +685,75 @@ describe('cloud: administration', () => {
     });
     expect((await c.call('GET', '/api/admin/people')).status).toBe(403);
     expect((await c.call('GET', '/api/rips')).status).toBe(403);
+  });
+});
+
+describe('cloud: IMDb ratings', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const omdb = (imdbRating: string, rt?: string) => ({
+    Response: 'True',
+    imdbRating,
+    Ratings: [
+      { Source: 'Internet Movie Database', Value: `${imdbRating}/10` },
+      ...(rt ? [{ Source: 'Rotten Tomatoes', Value: rt }] : []),
+    ],
+  });
+
+  it('reads IMDb and Rotten Tomatoes scores from OMDb', () => {
+    expect(parseOmdb(omdb('8.9', '92%'))).toEqual({ imdb: 8.9, rottenTomatoes: 92 });
+    expect(parseOmdb(omdb('N/A'))).toEqual({ imdb: null, rottenTomatoes: null });
+    expect(parseOmdb({ Response: 'False', Error: 'Movie not found!' })).toBeNull();
+    const summary = { communityRating: 8.5, criticRating: null } as never;
+    expect(applyRatings(summary, { imdb: null, rottenTomatoes: null })).toMatchObject({
+      communityRating: 8.5,
+      ratingSource: 'TMDB',
+    });
+  });
+
+  it('uses IMDb ratings when a movie is added, and keeps TMDB’s without a key', async () => {
+    const requests: string[] = [];
+    vi.stubGlobal('fetch', async (url: string) => {
+      requests.push(url);
+      return new Response(JSON.stringify(omdb('8.9', '92%')));
+    });
+    const c = cloud({ OMDB_API_KEY: 'omdb-key' });
+    await signedInAdmin(c);
+    await addMovie(c);
+    expect(requests[0]).toContain('i=tt0110912');
+    const movie = (await (await c.call('GET', '/api/movies/tmdb-680')).json()) as {
+      communityRating: number;
+      criticRating: number;
+      ratingSource: string;
+    };
+    expect(movie).toMatchObject({ communityRating: 8.9, criticRating: 92, ratingSource: 'IMDb' });
+
+    const plain = cloud();
+    await signedInAdmin(plain);
+    await addMovie(plain);
+    const tmdb = (await (await plain.call('GET', '/api/movies/tmdb-680')).json()) as {
+      communityRating: number;
+    };
+    expect(tmdb.communityRating).toBe(8.5);
+    expect((await plain.call('POST', '/api/admin/ratings/refresh')).status).toBe(400);
+  });
+
+  it('still adds the movie when OMDb is down, and catches up later', async () => {
+    let up = false;
+    vi.stubGlobal('fetch', async () =>
+      up ? new Response(JSON.stringify(omdb('8.9', '92%'))) : new Response('', { status: 503 }),
+    );
+    const c = cloud({ OMDB_API_KEY: 'omdb-key' });
+    await signedInAdmin(c);
+    await addMovie(c);
+    up = true;
+    const res = await c.call('POST', '/api/admin/ratings/refresh');
+    expect(await res.json()).toMatchObject({ checked: 1, updated: 1, remaining: 0 });
+    // Checked recently: nothing to do until next month.
+    expect(await refreshRatings(c.env, new Sql(c.env.DB))).toMatchObject({ checked: 0 });
+    const movie = (await (await c.call('GET', '/api/movies/tmdb-680')).json()) as {
+      communityRating: number;
+    };
+    expect(movie.communityRating).toBe(8.9);
   });
 });

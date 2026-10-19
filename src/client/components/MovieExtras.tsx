@@ -27,21 +27,29 @@ export function TitleArt({
   );
 }
 
-/** Community (★ out of 10) and critics (% positive) scores, when Jellyfin has them. */
+/** Community or IMDb (★ out of 10) and critics (% positive) scores, when known. */
 export function RatingBadges({
   movie,
 }: {
-  movie: Pick<Movie, 'communityRating' | 'criticRating'>;
+  movie: Pick<Movie, 'communityRating' | 'criticRating' | 'ratingSource'>;
 }) {
   if (movie.communityRating == null && movie.criticRating == null) return null;
   const fresh = movie.criticRating != null && movie.criticRating >= 60;
   return (
     <p className="ratings">
       {movie.communityRating != null && (
-        <span className="rating" title="Audience rating (out of 10)">
+        <span
+          className="rating"
+          title={
+            movie.ratingSource === 'IMDb'
+              ? 'IMDb rating (out of 10)'
+              : 'Audience rating (out of 10)'
+          }
+        >
           <Icon name="starFilled" size={15} />
           <strong>{movie.communityRating.toFixed(1)}</strong>
           <span className="visually-hidden"> out of 10</span>
+          {movie.ratingSource === 'IMDb' && <span className="rating__source">IMDb</span>}
         </span>
       )}
       {movie.criticRating != null && (

@@ -80,7 +80,8 @@ Mac only rips new discs and uploads them by itself. Jellyfin isn't needed in thi
    OpenSubtitles too, add `OPENSUBTITLES_API_KEY`, `OPENSUBTITLES_USERNAME` and
    `OPENSUBTITLES_PASSWORD`.
 4. Store the Worker's secrets with `npx wrangler secret put <NAME>`: `PEPPER` (random), `MAC_TOKEN`
-   (random), `TMDB_READ_TOKEN`, the OpenSubtitles values, and `NTFY_TOPIC` (optional). Put the same
+   (random), `TMDB_READ_TOKEN`, the OpenSubtitles values, `NTFY_TOPIC` (optional), and `OMDB_API_KEY`
+   (optional, for IMDb and Rotten Tomatoes ratings: free key at <https://www.omdbapi.com/apikey.aspx>). Put the same
    pepper and Mac token in `.env` as `CLOUD_PEPPER` and `CLOUD_MAC_TOKEN`, and add
    `CLOUD_URL=https://<your worker>.workers.dev`.
 5. Deploy: `npx wrangler d1 migrations apply wheelhouse --remote`, then `npm run cloud:deploy`.
@@ -97,6 +98,12 @@ Mac only rips new discs and uploads them by itself. Jellyfin isn't needed in thi
 
 **Going back to the local setup:** remove `WHEELHOUSE_MODE=ripper` from `.env`, restart the same way,
 and open Jellyfin again.
+
+**Ratings:** with `OMDB_API_KEY` set, movie pages show the **IMDb** rating and the **Rotten Tomatoes**
+critics score. New movies get them as they're added, and every night the Worker re-checks the 40
+movies checked longest ago (OMDb's free key allows 1,000 lookups a day), so the whole library is
+refreshed about once a month. _Settings → Storage and backups → Update ratings now_ does the next 40
+straight away. Without a key, the TMDB score is shown instead.
 
 **Reading DVD subtitles:** reading the subtitles from a disc at rip time needs
 `brew install tesseract mkvtoolnix`. Without these, Wheelhouse downloads subtitles from OpenSubtitles

@@ -53,6 +53,8 @@ export interface Movie {
   countries: string[];
   officialRating: string | null;
   communityRating: number | null;
+  /** Where communityRating comes from, when known (e.g. "IMDb"). */
+  ratingSource?: 'IMDb' | 'TMDB' | null;
   criticRating: number | null;
   overview: string | null;
   tagline: string | null;

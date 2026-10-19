@@ -68,6 +68,7 @@ import {
 import { nowIso, Sql } from './db.js';
 import type { CloudEnv } from './env.js';
 import { CloudLibrary } from './library.js';
+import { refreshRatings } from './ratings.js';
 import {
   checkMacToken,
   finishCommand,
@@ -453,6 +454,12 @@ export function createApp() {
   mac.get('/movies', async (c) => c.json({ movies: await listIngested(c.get('sql')) }));
   mac.put('/movies/:id', async (c) => {
     const result = await ingestMovie(c.env, c.get('sql'), c.req.param('id'), await json(c));
+    // IMDb and Rotten Tomatoes ratings right away (the Mac sends TMDB's score).
+    try {
+      await refreshRatings(c.env, c.get('sql'), { ids: [c.req.param('id')] });
+    } catch (error) {
+      console.warn('Ratings lookup failed', error);
+    }
     for (const r of result.fulfilled) {
       c.executionCtx.waitUntil(
         notifyPhone(c.env, {
@@ -1027,6 +1034,17 @@ export function createApp() {
   admin.delete('/links/:id', async (c) => {
     await revokeLink(c.get('sql'), c.req.param('id'));
     return c.json({ ok: true });
+  });
+
+  admin.post('/ratings/refresh', async (c) => {
+    if (!c.env.OMDB_API_KEY) {
+      throw badRequest('IMDb ratings aren’t set up (no OMDB_API_KEY secret).');
+    }
+    try {
+      return c.json(await refreshRatings(c.env, c.get('sql')));
+    } catch (error) {
+      throw badRequest(error instanceof Error ? error.message : String(error));
+    }
   });
 
   admin.get('/storage', async (c) => c.json(await storageReport(c.env, c.get('sql'))));

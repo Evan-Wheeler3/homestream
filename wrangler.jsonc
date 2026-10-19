@@ -1,6 +1,7 @@
 // Wheelhouse in the cloud: one Worker serves the React app (dist/client) and the API.
 // Secrets (never in this file): wrangler secret put PEPPER | MAC_TOKEN | NTFY_TOPIC |
-// OPENSUBTITLES_API_KEY | OPENSUBTITLES_USERNAME | OPENSUBTITLES_PASSWORD | TMDB_READ_TOKEN
+// OPENSUBTITLES_API_KEY | OPENSUBTITLES_USERNAME | OPENSUBTITLES_PASSWORD | TMDB_READ_TOKEN |
+// OMDB_API_KEY (IMDb and Rotten Tomatoes ratings)
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "wheelhouse",
@@ -21,7 +22,7 @@
     },
   ],
   "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "wheelhouse-media" }],
-  // Nightly database backup to R2 (04:17 UTC).
+  // Nightly database backup to R2 and ratings refresh (04:17 UTC).
   "triggers": { "crons": ["17 4 * * *"] },
   "vars": {
     // Password hashing strength (PBKDF2-SHA256). Raise to 100000 on Workers Paid.
