@@ -91,6 +91,7 @@ function TvRail({
     { to: '/search', label: 'Search', icon: 'search' },
     { to: '/', label: 'Home', icon: 'home', end: true },
     { to: '/browse', label: 'Browse', icon: 'grid' },
+    { to: '/shows', label: 'TV Shows', icon: 'tv' },
     { to: '/collections', label: 'Collections', icon: 'stack' },
     { to: '/spin', label: 'Spin the wheel', icon: 'wheel' },
     { to: '/night', label: 'Movie night', icon: 'user' },
