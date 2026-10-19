@@ -60,6 +60,8 @@ export interface RipperDeps {
   jobs: RipJobStore;
   run: Runner;
   jellyfin: JellyfinAdmin | null;
+  /** Looks up movie and show names (TMDB in the cloud setup); Jellyfin's search otherwise. */
+  titleSearch?: TitleSearch | null;
   notifier: Notifier;
   /** Called after a movie is added, so Wheelhouse refreshes its library index. */
   onImported?: () => void;
@@ -68,6 +70,11 @@ export interface RipperDeps {
   /** Reads the disc's English subtitles into WebVTT text (OCR), or null. */
   ocrSubtitles?: ((mkv: string, workDir: string) => Promise<string | null>) | null;
   logger?: Pick<Console, 'info' | 'warn' | 'error'>;
+}
+
+export interface TitleSearch {
+  searchMovies(name: string): Promise<RipCandidate[]>;
+  searchShows(name: string): Promise<RipCandidate[]>;
 }
 
 /** What the ripper needs from the cloud: putting a filed movie online. */
@@ -212,7 +219,7 @@ export class Ripper {
         );
       }
     }
-    if (!this.deps.jellyfin) {
+    if (!this.searcher) {
       warnings.push(
         'No Jellyfin API key: movies are filed, but naming help and instant library updates are off.',
       );
@@ -224,7 +231,7 @@ export class Ripper {
       problems,
       warnings,
       watching: !this.stopped,
-      canSearch: Boolean(this.deps.jellyfin),
+      canSearch: Boolean(this.searcher),
     };
   }
 
@@ -383,9 +390,9 @@ export class Ripper {
 
   /** Look the guessed title up; fill in the movie if the match is certain. */
   private async identify(job: JobRecord, guess: string) {
-    if (!this.deps.jellyfin || job.title) return;
+    if (!this.searcher || job.title) return;
     try {
-      const results = await this.deps.jellyfin.searchMovies(guess);
+      const results = await this.searcher.searchMovies(guess);
       const outcome = identify(guess, results);
       if (outcome.kind === 'confident') {
         const m = outcome.match;
@@ -413,9 +420,9 @@ export class Ripper {
     const tv = guessTv(job.discName, job.discLabel);
     let show: RipCandidate | null = null;
     let candidates: RipCandidate[] = [];
-    if (this.deps.jellyfin) {
+    if (this.searcher) {
       try {
-        const outcome = identify(tv.show, await this.deps.jellyfin.searchShows(tv.show), 'show');
+        const outcome = identify(tv.show, await this.searcher.searchShows(tv.show), 'show');
         if (outcome.kind === 'confident') show = outcome.match;
         candidates = outcome.kind === 'confident' ? [outcome.match] : outcome.candidates;
       } catch (error) {
@@ -1153,15 +1160,20 @@ export class Ripper {
     this.deps.jobs.update(id, { status: 'dismissed', progress: null });
   }
 
+  /** Where names are looked up: TMDB when set up for the cloud, else Jellyfin. */
+  private get searcher(): TitleSearch | null {
+    return this.deps.titleSearch ?? this.deps.jellyfin;
+  }
+
   listJobs() {
     return this.deps.jobs.list();
   }
 
   async search(query: string, kind: RipKind = 'movie'): Promise<RipCandidate[]> {
-    if (!this.deps.jellyfin)
+    if (!this.searcher)
       throw new UserError('Searching needs a Jellyfin API key (run npm run setup:ripper).');
     const q = query.trim().slice(0, 120);
-    return kind === 'tv' ? this.deps.jellyfin.searchShows(q) : this.deps.jellyfin.searchMovies(q);
+    return kind === 'tv' ? this.searcher.searchShows(q) : this.searcher.searchMovies(q);
   }
 
   isUserError(error: unknown): error is Error {

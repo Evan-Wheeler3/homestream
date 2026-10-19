@@ -136,6 +136,7 @@ export function createApp({
       onImported: () => catalog.invalidate(),
       logger,
       cloud: ripperCloud !== undefined ? ripperCloud : (cloudLink?.publisher ?? null),
+      titleSearch: cloudLink?.titleSearch ?? null,
       ocrSubtitles:
         ripperOcr !== undefined
           ? ripperOcr

@@ -5,7 +5,7 @@ import path from 'node:path';
 import { OpenSubtitles } from '../../shared/opensubtitles.js';
 import { toPublicJob } from '../ripper/jobs.js';
 import type { Runner } from '../ripper/process.js';
-import type { Ripper, RipperCloud } from '../ripper/ripper.js';
+import type { Ripper, RipperCloud, TitleSearch } from '../ripper/ripper.js';
 import { CloudClient, cloudConfigFromEnv, defaultWorkDir, publishMovie } from './publish.js';
 import { R2Uploader, r2ConfigFromEnv, type MultipartState } from './r2.js';
 import { confidentMatch, Tmdb } from './tmdb.js';
@@ -15,6 +15,8 @@ type Log = Pick<Console, 'info' | 'warn'>;
 export interface CloudLink {
   client: CloudClient;
   publisher: RipperCloud;
+  /** Disc names are looked up on TMDB (Jellyfin may be switched off). */
+  titleSearch: TitleSearch;
 }
 
 /** The cloud connection, when .env has everything it needs (else null). */
@@ -87,7 +89,15 @@ export function cloudLinkFromEnv(
       return { id: result.id, url: result.url };
     },
   };
-  return { client, publisher };
+  const toCandidates = (results: { id: number; title: string; year: number | null }[]) =>
+    results
+      .slice(0, 10)
+      .map((r) => ({ title: r.title, year: r.year, tmdbId: String(r.id), imdbId: null }));
+  const titleSearch: TitleSearch = {
+    searchMovies: async (name) => toCandidates(await tmdb.search(name, null)),
+    searchShows: async (name) => toCandidates(await tmdb.searchShows(name)),
+  };
+  return { client, publisher, titleSearch };
 }
 
 interface Command {

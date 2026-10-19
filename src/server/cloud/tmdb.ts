@@ -139,6 +139,25 @@ export class Tmdb {
     }));
   }
 
+  async searchShows(name: string): Promise<TmdbSearchResult[]> {
+    const body = await this.get<{
+      results: {
+        id: number;
+        name: string;
+        first_air_date?: string;
+        overview?: string;
+        popularity?: number;
+      }[];
+    }>(`/search/tv?${new URLSearchParams({ query: name, include_adult: 'false' })}`);
+    return body.results.map((r) => ({
+      id: r.id,
+      title: r.name,
+      year: r.first_air_date ? Number(r.first_air_date.slice(0, 4)) : null,
+      overview: r.overview ?? '',
+      popularity: r.popularity ?? 0,
+    }));
+  }
+
   async movie(id: number | string): Promise<TmdbMovie> {
     const m = await this.get<RawMovie>(
       `/movie/${id}?append_to_response=credits,images,videos,release_dates,keywords&include_image_language=en,null`,
