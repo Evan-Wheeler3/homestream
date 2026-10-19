@@ -840,3 +840,156 @@ describe('cloud: profiles', () => {
     expect((await c.media.list({ prefix: 'avatars/' })).objects).toHaveLength(0);
   });
 });
+
+describe('cloud: TV shows', () => {
+  async function addShow(c: Cloud) {
+    await c.media.put('shows/tmdbtv-1396/poster.jpg', new Uint8Array([0xff, 0xd8, 0xff, 9]));
+    const show = await c.mac('PUT', '/shows/tmdbtv-1396', {
+      tmdbId: '1396',
+      show: {
+        title: 'Breaking Bad',
+        sortTitle: 'breaking bad',
+        year: 2008,
+        endYear: 2013,
+        genres: ['Drama'],
+        officialRating: 'TV-MA',
+        communityRating: 8.9,
+        overview: 'A chemistry teacher…',
+        cast: [
+          {
+            id: '17419',
+            name: 'Bryan Cranston',
+            role: 'Walter White',
+            type: 'Actor',
+            imageKey: null,
+          },
+        ],
+        seasons: [
+          { number: 1, name: 'Season 1', posterKey: 'shows/tmdbtv-1396/poster.jpg' },
+          { number: 2, name: 'Season 2', posterKey: null },
+        ],
+      },
+      images: { poster: 'shows/tmdbtv-1396/poster.jpg', backdrop: null, logo: null },
+    });
+    expect(show.status).toBe(200);
+    for (const [season, number] of [
+      [1, 1],
+      [1, 2],
+      [2, 1],
+    ] as const) {
+      const id = `tmdbtv-1396-s0${season}e0${number}`;
+      await c.media.put(`shows/tmdbtv-1396/${id}.mp4`, VIDEO, {
+        httpMetadata: { contentType: 'video/mp4' },
+      });
+      const res = await c.mac('PUT', `/episodes/${id}`, {
+        showId: 'tmdbtv-1396',
+        seasonNumber: season,
+        number,
+        endNumber: null,
+        title: `Episode ${season}.${number}`,
+        overview: null,
+        runtimeMinutes: 47,
+        premiereDate: null,
+        imageKey: null,
+        video: {
+          key: `shows/tmdbtv-1396/${id}.mp4`,
+          bytes: VIDEO.length,
+          sha256: 'feedfacecafe0000',
+          durationSeconds: 2820,
+        },
+        subtitles: [],
+        subtitleStatus: 'none',
+        sourcePath: null,
+      });
+      expect(res.status).toBe(200);
+    }
+  }
+
+  it('lists shows with seasons and episodes, and plays episodes from storage', async () => {
+    const c = cloud();
+    await signedInAdmin(c);
+    await addShow(c);
+    const list = (await (await c.call('GET', '/api/shows')).json()) as {
+      shows: { id: string; seasonCount: number; episodeCount: number; unwatchedCount: number }[];
+      nextUp: unknown[];
+    };
+    expect(list.shows).toEqual([
+      expect.objectContaining({
+        id: 'tmdbtv-1396',
+        seasonCount: 2,
+        episodeCount: 3,
+        unwatchedCount: 3,
+      }),
+    ]);
+    expect(list.nextUp).toEqual([]);
+
+    const detail = (await (await c.call('GET', '/api/shows/tmdbtv-1396')).json()) as {
+      seasons: { number: number; episodeCount: number; poster: string | null }[];
+      episodes: { id: string }[];
+      nextUp: { id: string };
+      cast: { name: string }[];
+    };
+    expect(detail.seasons.map((s) => [s.number, s.episodeCount])).toEqual([
+      [1, 2],
+      [2, 1],
+    ]);
+    expect(detail.seasons[0]!.poster).toMatch(/^\/api\/media\/shows\/tmdbtv-1396\/poster\.jpg/);
+    expect(detail.nextUp.id).toBe('tmdbtv-1396-s01e01');
+    expect(detail.cast[0]!.name).toBe('Bryan Cranston');
+
+    const ep = (await (await c.call('GET', '/api/episodes/tmdbtv-1396-s01e02')).json()) as {
+      previousId: string;
+      nextId: string;
+      showTitle: string;
+    };
+    expect(ep).toMatchObject({
+      previousId: 'tmdbtv-1396-s01e01',
+      nextId: 'tmdbtv-1396-s02e01',
+      showTitle: 'Breaking Bad',
+    });
+
+    const info = (await (
+      await c.call('POST', '/api/movies/tmdbtv-1396-s01e01/playback', { body: {} })
+    ).json()) as { url: string; delivery: string };
+    expect(info).toMatchObject({ delivery: 'file' });
+    const video = await c.call('GET', info.url, { headers: { range: 'bytes=0-9' } });
+    expect(video.status).toBe(206);
+  });
+
+  it('remembers watching: next up moves on, and episodes can be marked watched', async () => {
+    const c = cloud();
+    await signedInAdmin(c);
+    await addShow(c);
+    const report = { itemId: 'tmdbtv-1396-s01e01', playSessionId: 'p1', positionSeconds: 0 };
+    await c.call('POST', '/api/playback/start', { body: report });
+    await c.call('POST', '/api/playback/stop', { body: { ...report, positionSeconds: 2800 } });
+    const list = (await (await c.call('GET', '/api/shows')).json()) as {
+      shows: { unwatchedCount: number }[];
+      nextUp: { id: string }[];
+    };
+    expect(list.shows[0]!.unwatchedCount).toBe(2);
+    expect(list.nextUp.map((e) => e.id)).toEqual(['tmdbtv-1396-s01e02']);
+
+    const played = await c.call('PUT', '/api/episodes/tmdbtv-1396-s01e02/played', {
+      body: { played: true },
+    });
+    expect(await played.json()).toMatchObject({ played: true });
+    const detail = (await (await c.call('GET', '/api/shows/tmdbtv-1396')).json()) as {
+      nextUp: { id: string };
+    };
+    expect(detail.nextUp.id).toBe('tmdbtv-1396-s02e01');
+  });
+
+  it('refuses episodes whose show or video is missing', async () => {
+    const c = cloud();
+    const res = await c.mac('PUT', '/episodes/tmdbtv-9-s01e01', {
+      showId: 'tmdbtv-9',
+      seasonNumber: 1,
+      number: 1,
+      title: 'Pilot',
+      video: { key: 'shows/tmdbtv-9/x.mp4', bytes: 1, sha256: 'x', durationSeconds: 1 },
+      subtitleStatus: 'none',
+    });
+    expect(res.status).toBe(400);
+  });
+});

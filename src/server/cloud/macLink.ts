@@ -6,7 +6,14 @@ import { OpenSubtitles } from '../../shared/opensubtitles.js';
 import { toPublicJob } from '../ripper/jobs.js';
 import type { Runner } from '../ripper/process.js';
 import type { Ripper, RipperCloud, TitleSearch } from '../ripper/ripper.js';
-import { CloudClient, cloudConfigFromEnv, defaultWorkDir, publishMovie } from './publish.js';
+import {
+  CloudClient,
+  cloudConfigFromEnv,
+  defaultWorkDir,
+  publishEpisode,
+  publishMovie,
+  type PublishDeps,
+} from './publish.js';
 import { R2Uploader, r2ConfigFromEnv, type MultipartState } from './r2.js';
 import { confidentMatch, Tmdb } from './tmdb.js';
 
@@ -87,6 +94,54 @@ export function cloudLinkFromEnv(
       );
       if (result.subtitleNote) options.log.info(`${result.title}: ${result.subtitleNote}`);
       return { id: result.id, url: result.url };
+    },
+
+    async publishEpisodes(show, episodes, onProgress) {
+      let tmdbId = show.tmdbId;
+      if (!tmdbId) {
+        const match = confidentMatch(await tmdb.searchShows(show.title), show.title, show.year);
+        if (!match) {
+          throw new Error(
+            `Couldn’t tell which TMDB show “${show.title}” is. Name it again and pick a search result.`,
+          );
+        }
+        tmdbId = String(match.id);
+      }
+      const total = episodes.length || 1;
+      let result: Awaited<ReturnType<typeof publishEpisode>> | null = null;
+      for (const [i, ep] of episodes.entries()) {
+        const deps: PublishDeps = {
+          run: options.run,
+          handbrakeCli: options.handbrakeCli,
+          r2,
+          tmdb,
+          cloud: client,
+          openSubtitles,
+          workDir: defaultWorkDir(),
+          log: (line) => options.log.info(line),
+          state: readState()[ep.file] ?? null,
+          saveState: (s) => {
+            const all = readState();
+            if (s) all[ep.file] = s;
+            else delete all[ep.file];
+            fs.writeFileSync(stateFile, JSON.stringify(all));
+          },
+          onProgress: (done, size) => onProgress((i + (size ? done / size : 0)) / total),
+        };
+        result = await publishEpisode(
+          {
+            file: ep.file,
+            showTmdbId: tmdbId,
+            season: show.season,
+            episode: ep.episode,
+            discSubtitles: ep.discSubtitles,
+          },
+          deps,
+        );
+        if (result.subtitleNote) options.log.info(`${result.title}: ${result.subtitleNote}`);
+      }
+      const showId = result?.showId ?? `tmdbtv-${tmdbId}`;
+      return { showId, url: `${client.config.url}/show/${showId}` };
     },
   };
   const toCandidates = (results: { id: number; title: string; year: number | null }[]) =>

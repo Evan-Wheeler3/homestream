@@ -89,6 +89,12 @@ export interface RipperCloud {
     },
     onProgress: (fraction: number) => void,
   ): Promise<{ id: string; url: string }>;
+  /** Puts filed TV episodes online (their show too, the first time). */
+  publishEpisodes?(
+    show: { tmdbId: string | null; title: string; year: number | null; season: number },
+    episodes: { file: string; episode: number; discSubtitles: string | null }[],
+    onProgress: (fraction: number) => void,
+  ): Promise<{ showId: string; url: string }>;
 }
 
 class UserError extends Error {}
@@ -970,7 +976,7 @@ export class Ripper {
     return jobs.update(job.id, {
       status: 'importing',
       moviePath: showDir,
-      message: 'Adding to Jellyfin…',
+      message: this.deps.cloud?.publishEpisodes ? 'Uploading to the cloud…' : 'Adding to Jellyfin…',
     });
   }
 
@@ -997,6 +1003,31 @@ export class Ripper {
       movieId = published.id;
       cloudUrl = published.url;
       // Jellyfin, while it's still running, just gets told to look (no waiting).
+      if (jellyfin) {
+        await jellyfin.refreshLibrary().catch((error: unknown) => {
+          this.log.warn('Jellyfin didn’t take the library refresh:', describe(error));
+        });
+      }
+    } else if (this.deps.cloud?.publishEpisodes && tv && job.season != null) {
+      const progress = this.progressWriter(job.id);
+      jobs.update(job.id, { message: 'Uploading to the cloud…', progress: 0 });
+      const episodes = job.episodes
+        .filter((ep) => ep.path)
+        .map((ep) => {
+          const sidecar = subtitleSidecar(ep.path!);
+          return {
+            file: ep.path!,
+            episode: ep.episode,
+            discSubtitles: fs.existsSync(sidecar) ? fs.readFileSync(sidecar, 'utf8') : null,
+          };
+        });
+      const published = await this.deps.cloud.publishEpisodes(
+        { tmdbId: job.tmdbId, title: job.title!, year: job.year, season: job.season },
+        episodes,
+        progress,
+      );
+      movieId = published.showId;
+      cloudUrl = published.url;
       if (jellyfin) {
         await jellyfin.refreshLibrary().catch((error: unknown) => {
           this.log.warn('Jellyfin didn’t take the library refresh:', describe(error));

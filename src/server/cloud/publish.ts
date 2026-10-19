@@ -67,6 +67,10 @@ export class CloudClient {
     return this.call<{ movies: IngestedMovie[] }>('GET', '/movies').then((r) => r.movies);
   }
 
+  episodes() {
+    return this.call<{ episodes: IngestedEpisode[] }>('GET', '/episodes').then((r) => r.episodes);
+  }
+
   movieUrl(id: string) {
     return `${this.config.url}/movie/${id}`;
   }
@@ -112,22 +116,21 @@ export interface PublishResult {
 
 export const cloudMovieId = (tmdbId: string) => `tmdb-${tmdbId}`;
 
-const ext = (p: string) => path.extname(p).slice(1).toLowerCase() || 'jpg';
-
-export async function publishMovie(input: PublishInput, deps: PublishDeps): Promise<PublishResult> {
-  const id = cloudMovieId(input.tmdbId);
-  const meta = await deps.tmdb.movie(input.tmdbId);
-  const already = (await deps.cloud.movies()).find((m) => m.id === id);
-
-  // 1. A file every browser can play (H.264 + AAC in MP4), converted if need be.
-  let file = input.file;
+/** The file as browsers can play it (H.264 + AAC in MP4), converted into workDir if need be. */
+async function browserPlayable(
+  original: string,
+  id: string,
+  label: string,
+  deps: Pick<PublishDeps, 'run' | 'handbrakeCli' | 'workDir' | 'log'>,
+) {
+  let file = original;
   let info = await probe(deps.run, deps.handbrakeCli, file);
   let converted = false;
   if (!isBrowserPlayable(info)) {
     fs.mkdirSync(deps.workDir, { recursive: true });
     const out = path.join(deps.workDir, `${id}.mp4`);
     deps.log(
-      `${meta.title}: converting to a browser-friendly MP4 (${info.videoCodec ?? '?'} / ${info.audioCodecs[0] ?? '?'})…`,
+      `${label}: converting to a browser-friendly MP4 (${info.videoCodec ?? '?'} / ${info.audioCodecs[0] ?? '?'})…`,
     );
     const result = await deps.run(deps.handbrakeCli, [
       '-i',
@@ -150,6 +153,18 @@ export async function publishMovie(input: PublishInput, deps: PublishDeps): Prom
     info = await probe(deps.run, deps.handbrakeCli, file);
     converted = true;
   }
+  return { file, info, converted };
+}
+
+const ext = (p: string) => path.extname(p).slice(1).toLowerCase() || 'jpg';
+
+export async function publishMovie(input: PublishInput, deps: PublishDeps): Promise<PublishResult> {
+  const id = cloudMovieId(input.tmdbId);
+  const meta = await deps.tmdb.movie(input.tmdbId);
+  const already = (await deps.cloud.movies()).find((m) => m.id === id);
+
+  // 1. A file every browser can play (H.264 + AAC in MP4), converted if need be.
+  const { file, info, converted } = await browserPlayable(input.file, id, meta.title, deps);
   const size = fs.statSync(file).size;
   const sha256 = !converted && input.sha256 ? input.sha256 : await sha256File(file);
 
@@ -349,3 +364,233 @@ function summaryOf(m: TmdbMovie, dateAdded: string) {
 }
 
 export const defaultWorkDir = () => path.join(os.tmpdir(), 'wheelhouse-cloud');
+
+// -----------------------------------------------------------------------------
+// TV shows
+
+export interface IngestedEpisode {
+  id: string;
+  show_id: string;
+  video_bytes: number | null;
+  video_sha256: string | null;
+  subtitle_status: string;
+  source_path: string | null;
+}
+
+export const cloudShowId = (tmdbId: string) => `tmdbtv-${tmdbId}`;
+const pad2 = (n: number) => String(n).padStart(2, '0');
+export const cloudEpisodeId = (show: string, season: number, episode: number) =>
+  `${show}-s${pad2(season)}e${pad2(episode)}`;
+
+export interface EpisodeInput {
+  file: string;
+  showTmdbId: string;
+  season: number;
+  episode: number;
+  /** Last episode of a double episode (S01E01-E02). */
+  endEpisode?: number | null;
+  discSubtitles?: string | null;
+  sha256?: string | null;
+  skipDownloads?: boolean;
+}
+
+/** Show details are fetched once per run, however many episodes are uploaded. */
+const showsDone = new Map<string, Promise<{ seasons: Map<number, TmdbEpisodeList> }>>();
+type TmdbEpisodeList = Awaited<ReturnType<Tmdb['season']>>;
+
+async function publishShowOnce(showTmdbId: string, deps: PublishDeps) {
+  const id = cloudShowId(showTmdbId);
+  const meta = await deps.tmdb.show(showTmdbId);
+  const put = async (from: string | null, key: string, size: string) => {
+    if (!from) return null;
+    const k = `${key}.${ext(from)}`;
+    if (!(await deps.r2.head(k))) {
+      await deps.r2.put(
+        k,
+        await deps.tmdb.image(from, size),
+        ext(from) === 'png' ? 'image/png' : 'image/jpeg',
+      );
+    }
+    return k;
+  };
+  const images = {
+    poster: await put(meta.posterPath, `shows/${id}/poster`, 'w780'),
+    backdrop: await put(meta.backdropPath, `shows/${id}/backdrop`, 'w1280'),
+    logo: await put(meta.logoPath, `shows/${id}/logo`, 'w500'),
+  };
+  const seasons = [];
+  for (const s of meta.seasons) {
+    seasons.push({
+      number: s.number,
+      name: s.name,
+      posterKey: await put(s.posterPath, `shows/${id}/season-${pad2(s.number)}`, 'w500'),
+    });
+  }
+  const cast = [];
+  for (const person of meta.cast) {
+    let imageKey: string | null = null;
+    if (person.profilePath) {
+      imageKey = `people/${person.id}.${ext(person.profilePath)}`;
+      if (!(await deps.r2.head(imageKey))) {
+        await deps.r2.put(
+          imageKey,
+          await deps.tmdb.image(person.profilePath, 'w185'),
+          'image/jpeg',
+        );
+      }
+    }
+    cast.push({
+      id: String(person.id),
+      name: person.name,
+      role: person.character,
+      type: 'Actor',
+      imageKey,
+    });
+  }
+  await deps.cloud.call('PUT', `/shows/${id}`, {
+    tmdbId: String(meta.id),
+    show: {
+      title: meta.title,
+      sortTitle: meta.title.toLowerCase().replace(/^(the|a|an) /, ''),
+      year: meta.year,
+      endYear: meta.endYear,
+      genres: meta.genres,
+      officialRating: meta.certification,
+      communityRating: meta.voteAverage,
+      overview: meta.overview,
+      cast,
+      seasons,
+    },
+    images,
+  });
+  deps.log(`${meta.title}: show details in the cloud`);
+  return { seasons: new Map<number, TmdbEpisodeList>() };
+}
+
+export interface EpisodePublishResult {
+  id: string;
+  showId: string;
+  url: string;
+  title: string;
+  bytes: number;
+  subtitles: 'disc' | 'downloaded' | 'none';
+  subtitleNote: string | null;
+}
+
+/** Uploads one episode file (and its show, the first time) to the cloud. */
+export async function publishEpisode(
+  input: EpisodeInput,
+  deps: PublishDeps,
+): Promise<EpisodePublishResult> {
+  const show = cloudShowId(input.showTmdbId);
+  const id = cloudEpisodeId(show, input.season, input.episode);
+  let pending = showsDone.get(input.showTmdbId);
+  if (!pending) {
+    pending = publishShowOnce(input.showTmdbId, deps);
+    showsDone.set(input.showTmdbId, pending);
+    pending.catch(() => showsDone.delete(input.showTmdbId));
+  }
+  const showInfo = await pending;
+  let seasonEpisodes = showInfo.seasons.get(input.season);
+  if (!seasonEpisodes) {
+    seasonEpisodes = await deps.tmdb.season(input.showTmdbId, input.season).catch(() => []);
+    showInfo.seasons.set(input.season, seasonEpisodes);
+  }
+  const meta = seasonEpisodes.find((e) => e.number === input.episode);
+  const label = `S${pad2(input.season)}E${pad2(input.episode)}`;
+  const title = meta?.title ?? `Episode ${input.episode}`;
+
+  const { file, info, converted } = await browserPlayable(input.file, id, label, deps);
+  const size = fs.statSync(file).size;
+  const sha256 = !converted && input.sha256 ? input.sha256 : await sha256File(file);
+  const key = `shows/${show}/${id}.mp4`;
+  const existing = await deps.r2.head(key);
+  if (existing && existing.size === size && existing.meta.sha256 === sha256) {
+    deps.log(`${label}: video already in storage`);
+    deps.onProgress?.(size, size);
+  } else {
+    await deps.r2.uploadFile(file, key, {
+      contentType: 'video/mp4',
+      metadata: { sha256 },
+      state: deps.state,
+      save: (s) => deps.saveState?.(s),
+      onProgress: deps.onProgress,
+    });
+  }
+  deps.saveState?.(null);
+
+  let imageKey: string | null = null;
+  if (meta?.stillPath) {
+    imageKey = `shows/${show}/${id}.${ext(meta.stillPath)}`;
+    if (!(await deps.r2.head(imageKey)))
+      await deps.r2.put(imageKey, await deps.tmdb.image(meta.stillPath, 'w780'), 'image/jpeg');
+  }
+
+  // Subtitles: the disc's own (OCR'd), else downloaded for this episode.
+  const subtitles = [];
+  let subtitleNote: string | null = null;
+  const duration = info.durationSeconds ?? (meta?.runtime ? meta.runtime * 60 : null);
+  if (input.discSubtitles) {
+    const timing = checkTiming(input.discSubtitles, duration);
+    if (timing.ok) {
+      const subKey = `shows/${show}/${id}.eng.disc.vtt`;
+      await deps.r2.put(subKey, input.discSubtitles, 'text/vtt; charset=utf-8');
+      subtitles.push({
+        language: 'eng',
+        label: 'English',
+        key: subKey,
+        source: 'disc' as const,
+        release: 'From the disc',
+      });
+    } else subtitleNote = `Disc subtitles not used: ${timing.reason}`;
+  }
+  if (subtitles.length === 0 && deps.openSubtitles && !input.skipDownloads) {
+    try {
+      const found = await deps.openSubtitles.findBest(
+        { episode: { showTmdbId: input.showTmdbId, season: input.season, episode: input.episode } },
+        duration,
+      );
+      if (found) {
+        const subKey = `shows/${show}/${id}.eng.opensubtitles.vtt`;
+        await deps.r2.put(subKey, found.vtt, 'text/vtt; charset=utf-8');
+        subtitles.push({
+          language: 'eng',
+          label: 'English',
+          key: subKey,
+          source: 'opensubtitles' as const,
+          fileId: found.candidate.fileId,
+          release: found.candidate.release,
+        });
+      } else subtitleNote = 'OpenSubtitles had nothing with matching timing';
+    } catch (error) {
+      subtitleNote = error instanceof Error ? error.message : String(error);
+    }
+  }
+  const subtitleStatus =
+    subtitles[0]?.source === 'disc' ? 'disc' : subtitles.length ? 'downloaded' : 'none';
+  await deps.cloud.call('PUT', `/episodes/${id}`, {
+    showId: show,
+    seasonNumber: input.season,
+    number: input.episode,
+    endNumber: input.endEpisode ?? null,
+    title,
+    overview: meta?.overview ?? null,
+    runtimeMinutes: meta?.runtime ?? (duration ? Math.round(duration / 60) : null),
+    premiereDate: meta?.airDate ?? null,
+    imageKey,
+    video: { key, bytes: size, sha256, durationSeconds: info.durationSeconds },
+    ...(subtitles.length ? { subtitles } : {}),
+    subtitleStatus,
+    sourcePath: input.file,
+  });
+  if (converted) fs.rmSync(file, { force: true });
+  return {
+    id,
+    showId: show,
+    url: `${deps.cloud.config.url}/show/${show}`,
+    title: `${label} · ${title}`,
+    bytes: size,
+    subtitles: subtitleStatus,
+    subtitleNote,
+  };
+}

@@ -833,6 +833,8 @@ export interface InviteInfo {
 
 export interface StorageReport {
   movies: number;
+  /** TV episodes in storage. */
+  episodes?: number;
   objects: number;
   bytes: number;
   videoBytes: number;

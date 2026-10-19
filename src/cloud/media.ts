@@ -128,7 +128,7 @@ export async function serveObject(
 /** R2 keys the media route may serve (not backups or anything else in the bucket). */
 export function isServableKey(key: string): boolean {
   if (key.includes('..') || key.includes('//')) return false;
-  return /^(movies\/[\w-]{1,64}\/[\w.-]{1,80}|people\/[\w.-]{1,120})$/.test(key);
+  return /^((movies|shows)\/[\w-]{1,64}\/[\w.-]{1,80}|people\/[\w.-]{1,120})$/.test(key);
 }
 
 /**

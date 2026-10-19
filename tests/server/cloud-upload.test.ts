@@ -4,9 +4,14 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { isBrowserPlayable, parseScan } from '../../src/server/cloud/probe';
-import { CloudClient, publishMovie } from '../../src/server/cloud/publish';
+import { CloudClient, publishEpisode, publishMovie } from '../../src/server/cloud/publish';
 import { R2Uploader, type MultipartState } from '../../src/server/cloud/r2';
-import { confidentMatch, parseFolderName, Tmdb } from '../../src/server/cloud/tmdb';
+import {
+  confidentMatch,
+  parseEpisodeFile,
+  parseFolderName,
+  Tmdb,
+} from '../../src/server/cloud/tmdb';
 import type { Runner } from '../../src/server/ripper/process';
 import { checkTiming, toWebVtt } from '../../src/shared/subtitles';
 import { cloud, MAC_TOKEN, type FakeR2 } from '../cloud/fakes';
@@ -400,5 +405,132 @@ describe('putting a movie in the cloud', () => {
       movies: { subtitle_status: string }[];
     };
     expect(after.movies[0]!.subtitle_status).toBe('disc');
+  });
+});
+
+describe('putting TV episodes in the cloud', () => {
+  it('reads episode numbers from file names', () => {
+    expect(parseEpisodeFile('Breaking Bad S01E02.mp4')).toEqual({
+      season: 1,
+      episode: 2,
+      endEpisode: null,
+    });
+    expect(parseEpisodeFile('Show S02E03-E04.mp4')).toEqual({
+      season: 2,
+      episode: 3,
+      endEpisode: 4,
+    });
+    expect(parseEpisodeFile('Extras.mp4')).toBeNull();
+  });
+
+  it('uploads the show once and each episode, which then play for signed-in people', async () => {
+    const c = cloud();
+    const s3 = fakeS3(c.media);
+    const r2 = new R2Uploader(R2, s3.fetchImpl, 1000);
+    const run: Runner = async () => ({ code: 0, output: SCAN.replace('02:34:22', '00:47:00') });
+    const image = new Uint8Array([0xff, 0xd8, 0xff, 9]);
+    const tmdbCalls: string[] = [];
+    const tmdbFetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      tmdbCalls.push(url.replace(/\?.*$/, ''));
+      if (url.startsWith('https://image.tmdb.org')) return new Response(image);
+      if (url.includes('/season/1'))
+        return Response.json({
+          episodes: [1, 2].map((n) => ({
+            season_number: 1,
+            episode_number: n,
+            name: n === 1 ? 'Pilot' : "Cat's in the Bag...",
+            overview: 'Walt…',
+            runtime: 47,
+            air_date: '2008-01-20',
+            still_path: `/still${n}.jpg`,
+          })),
+        });
+      return Response.json({
+        id: 1396,
+        name: 'Breaking Bad',
+        first_air_date: '2008-01-20',
+        last_air_date: '2013-09-29',
+        status: 'Ended',
+        genres: [{ name: 'Drama' }],
+        overview: 'A chemistry teacher…',
+        vote_average: 8.9,
+        poster_path: '/bb.jpg',
+        backdrop_path: '/bbb.jpg',
+        external_ids: { imdb_id: 'tt0903747' },
+        content_ratings: { results: [{ iso_3166_1: 'US', rating: 'TV-MA' }] },
+        aggregate_credits: {
+          cast: [
+            { id: 17419, name: 'Bryan Cranston', order: 0, roles: [{ character: 'Walter White' }] },
+          ],
+        },
+        images: { logos: [] },
+        seasons: [{ season_number: 1, name: 'Season 1', poster_path: '/s1.jpg', episode_count: 7 }],
+      });
+    }) as typeof fetch;
+    const appFetch = (async (input: RequestInfo | URL, init?: RequestInit) =>
+      c.app.fetch(new Request(input, init), c.env, {
+        waitUntil() {},
+        passThroughOnException() {},
+      } as never)) as typeof fetch;
+    const deps = {
+      run,
+      handbrakeCli: 'HandBrakeCLI',
+      r2,
+      tmdb: new Tmdb('token', tmdbFetch),
+      cloud: new CloudClient({ url: 'https://wheelhouse.example', macToken: MAC_TOKEN }, appFetch),
+      openSubtitles: null,
+      workDir: os.tmpdir(),
+      log: () => undefined,
+    };
+    const first = await publishEpisode(
+      { file: tempVideo(2000), showTmdbId: '1396', season: 1, episode: 1 },
+      deps,
+    );
+    await publishEpisode(
+      { file: tempVideo(2500), showTmdbId: '1396', season: 1, episode: 2 },
+      deps,
+    );
+    expect(first).toMatchObject({
+      id: 'tmdbtv-1396-s01e01',
+      showId: 'tmdbtv-1396',
+      title: 'S01E01 · Pilot',
+      url: 'https://wheelhouse.example/show/tmdbtv-1396',
+    });
+    // The show and its season list were fetched once for both episodes.
+    expect(tmdbCalls.filter((u) => u.endsWith('/tv/1396'))).toHaveLength(1);
+    expect(tmdbCalls.filter((u) => u.endsWith('/season/1'))).toHaveLength(1);
+    for (const key of [
+      'shows/tmdbtv-1396/poster.jpg',
+      'shows/tmdbtv-1396/season-01.jpg',
+      'shows/tmdbtv-1396/tmdbtv-1396-s01e01.mp4',
+      'shows/tmdbtv-1396/tmdbtv-1396-s01e02.jpg',
+    ]) {
+      expect(c.media.objects.has(key), key).toBe(true);
+    }
+
+    const boot = (await (await c.mac('POST', '/bootstrap', { name: 'Evan' })).json()) as {
+      url: string;
+    };
+    await c.call('POST', `/api/invites/${boot.url.split('/invite/')[1]}`, {
+      body: { username: 'evan', password: 'long enough' },
+    });
+    const show = (await (await c.call('GET', '/api/shows/tmdbtv-1396')).json()) as {
+      title: string;
+      endYear: number;
+      officialRating: string;
+      episodes: { title: string; image: string }[];
+      cast: { name: string; role: string }[];
+    };
+    expect(show).toMatchObject({ title: 'Breaking Bad', endYear: 2013, officialRating: 'TV-MA' });
+    expect(show.episodes.map((e) => e.title)).toEqual(['Pilot', "Cat's in the Bag..."]);
+    expect(show.episodes[0]!.image).toMatch(
+      /^\/api\/media\/shows\/tmdbtv-1396\/tmdbtv-1396-s01e01\.jpg/,
+    );
+    expect(show.cast[0]).toMatchObject({ name: 'Bryan Cranston', role: 'Walter White' });
+    const playback = (await (
+      await c.call('POST', '/api/movies/tmdbtv-1396-s01e02/playback', { body: {} })
+    ).json()) as { url: string };
+    expect((await c.call('GET', playback.url)).status).toBe(200);
   });
 });

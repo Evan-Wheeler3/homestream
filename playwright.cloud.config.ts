@@ -54,6 +54,8 @@ export default defineConfig({
           `npx wrangler r2 object put wheelhouse-media/movies/e2e-1/video.mp4 --file assets/sample/sample.mp4 --content-type video/mp4 --local --persist-to "${persist}"`,
           `npx wrangler r2 object put wheelhouse-media/movies/e2e-2/video.mp4 --file assets/sample/sample.mp4 --content-type video/mp4 --local --persist-to "${persist}"`,
           `npx wrangler r2 object put wheelhouse-media/movies/e2e-1/subtitles.eng.disc.vtt --file assets/sample/sample.en.vtt --content-type text/vtt --local --persist-to "${persist}"`,
+          `npx wrangler r2 object put wheelhouse-media/shows/tmdbtv-e2e/tmdbtv-e2e-s01e01.mp4 --file assets/sample/sample.mp4 --content-type video/mp4 --local --persist-to "${persist}"`,
+          `npx wrangler r2 object put wheelhouse-media/shows/tmdbtv-e2e/tmdbtv-e2e-s01e02.mp4 --file assets/sample/sample.mp4 --content-type video/mp4 --local --persist-to "${persist}"`,
           `npx wrangler dev --port ${PORT} --ip 127.0.0.1 --persist-to "${persist}"`,
         ].join(' && '),
         url: `http://127.0.0.1:${PORT}/api/health`,

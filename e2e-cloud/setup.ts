@@ -92,6 +92,48 @@ export default async function setup() {
     });
     if (!res.ok) throw new Error(`movie ${m.id}: ${res.status} ${await res.text()}`);
   }
+  // A TV show with two episodes.
+  const show = await mac('PUT', '/shows/tmdbtv-e2e', {
+    tmdbId: null,
+    show: {
+      title: 'Test Show',
+      sortTitle: 'test show',
+      year: 2008,
+      endYear: null,
+      genres: ['Drama'],
+      officialRating: 'TV-14',
+      communityRating: 8.5,
+      overview: 'A show for tests.',
+      cast: [],
+      seasons: [{ number: 1, name: 'Season 1', posterKey: null }],
+    },
+    images: { poster: null, backdrop: null, logo: null },
+  });
+  if (!show.ok) throw new Error(`show: ${show.status} ${await show.text()}`);
+  for (const n of [1, 2]) {
+    const id = `tmdbtv-e2e-s01e0${n}`;
+    const res = await mac('PUT', `/episodes/${id}`, {
+      showId: 'tmdbtv-e2e',
+      seasonNumber: 1,
+      number: n,
+      endNumber: null,
+      title: n === 1 ? 'Pilot' : 'The Second One',
+      overview: null,
+      runtimeMinutes: 1,
+      premiereDate: null,
+      imageKey: null,
+      video: {
+        key: `shows/tmdbtv-e2e/${id}.mp4`,
+        bytes: video.length,
+        sha256,
+        durationSeconds: 30,
+      },
+      subtitles: [],
+      subtitleStatus: 'none',
+      sourcePath: null,
+    });
+    if (!res.ok) throw new Error(`episode ${id}: ${res.status} ${await res.text()}`);
+  }
   process.env.E2E_USERNAME = 'evan';
   process.env.E2E_PASSWORD = 'e2e password';
 }

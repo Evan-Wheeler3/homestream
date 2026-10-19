@@ -184,6 +184,28 @@ test('profiles: pick an avatar, colour, tagline and favourite, then see it on "W
   await expect(page.getByRole('button', { name: 'Upload a photo' })).toBeVisible();
 });
 
+test('TV shows: the show, its season and episodes, and an episode opens in the player', async ({
+  page,
+}) => {
+  test.skip(!local, 'Needs the seeded show');
+  await signIn(page);
+  await page.goto('/shows');
+  await page
+    .getByRole('link', { name: /Test Show/ })
+    .first()
+    .click();
+  await expect(page).toHaveURL(/\/show\/tmdbtv-e2e/);
+  await expect(page.getByRole('heading', { name: 'Test Show' })).toBeVisible();
+  await expect(page.getByText('Pilot').first()).toBeVisible();
+  await expect(page.getByText('The Second One')).toBeVisible();
+  await page
+    .getByRole('link', { name: /Play|Start|Watch/ })
+    .first()
+    .click();
+  await expect(page).toHaveURL(/\/play\/episode\/tmdbtv-e2e-s01e01/);
+  await expect(page.locator('video')).toHaveAttribute('src', /\/api\/media\/shows\/tmdbtv-e2e\//);
+});
+
 test('Discs shows the Mac as offline when it is not reporting', async ({ page }) => {
   test.skip(!local, 'The real Mac may be online');
   await signIn(page);

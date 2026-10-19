@@ -87,7 +87,9 @@ Mac only rips new discs and uploads them by itself. Jellyfin isn't needed in thi
 5. Deploy: `npx wrangler d1 migrations apply wheelhouse --remote`, then `npm run cloud:deploy`.
 6. Create the first admin with `npm run cloud:bootstrap -- --name "Your name"`. Open the invite link
    it prints.
-7. Upload your existing movies with `npm run cloud:upload` (try `--dry-run` first). If it stops partway,
+7. Upload your existing movies and TV shows with `npm run cloud:upload` (try `--dry-run` first;
+   `--movies-only` or `--tv-only` to do one at a time). TV episodes are read from `TV_DIR`
+   (default `/Volumes/LaCie/TV Shows`), filed as `Show (Year) [tmdbid-…]/Season 01/Show S01E02.mp4`. If it stops partway,
    run it again and it carries on from where it left off. Your local files are only read, never
    changed.
 8. Optionally, copy over people's watch history and collections with `npm run cloud:people`.
@@ -124,7 +126,6 @@ instead.
 
 ### What doesn't work in the cloud yet
 
-- **TV shows:** only movies are uploaded, so the TV Shows page is empty.
 - **Audio tracks:** you can't switch between them; the browser plays the default track.
 - **Converting files for slow connections:** there's no transcoding, so every movie streams in its
   original format. Movies are converted once on the Mac when needed.

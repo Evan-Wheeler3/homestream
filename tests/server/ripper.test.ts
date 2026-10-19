@@ -637,6 +637,32 @@ describe('automatic disc ripping', () => {
     expect(sent.at(-1)!.click).toBe(`http://wheelhouse.local:8787/show/${String(done.movieId)}`);
   });
 
+  it('with the cloud set up, a ripped TV season uploads its episodes', async () => {
+    const uploads: { show: unknown; episodes: { file: string; episode: number }[] }[] = [];
+    await boot({}, true, {
+      ripperCloud: {
+        publish: async () => {
+          throw new Error('not a movie');
+        },
+        publishEpisodes: async (show, episodes, onProgress) => {
+          onProgress(1);
+          uploads.push({ show, episodes });
+          return { showId: 'tmdbtv-2316', url: 'https://wheelhouse.example/show/tmdbtv-2316' };
+        },
+      },
+    });
+    hw.insert(officeDisc('THE_OFFICE_S1_D2'));
+    await server.ripper!.poll();
+    await confirmEpisodes(await waitFor('needs_episodes'));
+    const done = await waitFor('done');
+    expect(uploads).toHaveLength(1);
+    expect(uploads[0]!.show).toMatchObject({ title: 'The Office', season: 1, tmdbId: '2316' });
+    expect(uploads[0]!.episodes.map((e) => e.episode)).toEqual([5, 6, 7, 8]);
+    expect(uploads[0]!.episodes[0]!.file).toMatch(/Season 01\/The Office S01E05\.mp4$/);
+    expect(done.movieId).toBe('tmdbtv-2316');
+    expect(sent.at(-1)!.click).toBe('https://wheelhouse.example/show/tmdbtv-2316');
+  });
+
   it('carries episode numbers on from the previous disc of the season', async () => {
     await boot();
     hw.insert(officeDisc('THE_OFFICE_S1_D1'));

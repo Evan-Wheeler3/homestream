@@ -21,6 +21,13 @@ export interface SubtitleCandidate {
   machineTranslated: boolean;
 }
 
+/** What to look subtitles up by: a movie's ids, or a TV episode. */
+export interface SubtitleIds {
+  imdbId?: string | null;
+  tmdbId?: string | null;
+  episode?: { showTmdbId: string; season: number; episode: number };
+}
+
 export interface FoundSubtitle {
   vtt: string;
   candidate: SubtitleCandidate;
@@ -84,9 +91,17 @@ export class OpenSubtitles {
   }
 
   /** English subtitles for a movie, best first: trusted, not machine-made, most downloaded. */
-  async search(ids: { imdbId?: string | null; tmdbId?: string | null }, language = 'en') {
-    const params = new URLSearchParams({ languages: language, type: 'movie' });
-    if (ids.imdbId) params.set('imdb_id', ids.imdbId.replace(/^tt/, '').replace(/^0+/, ''));
+  async search(ids: SubtitleIds, language = 'en') {
+    const params = new URLSearchParams({
+      languages: language,
+      type: ids.episode ? 'episode' : 'movie',
+    });
+    if (ids.episode) {
+      // An episode: its show's TMDB id plus season and episode numbers.
+      params.set('parent_tmdb_id', ids.episode.showTmdbId);
+      params.set('season_number', String(ids.episode.season));
+      params.set('episode_number', String(ids.episode.episode));
+    } else if (ids.imdbId) params.set('imdb_id', ids.imdbId.replace(/^tt/, '').replace(/^0+/, ''));
     else if (ids.tmdbId) params.set('tmdb_id', ids.tmdbId);
     else return [];
     const res = await this.fetchImpl(`${API}/subtitles?${params}`, { headers: this.headers() });
@@ -147,7 +162,7 @@ export class OpenSubtitles {
    * Each try uses a download, so at most `maxTries` are spent.
    */
   async findBest(
-    ids: { imdbId?: string | null; tmdbId?: string | null },
+    ids: SubtitleIds,
     durationSeconds: number | null,
     options: { maxTries?: number; skipFileIds?: number[]; fileId?: number } = {},
   ): Promise<FoundSubtitle | null> {

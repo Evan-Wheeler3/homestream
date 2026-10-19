@@ -70,6 +70,16 @@ import type { CloudEnv } from './env.js';
 import { CloudLibrary } from './library.js';
 import { refreshRatings } from './ratings.js';
 import {
+  episodeDetail,
+  episodeInfo,
+  episodeRow,
+  ingestEpisode,
+  ingestShow,
+  listIngestedEpisodes,
+  listShows,
+  showDetail,
+} from './shows.js';
+import {
   favoriteArt,
   getProfile,
   lookOf,
@@ -522,6 +532,13 @@ export function createApp() {
     }
     return c.json(result);
   });
+  mac.put('/shows/:id', async (c) =>
+    c.json(await ingestShow(c.get('sql'), c.req.param('id'), await json(c))),
+  );
+  mac.get('/episodes', async (c) => c.json({ episodes: await listIngestedEpisodes(c.get('sql')) }));
+  mac.put('/episodes/:id', async (c) =>
+    c.json(await ingestEpisode(c.env, c.get('sql'), c.req.param('id'), await json(c))),
+  );
   mac.get('/library', async (c) => c.json({ movies: await libraryIndex(c.get('sql')) }));
   mac.post('/import/person', async (c) => c.json(await importPerson(c.get('sql'), await json(c))));
   // The very first administrator's invitation (only while there is none).
@@ -670,8 +687,10 @@ export function createApp() {
 
   const runtimeOf = async (c: C, id: string) => {
     const row = await movieRow(c.get('sql'), id);
-    if (!row) throw notFound('This movie is not in the library.');
-    return (JSON.parse(row.summary) as { runtimeMinutes: number | null }).runtimeMinutes;
+    if (row) return (JSON.parse(row.summary) as { runtimeMinutes: number | null }).runtimeMinutes;
+    const episode = await episodeInfo(c.get('sql'), id);
+    if (!episode) throw notFound('This movie is not in the library.');
+    return episode.runtimeMinutes;
   };
 
   app.put('/movies/:id/favorite', async (c) => {
@@ -700,10 +719,12 @@ export function createApp() {
   // Playback: straight from R2, no transcoding. Every movie is H.264/AAC MP4.
   app.post('/movies/:id/playback', async (c) => {
     const id = itemId(c);
-    const row = await movieRow(c.get('sql'), id);
+    // Movies and TV episodes play the same way.
+    const row =
+      (await movieRow(c.get('sql'), id)) ??
+      ((await episodeRow(c.get('sql'), id)) as unknown as Awaited<ReturnType<typeof movieRow>>);
     if (!row) throw notFound('This movie is not in the library.');
-    if (!row.video_key)
-      throw new ApiError('MEDIA_UNAVAILABLE', 'This movie’s file isn’t in storage.');
+    if (!row.video_key) throw new ApiError('MEDIA_UNAVAILABLE', 'This file isn’t in storage.');
     const body = await json<{ startSeconds?: unknown }>(c);
     const prefs = await store(c).getPreferences(user(c).id);
     const detail = JSON.parse(row.detail || '{}') as Partial<StoredDetail>;
@@ -818,13 +839,26 @@ export function createApp() {
     });
   }
 
-  // TV shows: not in the cloud yet (the Mac's TV discs stay in Jellyfin for now).
-  app.get('/shows', (c) => c.json({ shows: [], nextUp: [] }));
-  app.get('/shows/:id', () => {
-    throw notFound('TV shows aren’t in the cloud library yet.');
-  });
-  app.get('/episodes/:id', () => {
-    throw notFound('TV shows aren’t in the cloud library yet.');
+  // TV shows ---------------------------------------------------------------------
+
+  app.get('/shows', async (c) => c.json(await listShows(c.get('sql'), user(c).id)));
+  app.get('/shows/:id', async (c) => c.json(await showDetail(c.get('sql'), user(c).id, itemId(c))));
+  app.get('/episodes/:id', async (c) =>
+    c.json(await episodeDetail(c.get('sql'), user(c).id, itemId(c))),
+  );
+  app.put('/episodes/:id/played', async (c) => {
+    const id = itemId(c);
+    const sql = c.get('sql');
+    const ep = await episodeInfo(sql, id);
+    if (!ep) throw notFound('This episode isn’t in the library.');
+    const { played } = await json<{ played?: unknown }>(c);
+    const on = Boolean(played);
+    await patchUserState(sql, user(c).id, id, {
+      played: on,
+      positionSeconds: 0,
+      ...(on ? { lastPlayed: nowIso(), addPlay: true } : {}),
+    });
+    return c.json(await getUserState(sql, user(c).id, id, ep.runtimeMinutes));
   });
 
   // People and film series ---------------------------------------------------------
@@ -1230,7 +1264,16 @@ async function nowWatching(sql: Sql): Promise<NowWatching[]> {
     started_at: string;
     summary: string | null;
   }>(
-    `SELECT n.*, m.summary FROM now_playing n LEFT JOIN movies m ON m.id = n.item_id
+    `SELECT n.*, COALESCE(m.summary, json_object(
+        'title', s.title || ' · S' || e.season_number || 'E' || e.number,
+        'year', NULL,
+        'runtimeMinutes', e.runtime_minutes,
+        'images', json_object('poster', json_extract(s.summary, '$.images.poster'))
+      )) AS summary
+     FROM now_playing n
+     LEFT JOIN movies m ON m.id = n.item_id
+     LEFT JOIN episodes e ON e.id = n.item_id
+     LEFT JOIN shows s ON s.id = e.show_id
      WHERE n.updated_at >= ? ORDER BY n.started_at`,
     since,
   );

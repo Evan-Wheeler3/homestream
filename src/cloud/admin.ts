@@ -153,12 +153,16 @@ export async function storageReport(env: CloudEnv, sql: Sql): Promise<StorageRep
   const movies = await sql.get<{ n: number; video: number | null }>(
     'SELECT COUNT(*) AS n, SUM(video_bytes) AS video FROM movies',
   );
+  const episodes = await sql.get<{ n: number; video: number | null }>(
+    'SELECT COUNT(*) AS n, SUM(video_bytes) AS video FROM episodes',
+  );
   const billable = Math.max(0, bytes - FREE_BYTES) / GB;
   return {
     movies: movies?.n ?? 0,
     objects,
     bytes,
-    videoBytes: movies?.video ?? 0,
+    episodes: episodes?.n ?? 0,
+    videoBytes: (movies?.video ?? 0) + (episodes?.video ?? 0),
     freeBytes: FREE_BYTES,
     monthlyUsd: Math.round(billable * PRICE_PER_GB_MONTH * 100) / 100,
     pricePerGbMonth: PRICE_PER_GB_MONTH,
@@ -172,6 +176,8 @@ export async function storageReport(env: CloudEnv, sql: Sql): Promise<StorageRep
 const BACKUP_TABLES = [
   'users',
   'movies',
+  'shows',
+  'episodes',
   'franchises',
   'user_state',
   'preferences',

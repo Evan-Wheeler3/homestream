@@ -37,6 +37,33 @@ export interface TmdbMovie {
   } | null;
 }
 
+export interface TmdbShow {
+  id: number;
+  imdbId: string | null;
+  title: string;
+  year: number | null;
+  endYear: number | null;
+  genres: string[];
+  overview: string | null;
+  voteAverage: number | null;
+  certification: string | null;
+  cast: { id: number; name: string; character: string | null; profilePath: string | null }[];
+  posterPath: string | null;
+  backdropPath: string | null;
+  logoPath: string | null;
+  seasons: { number: number; name: string; posterPath: string | null; episodeCount: number }[];
+}
+
+export interface TmdbEpisode {
+  season: number;
+  number: number;
+  title: string;
+  overview: string | null;
+  runtime: number | null;
+  airDate: string | null;
+  stillPath: string | null;
+}
+
 export interface TmdbSearchResult {
   id: number;
   title: string;
@@ -228,6 +255,98 @@ export class Tmdb {
     };
   }
 
+  async show(id: number | string): Promise<TmdbShow> {
+    const m = await this.get<{
+      id: number;
+      name: string;
+      first_air_date?: string;
+      last_air_date?: string;
+      status?: string;
+      genres?: { name: string }[];
+      overview?: string;
+      vote_average?: number;
+      poster_path?: string | null;
+      backdrop_path?: string | null;
+      external_ids?: { imdb_id?: string | null };
+      content_ratings?: { results?: { iso_3166_1: string; rating: string }[] };
+      aggregate_credits?: {
+        cast?: {
+          id: number;
+          name: string;
+          profile_path?: string | null;
+          order?: number;
+          roles?: { character?: string }[];
+        }[];
+      };
+      images?: { logos?: { file_path: string; iso_639_1: string | null; vote_average: number }[] };
+      seasons?: {
+        season_number: number;
+        name: string;
+        poster_path?: string | null;
+        episode_count?: number;
+      }[];
+    }>(
+      `/tv/${id}?append_to_response=aggregate_credits,images,content_ratings,external_ids&include_image_language=en,null`,
+    );
+    const ended = m.status === 'Ended' || m.status === 'Canceled';
+    const logos = (m.images?.logos ?? [])
+      .filter((l) => l.iso_639_1 === 'en' && l.file_path.endsWith('.png'))
+      .sort((a, b) => b.vote_average - a.vote_average);
+    return {
+      id: m.id,
+      imdbId: m.external_ids?.imdb_id || null,
+      title: m.name,
+      year: m.first_air_date ? Number(m.first_air_date.slice(0, 4)) : null,
+      endYear: ended && m.last_air_date ? Number(m.last_air_date.slice(0, 4)) : null,
+      genres: (m.genres ?? []).map((g) => g.name),
+      overview: m.overview || null,
+      voteAverage: m.vote_average ? Math.round(m.vote_average * 10) / 10 : null,
+      certification: m.content_ratings?.results?.find((r) => r.iso_3166_1 === 'US')?.rating || null,
+      cast: (m.aggregate_credits?.cast ?? [])
+        .slice()
+        .sort((a, b) => (a.order ?? 99) - (b.order ?? 99))
+        .slice(0, 15)
+        .map((c) => ({
+          id: c.id,
+          name: c.name,
+          character: c.roles?.[0]?.character || null,
+          profilePath: c.profile_path ?? null,
+        })),
+      posterPath: m.poster_path ?? null,
+      backdropPath: m.backdrop_path ?? null,
+      logoPath: logos[0]?.file_path ?? null,
+      seasons: (m.seasons ?? []).map((x) => ({
+        number: x.season_number,
+        name: x.name,
+        posterPath: x.poster_path ?? null,
+        episodeCount: x.episode_count ?? 0,
+      })),
+    };
+  }
+
+  async season(showId: number | string, season: number): Promise<TmdbEpisode[]> {
+    const body = await this.get<{
+      episodes?: {
+        season_number: number;
+        episode_number: number;
+        name: string;
+        overview?: string;
+        runtime?: number | null;
+        air_date?: string | null;
+        still_path?: string | null;
+      }[];
+    }>(`/tv/${showId}/season/${season}`);
+    return (body.episodes ?? []).map((e) => ({
+      season: e.season_number,
+      number: e.episode_number,
+      title: e.name,
+      overview: e.overview || null,
+      runtime: e.runtime || null,
+      airDate: e.air_date || null,
+      stillPath: e.still_path ?? null,
+    }));
+  }
+
   /** Downloads one image (e.g. "/abc.jpg" at "w780"). */
   async image(path: string, size: string): Promise<Uint8Array> {
     const res = await this.fetchImpl(`${TMDB_IMAGES}/${size}${path}`);
@@ -270,4 +389,19 @@ export function confidentMatch(
   if (sameYear.length === 1) return sameYear[0]!;
   if (!year && exact.length === 1 && results[0] === exact[0]) return exact[0]!;
   return null;
+}
+
+/** "Show S01E02.mp4" (or "S01E02-E03" for a double episode) → its numbers. */
+export function parseEpisodeFile(name: string): {
+  season: number;
+  episode: number;
+  endEpisode: number | null;
+} | null {
+  const m = /S(\d{1,2})E(\d{1,3})(?:-?E(\d{1,3}))?/i.exec(name);
+  if (!m) return null;
+  return {
+    season: Number(m[1]),
+    episode: Number(m[2]),
+    endEpisode: m[3] ? Number(m[3]) : null,
+  };
 }
