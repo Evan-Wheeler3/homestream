@@ -390,7 +390,8 @@ All settings live in `.env` (copy `.env.example`; `npm run setup` writes it for 
 Disc ripping settings (written by `npm run setup:ripper`; see `.env.example` for all of them): `RIPPER_ENABLED`,
 `MOVIES_DIR`, `RIPS_DIR`, `MAKEMKVCON`, `HANDBRAKE_CLI`, `HANDBRAKE_PRESET`, `HANDBRAKE_QUALITY`,
 `HANDBRAKE_SUBTITLES` (default `eng`: English subtitle tracks are kept, off until you turn them on),
-`JELLYFIN_API_KEY`, `NTFY_TOPIC`, `NTFY_SERVER` and `WHEELHOUSE_PUBLIC_URL`.
+`JELLYFIN_API_KEY`, `NTFY_TOPIC`, `NTFY_SERVER`, `WHEELHOUSE_PUBLIC_URL` and `RIP_CLOSE_DVD_PLAYER` (quits the
+Mac's DVD Player when it opens for an inserted disc; on by default on a Mac).
 
 **Security model:** you sign in with Jellyfin credentials; Wheelhouse stores only a session (a random token
 in an HttpOnly, SameSite cookie, hashed in the database) and keeps the Jellyfin access token on the server.

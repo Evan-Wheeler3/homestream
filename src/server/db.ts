@@ -187,7 +187,16 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX movie_requests_status ON movie_requests(status, created_at);
   `,
+  // 8: TV discs (several episodes per disc)
+  `
+  ALTER TABLE rip_jobs ADD COLUMN kind TEXT NOT NULL DEFAULT 'movie';
+  ALTER TABLE rip_jobs ADD COLUMN season INTEGER;
+  ALTER TABLE rip_jobs ADD COLUMN episodes TEXT;
+  `,
 ];
+
+/** Index of the TV-disc migration (number 8). */
+const TV_MIGRATION = 7;
 
 export type Db = DatabaseSync;
 
@@ -213,14 +222,31 @@ export function openDatabase(dataDir: string | ':memory:'): Db {
 function migrate(db: Db) {
   const row = db.prepare('PRAGMA user_version').get() as { user_version: number };
   let version = row.user_version;
+  // A build made on the Mac before the GitHub merge numbered its TV-disc
+  // migration 3, which here means seen_users. Rewind so 3–7 run, and skip 8's
+  // columns, which that database already has.
+  const hadLocalTv = hasColumn(db, 'rip_jobs', 'kind');
+  if (version === 3 && hadLocalTv && !hasTable(db, 'seen_users')) {
+    version = 2;
+    db.exec('PRAGMA user_version = 2');
+  }
   while (version < MIGRATIONS.length) {
-    const sql = MIGRATIONS[version] as string;
+    const sql = version === TV_MIGRATION && hadLocalTv ? '' : (MIGRATIONS[version] as string);
     transaction(db, () => {
       db.exec(sql);
       db.exec(`PRAGMA user_version = ${version + 1}`);
     });
     version++;
   }
+}
+
+function hasTable(db: Db, name: string) {
+  return !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name);
+}
+
+function hasColumn(db: Db, table: string, column: string) {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+  return columns.some((c) => c.name === column);
 }
 
 export function transaction<T>(db: Db, fn: () => T): T {

@@ -1,0 +1,275 @@
+/* ============================================================================
+   TV shows: show grid, seasons and episodes, the player's "Up next", and the
+   Discs page's episode picker.
+   ========================================================================== */
+
+/* Unwatched-episode count on a show poster. */
+.poster-card__count {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-pill);
+  background: var(--accent);
+  color: var(--accent-ink, #000);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Rows bring their own side gutter; inside a padded page they bleed to the edge
+   so their first card lines up with the page title. */
+.shows .row {
+  margin-inline: calc(var(--gutter) * -1);
+}
+.shows__heading {
+  margin-block: var(--s-6) var(--s-3);
+}
+
+/* Seasons ------------------------------------------------------------------ */
+
+/* The detail page's sections are full-bleed; the episode list sits in the gutter. */
+.seasons {
+  padding-inline: var(--gutter);
+}
+.seasons__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-3) var(--s-5);
+  margin-bottom: var(--s-4);
+}
+.seasons__tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+}
+
+/* Episodes ----------------------------------------------------------------- */
+
+.episodes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+.episode {
+  display: grid;
+  grid-template-columns: minmax(140px, 240px) minmax(0, 1fr) auto;
+  gap: var(--s-4);
+  align-items: start;
+  padding: var(--s-3);
+  border-radius: var(--r-md);
+  border: 1px solid transparent;
+}
+.episode--next {
+  background: var(--bg-raised);
+  border-color: var(--accent-line);
+}
+.episode__art {
+  position: relative;
+  display: block;
+  aspect-ratio: 16 / 9;
+  max-width: 100%;
+  overflow: hidden;
+  border-radius: var(--r-sm);
+  background: var(--surface);
+}
+.episode__art .backdrop,
+.episode__art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.episode__play {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: rgb(0 0 0 / 0.35);
+  opacity: 0;
+  transition: opacity var(--dur-2) var(--ease-out);
+}
+.episode__art:hover .episode__play,
+.episode__art:focus-visible .episode__play {
+  opacity: 1;
+}
+.episode__progress {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+}
+.episode--watched .episode__art {
+  opacity: 0.7;
+}
+.episode--missing {
+  opacity: 0.55;
+}
+.episode__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  min-width: 0;
+}
+.episode__title {
+  font-size: var(--text-md, 1rem);
+  font-weight: var(--weight-semibold);
+}
+.episode__number {
+  color: var(--text-3);
+  font-weight: var(--weight-medium);
+  font-variant-numeric: tabular-nums;
+  margin-right: var(--s-1);
+}
+.episode__meta {
+  font-size: var(--text-sm);
+}
+.episode__overview {
+  color: var(--text-2);
+  font-size: var(--text-sm);
+  max-width: 70ch;
+}
+.episode__watched.is-watched {
+  color: var(--accent);
+}
+
+@media (max-width: 599px) {
+  .episode {
+    grid-template-columns: 120px minmax(0, 1fr);
+    gap: var(--s-3);
+    padding: var(--s-2);
+  }
+  .episode__watched {
+    grid-column: 2;
+    justify-self: start;
+  }
+  .episode__overview {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+}
+
+/* Player: show + episode title, and "Up next" -------------------------------- */
+
+.player__subtitle {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: rgb(255 255 255 / 0.8);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.player__upnext {
+  position: absolute;
+  right: max(var(--gutter), env(safe-area-inset-right));
+  bottom: calc(var(--safe-bottom, 0px) + 120px);
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  width: min(360px, calc(100% - 2 * var(--gutter)));
+  padding: var(--s-4);
+  border-radius: var(--r-md);
+  background: rgb(10 10 12 / 0.88);
+  color: #fff;
+  box-shadow: 0 10px 40px rgb(0 0 0 / 0.5);
+}
+.player__upnext-label {
+  font-size: var(--text-sm);
+  color: rgb(255 255 255 / 0.75);
+  font-variant-numeric: tabular-nums;
+}
+.player__upnext-title {
+  font-weight: var(--weight-semibold);
+}
+
+/* Discs page: TV season discs ------------------------------------------------ */
+
+.rip-tv {
+  width: 100%;
+  gap: var(--s-4);
+}
+.rip-tv__step {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  width: 100%;
+}
+.rip-tv__label {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text-2);
+}
+.rip-tv__chosen {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+}
+.rip-tv__numbers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-3);
+}
+.rip-tv__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  font-size: var(--text-sm);
+  color: var(--text-2);
+}
+.rip-tv__field .input {
+  width: 110px;
+}
+.rip-tv__table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+.rip-tv__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+.rip-tv__table th {
+  text-align: left;
+  font-weight: var(--weight-medium);
+  color: var(--text-3);
+  padding: var(--s-1) var(--s-2);
+}
+.rip-tv__table td {
+  padding: var(--s-1) var(--s-2);
+  border-top: var(--border);
+  vertical-align: middle;
+}
+.rip-tv__table tr.is-off td {
+  color: var(--text-3);
+}
+.rip-tv__table input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+}
+.rip-tv__episode {
+  width: 72px;
+}
+.rip-tv__states {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  font-size: var(--text-xs);
+}
+.rip-tv__state {
+  padding: 2px 8px;
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  font-variant-numeric: tabular-nums;
+}
+.rip-tv__state--filed {
+  background: var(--accent-soft);
+}

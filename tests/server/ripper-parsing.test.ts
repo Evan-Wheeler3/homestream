@@ -7,14 +7,23 @@ import {
 import { loadRipperConfig } from '../../src/server/config';
 import {
   chooseMainTitle,
+  classifyDisc,
   parseDiscInfo,
   parseDrives,
   parseProgress,
+  parseProgressTitle,
   readErrorHint,
   splitFields,
   type DiscTitle,
 } from '../../src/server/ripper/makemkv';
-import { guessTitle, identify, movieFileNames, safeFileName } from '../../src/server/ripper/naming';
+import {
+  episodeFileNames,
+  guessTitle,
+  guessTv,
+  identify,
+  movieFileNames,
+  safeFileName,
+} from '../../src/server/ripper/naming';
 import { runProcess } from '../../src/server/ripper/process';
 
 describe('MakeMKV robot output', () => {
@@ -68,6 +77,11 @@ describe('MakeMKV robot output', () => {
     expect(parseProgress('PRGT:5018,0,"Saving"')).toBeNull();
   });
 
+  it('reads the start of each phase, whose progress counts from 0 again', () => {
+    expect(parseProgressTitle('PRGT:5018,0,"Saving to MKV file"')).toBe('Saving to MKV file');
+    expect(parseProgressTitle('PRGV:100,32768,65536')).toBeNull();
+  });
+
   const title = (index: number, minutes: number, segments = String(index)): DiscTitle => ({
     index,
     name: '',
@@ -76,6 +90,27 @@ describe('MakeMKV robot output', () => {
     chapters: 10,
     segments,
     outputFile: `title_t0${index}.mkv`,
+  });
+
+  it('tells TV season discs from movies', () => {
+    const disc = (...minutes: number[]) => minutes.map((m, i) => title(i, m));
+    const indexes = (kind: ReturnType<typeof classifyDisc>) =>
+      kind.kind === 'tv' ? kind.episodes.map((t) => t.index) : kind.kind;
+
+    // Sitcom: four episodes, a "play all" of them, and a short extra.
+    expect(indexes(classifyDisc(disc(88.5, 22, 22.5, 21.8, 22.2, 3)))).toEqual([1, 2, 3, 4]);
+    // Hour-long drama with a "play all".
+    expect(indexes(classifyDisc(disc(44, 43, 45, 132)))).toEqual([0, 1, 2]);
+    // Movie with episode-length featurettes is still a movie.
+    expect(indexes(classifyDisc(disc(118, 24, 21, 26)))).toBe('movie');
+    // Two cuts of a movie.
+    expect(indexes(classifyDisc(disc(101, 112)))).toBe('movie');
+    // A lone episode-length title isn't a season.
+    expect(indexes(classifyDisc(disc(48, 3)))).toBe('movie');
+    // Same episode twice (another angle): counted once.
+    expect(
+      indexes(classifyDisc([title(0, 22, 'a'), title(1, 22, 'a'), title(2, 23, 'b')])),
+    ).toEqual([0, 2]);
   });
 
   it('picks the longest title as the main feature', () => {
@@ -96,11 +131,10 @@ describe('MakeMKV robot output', () => {
 
   it('recognises TV series discs, with or without a "play all" title', () => {
     const episodes = [0, 1, 2, 3].map((i) => title(i, 44 + i));
-    const plain = chooseMainTitle(episodes);
-    expect(plain.kind).toBe('ambiguous');
-    expect(plain.kind === 'ambiguous' && plain.reason).toMatch(/TV series disc \(4 episodes\)/);
-    const playAll = chooseMainTitle([...episodes, title(9, 44 + 45 + 46 + 47)]);
-    expect(playAll.kind === 'ambiguous' && playAll.reason).toMatch(/TV series/);
+    const plain = classifyDisc(episodes);
+    expect(plain.kind === 'tv' && plain.episodes.map((t) => t.index)).toEqual([0, 1, 2, 3]);
+    const playAll = classifyDisc([...episodes, title(9, 44 + 45 + 46 + 47)]);
+    expect(playAll.kind === 'tv' && playAll.episodes.map((t) => t.index)).toEqual([0, 1, 2, 3]);
   });
 
   it('still picks the movie when a disc also has episode-length extras', () => {
@@ -191,6 +225,37 @@ describe('naming', () => {
     const hope = identify('A New Hope', [c('Star Wars', 1977, '11'), c('A New Hope', 2009, '9')]);
     expect(hope.kind).toBe('unsure');
     expect(hope.kind === 'unsure' && hope.candidates.map((x) => x.year)).toEqual([1977, 2009]);
+  });
+
+  it('reads the show, season and disc from TV disc labels', () => {
+    expect(guessTv('', 'THE_OFFICE_S1_D2')).toEqual({ show: 'The Office', season: 1, disc: 2 });
+    expect(guessTv('', 'FRIENDS_SEASON_3_DISC_1')).toEqual({ show: 'Friends', season: 3, disc: 1 });
+    expect(guessTv('', 'SEINFELD_S5D1')).toEqual({ show: 'Seinfeld', season: 5, disc: 1 });
+    expect(guessTv('', 'LOST_SEASON2_D4')).toEqual({ show: 'Lost', season: 2, disc: 4 });
+    expect(guessTv('', 'SHERLOCK_SERIES_1')).toEqual({ show: 'Sherlock', season: 1, disc: null });
+    expect(guessTv('The Wire: Season 4 (Disc 2)', 'WIRE_S4')).toEqual({
+      show: 'The Wire',
+      season: 4,
+      disc: 2,
+    });
+    expect(guessTv('', 'BAND_OF_BROTHERS')).toEqual({
+      show: 'Band of Brothers',
+      season: null,
+      disc: null,
+    });
+  });
+
+  it('names episodes the way Jellyfin expects', () => {
+    expect(
+      episodeFileNames({ title: 'The Office', year: 2005, tmdbId: '2316', season: 1, episode: 5 }),
+    ).toEqual({
+      folder: 'The Office (2005) [tmdbid-2316]',
+      seasonFolder: 'Season 01',
+      file: 'The Office S01E05.mp4',
+    });
+    expect(
+      episodeFileNames({ title: 'M*A*S*H', year: null, tmdbId: null, season: 11, episode: 16 }),
+    ).toEqual({ folder: 'M A S H', seasonFolder: 'Season 11', file: 'M A S H S11E16.mp4' });
   });
 
   it('builds Jellyfin-friendly, filesystem-safe names', () => {

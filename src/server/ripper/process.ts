@@ -2,6 +2,8 @@ import { spawn } from 'node:child_process';
 
 export interface RunResult {
   code: number | null;
+  /** Set when the program was killed by a signal (e.g. SIGTERM) instead of exiting. */
+  signal?: NodeJS.Signals | null;
   /** Combined stdout and stderr (the last ~256 KB). */
   output: string;
 }
@@ -41,8 +43,8 @@ export const runProcess: Runner = (command, args, options = {}) =>
     child.stdout.on('data', onData);
     child.stderr.on('data', onData);
     child.on('error', (error) => reject(error));
-    child.on('close', (code) => {
+    child.on('close', (code, signal) => {
       if (partial && options.onLine) options.onLine(partial);
-      resolve({ code, output });
+      resolve({ code, signal, output });
     });
   });

@@ -19,6 +19,8 @@ export interface SampleFilm {
   overview: string | null;
   tagline?: string;
   writers?: string[];
+  /** Line at the top of the generated poster (default: the directors). */
+  byline?: string;
 }
 
 export const SAMPLE_FILMS: SampleFilm[] = [

@@ -9,6 +9,7 @@ import {
 import type {
   Collection,
   CollectionDetail,
+  EpisodeDetail,
   Facets,
   HomePayload,
   Movie,
@@ -20,9 +21,12 @@ import type {
   Preferences,
   RipCandidate,
   RipJob,
+  RipKind,
   RipperHealth,
   ServerStatus,
   SessionInfo,
+  ShowDetail,
+  ShowsPayload,
   SmartRules,
 } from '../../shared/types';
 import { api } from './api';
@@ -39,6 +43,9 @@ export const keys = {
   collection: (id: string) => ['collection', id] as const,
   status: ['status'] as const,
   rips: ['rips'] as const,
+  shows: ['shows'] as const,
+  show: (id: string) => ['show', id] as const,
+  episode: (id: string) => ['episode', id] as const,
 };
 
 /** Serialise a MovieQuery into the backend's query-string format. */
@@ -124,8 +131,49 @@ export function useFacets() {
   });
 }
 
-export function useMovie(id: string) {
-  return useQuery({ queryKey: keys.movie(id), queryFn: () => api<MovieDetail>(`/movies/${id}`) });
+export function useMovie(id: string, enabled = true) {
+  return useQuery({
+    queryKey: keys.movie(id),
+    queryFn: () => api<MovieDetail>(`/movies/${id}`),
+    enabled,
+  });
+}
+
+// TV shows ---------------------------------------------------------------------
+
+export function useShows() {
+  return useQuery({ queryKey: keys.shows, queryFn: () => api<ShowsPayload>('/shows') });
+}
+
+export function useShow(id: string) {
+  return useQuery({ queryKey: keys.show(id), queryFn: () => api<ShowDetail>(`/shows/${id}`) });
+}
+
+export function useEpisode(id: string, enabled = true) {
+  return useQuery({
+    queryKey: keys.episode(id),
+    queryFn: () => api<EpisodeDetail>(`/episodes/${id}`),
+    enabled,
+  });
+}
+
+/** Refetch everything that shows TV watch state. */
+export function invalidateShows(qc: QueryClient) {
+  void qc.invalidateQueries({ queryKey: keys.shows });
+  void qc.invalidateQueries({ queryKey: ['show'] });
+  void qc.invalidateQueries({ queryKey: ['episode'] });
+}
+
+export function useToggleEpisodePlayed() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { id: string; played: boolean }) =>
+      api<MovieUserState>(`/episodes/${v.id}/played`, {
+        method: 'PUT',
+        body: { played: v.played },
+      }),
+    onSuccess: () => invalidateShows(qc),
+  });
 }
 
 export function useSimilar(id: string) {
@@ -386,6 +434,24 @@ export function useRipActions() {
       mutationFn: (id: string) => api<RipJob>(`/rips/${id}/retry`, { method: 'POST' }),
       onSettled: settle,
     }),
+    episodes: useMutation({
+      mutationFn: (v: {
+        id: string;
+        show: RipCandidate;
+        season: number;
+        episodes: { titleIndex: number; episode: number }[];
+      }) =>
+        api<RipJob>(`/rips/${v.id}/episodes`, {
+          method: 'POST',
+          body: { show: v.show, season: v.season, episodes: v.episodes },
+        }),
+      onSettled: settle,
+    }),
+    kind: useMutation({
+      mutationFn: (v: { id: string; kind: RipKind }) =>
+        api<RipJob>(`/rips/${v.id}/kind`, { method: 'POST', body: { kind: v.kind } }),
+      onSettled: settle,
+    }),
     dismiss: useMutation({
       mutationFn: (id: string) => api(`/rips/${id}`, { method: 'DELETE' }),
       onSettled: settle,
@@ -396,6 +462,8 @@ export function useRipActions() {
   };
 }
 
-export function searchRipCandidates(q: string) {
-  return api<{ results: RipCandidate[] }>(`/rips/search?q=${encodeURIComponent(q)}`);
+export function searchRipCandidates(q: string, kind: RipKind = 'movie') {
+  return api<{ results: RipCandidate[] }>(
+    `/rips/search?q=${encodeURIComponent(q)}${kind === 'tv' ? '&kind=tv' : ''}`,
+  );
 }

@@ -27,6 +27,8 @@ import { RipsPage } from './pages/RipsPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { SearchPage } from './pages/SearchPage';
 import { VotePage } from './pages/VotePage';
+import { ShowDetailPage } from './pages/ShowDetailPage';
+import { ShowsPage } from './pages/ShowsPage';
 
 const PlayerPage = lazy(() => import('./player/PlayerPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
@@ -118,6 +120,8 @@ function Protected() {
           <Route path="browse" element={<BrowsePage prefs={preferences} />} />
           <Route path="search" element={<SearchPage />} />
           <Route path="movie/:id" element={<MovieDetailPage prefs={preferences} />} />
+          <Route path="shows" element={<ShowsPage />} />
+          <Route path="show/:id" element={<ShowDetailPage />} />
           <Route path="collections" element={<CollectionsPage />} />
           <Route path="collections/:id" element={<CollectionDetailPage prefs={preferences} />} />
           <Route path="person/:name" element={<PersonPage />} />
@@ -132,6 +136,10 @@ function Protected() {
             element={<SettingsPage session={session.data} prefs={preferences} />}
           />
           <Route path="play/:id" element={<PlayerPage prefs={preferences} />} />
+          <Route
+            path="play/episode/:id"
+            element={<PlayerPage prefs={preferences} kind="episode" />}
+          />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>
