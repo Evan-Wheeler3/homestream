@@ -1,15 +1,22 @@
 import { randomUUID } from 'node:crypto';
 import { seededRandom, sortKey } from '../../shared/catalog.js';
 import type {
+  Episode,
+  EpisodeDetail,
   Movie,
   MovieUserState,
   PlaybackInfo,
   PlaybackReport,
   PlaybackRequest,
+  Season,
+  Show,
+  ShowDetail,
 } from '../../shared/types.js';
 import type { Db } from '../db.js';
 import { ApiError } from '../errors.js';
 import { SAMPLE_FILMS, type SampleFilm } from './mockLibrary.js';
+import { SAMPLE_SHOWS, sampleEpisodeId, type SampleEpisode, type SampleShow } from './mockShows.js';
+import { pickNextUp } from './shows.js';
 import type {
   AuthResult,
   MediaProvider,
@@ -20,6 +27,27 @@ import type {
 
 const SAMPLE_DURATION_SECONDS = 40;
 const DAY = 86_400_000;
+
+interface SampleEpisodeRef {
+  id: string;
+  show: SampleShow;
+  season: number;
+  number: number;
+  episode: SampleEpisode;
+}
+
+/** Every sample episode, in show, season and episode order. */
+const SAMPLE_EPISODES: SampleEpisodeRef[] = SAMPLE_SHOWS.flatMap((show) =>
+  show.seasons.flatMap((episodes, s) =>
+    episodes.map((episode, e) => ({
+      id: sampleEpisodeId(show, s + 1, e + 1),
+      show,
+      season: s + 1,
+      number: e + 1,
+      episode,
+    })),
+  ),
+);
 
 interface MockRow {
   item_id: string;
@@ -60,6 +88,8 @@ export class MockProvider implements MediaProvider {
   private readonly addedDates = new Map(
     SAMPLE_FILMS.map((film, i) => [film.id, dateAdded(film, i)]),
   );
+  private readonly shows = new Map(SAMPLE_SHOWS.map((show) => [show.id, show]));
+  private readonly episodes = new Map(SAMPLE_EPISODES.map((ref) => [ref.id, ref]));
 
   constructor(
     private readonly db: Db,
@@ -98,6 +128,11 @@ export class MockProvider implements MediaProvider {
       ['groundhog-day-1993', 1, 1, 0, 400],
       ['paddington-2-2017', 0, 1, 0, 500],
       ['rashomon-1950', 0, 1, 0, 600],
+      // Part way through a show, and one episode into another.
+      ['harbour-lights-s01e01', 0, 1, 0, 30],
+      ['harbour-lights-s01e02', 0, 1, 0, 29],
+      ['harbour-lights-s01e03', 0, 0, 1260, 28],
+      ['the-night-kitchen-s01e01', 0, 1, 0, 70],
     ];
     for (const [id, favorite, played, position, hoursAgo] of seed) {
       insert.run(
@@ -127,7 +162,7 @@ export class MockProvider implements MediaProvider {
     return new Map(rows.map((row) => [row.item_id, row]));
   }
 
-  private userState(film: SampleFilm, row: MockRow | undefined): MovieUserState {
+  private userState(film: { runtime: number | null }, row: MockRow | undefined): MovieUserState {
     const runtime = film.runtime ? film.runtime * 60 : null;
     const position = row?.position_seconds ?? 0;
     return {
@@ -234,14 +269,17 @@ export class MockProvider implements MediaProvider {
       .map((entry) => entry.id);
   }
 
-  private requireFilm(id: string): SampleFilm {
+  /** A sample film or episode: anything with watch state that can be played. */
+  private requireItem(id: string): { id: string; runtime: number | null } {
     const film = this.films.get(id);
-    if (!film) throw new ApiError('NOT_FOUND', 'Movie not found');
-    return film;
+    if (film) return film;
+    const ref = this.episodes.get(id);
+    if (ref) return { id, runtime: ref.episode.runtime };
+    throw new ApiError('NOT_FOUND', 'Not found in the sample library');
   }
 
   async getUserState(ctx: UserContext, id: string): Promise<MovieUserState> {
-    return this.userState(this.requireFilm(id), this.rows(ctx.userId).get(id));
+    return this.userState(this.requireItem(id), this.rows(ctx.userId).get(id));
   }
 
   private upsert(userId: string, id: string, patch: Partial<Omit<MockRow, 'item_id'>>) {
@@ -273,14 +311,15 @@ export class MockProvider implements MediaProvider {
   }
 
   async setFavorite(ctx: UserContext, id: string, favorite: boolean): Promise<MovieUserState> {
-    this.requireFilm(id);
+    if (!this.shows.has(id)) this.requireItem(id);
     this.upsert(ctx.userId, id, { favorite: favorite ? 1 : 0 });
+    if (this.shows.has(id)) return this.userState({ runtime: null }, this.rows(ctx.userId).get(id));
     return this.getUserState(ctx, id);
   }
 
   async setPlayed(ctx: UserContext, id: string, played: boolean): Promise<MovieUserState> {
     const current = this.rows(ctx.userId).get(id);
-    this.requireFilm(id);
+    this.requireItem(id);
     this.upsert(ctx.userId, id, {
       played: played ? 1 : 0,
       position_seconds: 0,
@@ -295,7 +334,7 @@ export class MockProvider implements MediaProvider {
     id: string,
     request: PlaybackRequest,
   ): Promise<PlaybackInfo> {
-    const film = this.requireFilm(id);
+    const film = this.requireItem(id);
     const start = Math.max(0, Number(request.startSeconds) || 0);
     const runtime = (film.runtime ?? 90) * 60;
     return {
@@ -342,7 +381,7 @@ export class MockProvider implements MediaProvider {
     event: 'start' | 'progress' | 'stop',
     report: PlaybackReport,
   ): Promise<void> {
-    const film = this.requireFilm(report.itemId);
+    const film = this.requireItem(report.itemId);
     const now = new Date().toISOString();
     if (event !== 'stop') {
       this.upsert(ctx.userId, film.id, { last_played: now });
@@ -368,7 +407,136 @@ export class MockProvider implements MediaProvider {
     }
   }
 
+  /** Something to draw artwork for: a film, or a stand-in for a show or episode. */
   film(id: string): SampleFilm | undefined {
-    return this.films.get(id);
+    const film = this.films.get(id);
+    if (film) return film;
+    const show = this.shows.get(id) ?? this.episodes.get(id)?.show;
+    if (!show) return undefined;
+    return {
+      id, // episodes get their own still, seeded by their id
+      title: show.title,
+      year: show.year,
+      runtime: null,
+      genres: show.genres,
+      directors: [],
+      cast: show.cast,
+      countries: [],
+      rating: show.rating,
+      tags: [],
+      overview: show.overview,
+      byline: 'A SAMPLE SERIES',
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // TV shows
+
+  private toEpisode(ref: SampleEpisodeRef, row: MockRow | undefined): Episode {
+    return {
+      id: ref.id,
+      showId: ref.show.id,
+      showTitle: ref.show.title,
+      seasonId: `${ref.show.id}-season-${ref.season}`,
+      seasonNumber: ref.season,
+      number: ref.number,
+      endNumber: null,
+      title: ref.episode.title,
+      overview: ref.episode.overview,
+      runtimeMinutes: ref.episode.runtime,
+      premiereDate: null,
+      image: `/api/mock/art/${ref.id}/backdrop.svg`,
+      user: this.userState(ref.episode, row),
+      available: true,
+    };
+  }
+
+  private showEpisodes(show: SampleShow, rows: Map<string, MockRow>): Episode[] {
+    return SAMPLE_EPISODES.filter((ref) => ref.show === show).map((ref) =>
+      this.toEpisode(ref, rows.get(ref.id)),
+    );
+  }
+
+  private toShow(show: SampleShow, rows: Map<string, MockRow>): Show {
+    const episodes = this.showEpisodes(show, rows);
+    return {
+      id: show.id,
+      title: show.title,
+      sortTitle: sortKey(show.title),
+      year: show.year,
+      endYear: show.endYear,
+      genres: show.genres,
+      officialRating: show.rating,
+      communityRating: null,
+      overview: show.overview,
+      dateAdded: null,
+      images: {
+        poster: `/api/mock/art/${show.id}/poster.svg`,
+        backdrop: `/api/mock/art/${show.id}/backdrop.svg`,
+        logo: null,
+      },
+      seasonCount: show.seasons.length,
+      episodeCount: episodes.length,
+      unwatchedCount: episodes.filter((e) => !e.user.played).length,
+      favorite: Boolean(rows.get(show.id)?.favorite),
+    };
+  }
+
+  async listShows(ctx: UserContext): Promise<Show[]> {
+    const rows = this.rows(ctx.userId);
+    return SAMPLE_SHOWS.map((show) => this.toShow(show, rows));
+  }
+
+  async getShow(ctx: UserContext, id: string): Promise<ShowDetail | null> {
+    const show = this.shows.get(id);
+    if (!show) return null;
+    const rows = this.rows(ctx.userId);
+    const episodes = this.showEpisodes(show, rows);
+    const seasons: Season[] = show.seasons.map((_, s) => {
+      const inSeason = episodes.filter((e) => e.seasonNumber === s + 1);
+      return {
+        id: `${show.id}-season-${s + 1}`,
+        number: s + 1,
+        name: `Season ${s + 1}`,
+        episodeCount: inSeason.length,
+        unwatchedCount: inSeason.filter((e) => !e.user.played).length,
+        poster: null,
+      };
+    });
+    return {
+      ...this.toShow(show, rows),
+      cast: show.cast.map((name) => ({ id: null, name, role: null, type: 'Actor', image: null })),
+      seasons,
+      episodes,
+      nextUp: pickNextUp(episodes),
+    };
+  }
+
+  async getEpisode(ctx: UserContext, id: string): Promise<EpisodeDetail | null> {
+    const ref = this.episodes.get(id);
+    if (!ref) return null;
+    const siblings = SAMPLE_EPISODES.filter((r) => r.show === ref.show);
+    const at = siblings.indexOf(ref);
+    return {
+      ...this.toEpisode(ref, this.rows(ctx.userId).get(id)),
+      backdrop: `/api/mock/art/${ref.show.id}/backdrop.svg`,
+      previousId: siblings[at - 1]?.id ?? null,
+      nextId: siblings[at + 1]?.id ?? null,
+    };
+  }
+
+  async nextUp(ctx: UserContext): Promise<Episode[]> {
+    const rows = this.rows(ctx.userId);
+    const lastPlayed = (show: SampleShow) =>
+      Math.max(
+        0,
+        ...SAMPLE_EPISODES.filter((r) => r.show === show).map(
+          (r) => Date.parse(rows.get(r.id)?.last_played ?? '') || 0,
+        ),
+      );
+    return SAMPLE_SHOWS.filter((show) => lastPlayed(show) > 0)
+      .sort((a, b) => lastPlayed(b) - lastPlayed(a))
+      .map((show) => pickNextUp(this.showEpisodes(show, rows)))
+      .filter((e): e is Episode => e !== null);
   }
 }

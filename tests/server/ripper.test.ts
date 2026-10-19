@@ -20,6 +20,8 @@ interface Disc {
   titles: { duration: string; segments?: string }[];
 }
 
+const seconds = (hms: string) => hms.split(':').reduce((t, n) => t * 60 + Number(n), 0);
+
 function discInfo(disc: Disc) {
   const lines = [`CINFO:2,0,"${disc.discName ?? disc.label}"`, `CINFO:32,0,"${disc.label}"`];
   lines.push(`TCOUNT:${disc.titles.length}`);
@@ -37,7 +39,17 @@ class FakeHardware {
   disc: Disc | null = null;
   calls: string[] = [];
   failNextEncode = false;
-  encodedSeconds = FEATURE_SECONDS;
+  /** Fail the nth compression (1-based), counting from now. */
+  failEncodeNumber = 0;
+  private encodes = 0;
+  /** Pretend HandBrake's output is this long, whatever was ripped (an incomplete encode). */
+  scanSeconds: number | null = null;
+  /** Length of each compressed file, from the title it was ripped from. */
+  private readonly lengths = new Map<string, number>();
+  /** Called halfway through saving the title, to look at the job mid-rip. */
+  midRip: (() => Promise<void>) | null = null;
+  /** Makes makemkvcon die from this signal (e.g. a `pkill`) instead of finishing. */
+  ripSignal: NodeJS.Signals | null = null;
 
   constructor(private readonly volumes: string) {}
 
@@ -63,8 +75,20 @@ class FakeHardware {
       if (args.includes('mkv')) {
         const dir = args[args.length - 1]!;
         const title = Number(args[args.length - 2]);
+        // Like real makemkvcon: opening the disc runs 0–100%, then saving starts again at 0.
+        emit('PRGT:5018,0,"Opening DVD disc"');
         for (const p of [0, 2500, 65536]) emit(`PRGV:${p},${p},65536`);
-        fs.writeFileSync(path.join(dir, `title_t0${title}.mkv`), 'mkv-data');
+        emit('PRGT:5017,0,"Saving to MKV file"');
+        emit('PRGV:0,0,65536');
+        emit('PRGV:32768,32768,65536');
+        await this.midRip?.();
+        if (this.ripSignal) {
+          const output = 'MSG:5014,0,2,"Saving 1 titles into directory file:///rips"';
+          return { code: null, signal: this.ripSignal, output };
+        }
+        emit('PRGV:65536,65536,65536');
+        const length = seconds(this.disc?.titles[title]?.duration ?? FEATURE);
+        fs.writeFileSync(path.join(dir, `title_t0${title}.mkv`), `mkv:${length}`);
         return { code: 0, output: 'MSG:5036,0,1,"Copy complete. 1 titles saved."' };
       }
     }
@@ -75,15 +99,18 @@ class FakeHardware {
     }
     if (tool === 'HandBrakeCLI') {
       if (args[0] === '--scan') {
-        const s = this.encodedSeconds;
+        const s = this.scanSeconds ?? this.lengths.get(args[2]!) ?? FEATURE_SECONDS;
         const hms = [Math.floor(s / 3600), Math.floor((s % 3600) / 60), s % 60]
           .map((n, i) => (i ? String(n).padStart(2, '0') : String(n)))
           .join(':');
         return { code: 0, output: `[scan] title 1\n  + duration: ${hms}\n` };
       }
       const output = args[args.indexOf('-o') + 1]!;
+      const input = fs.readFileSync(args[args.indexOf('-i') + 1]!, 'utf8');
+      this.lengths.set(output, Number(input.split(':')[1]) || FEATURE_SECONDS);
       emit('Encoding: task 1 of 1, 50.00 % (120.1 fps, avg 118.0 fps, ETA 00h05m00s)');
-      if (this.failNextEncode) {
+      this.encodes++;
+      if (this.failNextEncode || this.encodes === this.failEncodeNumber) {
         this.failNextEncode = false;
         fs.writeFileSync(output, 'partial');
         return { code: 3, output: 'Encode failed (error 3)' };
@@ -93,6 +120,7 @@ class FakeHardware {
       return { code: 0, output: 'Encode done!' };
     }
     if (tool === 'osascript') return { code: 0, output: '' };
+    if (tool === 'pkill') return { code: 1, output: '' };
     throw Object.assign(new Error(`spawn ${command} ENOENT`), { code: 'ENOENT', path: command });
   };
 }
@@ -101,6 +129,7 @@ class FakeHardware {
 function fakeJellyfin(
   movies: string,
   catalog: Record<string, { title: string; year: number; tmdb: string }[]>,
+  tv: { dir: string; shows: Record<string, { title: string; year: number; tmdb: string }[]> },
 ) {
   const requests: string[] = [];
   let refreshed = false;
@@ -109,9 +138,13 @@ function fakeJellyfin(
     requests.push(`${init?.method ?? 'GET'} ${url.pathname}`);
     const auth = new Headers(init?.headers).get('Authorization') ?? '';
     if (!auth.includes('Token="test-key"')) return new Response('', { status: 401 });
-    if (url.pathname === '/Items/RemoteSearch/Movie') {
+    if (
+      url.pathname === '/Items/RemoteSearch/Movie' ||
+      url.pathname === '/Items/RemoteSearch/Series'
+    ) {
       const name = JSON.parse(String(init?.body)).SearchInfo.Name as string;
-      const hits = catalog[name.toLowerCase()] ?? [];
+      const source = url.pathname.endsWith('Series') ? tv.shows : catalog;
+      const hits = source[name.toLowerCase()] ?? [];
       return Response.json(
         hits.map((h) => ({
           Name: h.title,
@@ -123,6 +156,22 @@ function fakeJellyfin(
     if (url.pathname === '/Library/Refresh') {
       refreshed = true;
       return new Response(null, { status: 204 });
+    }
+    if (url.pathname === '/Library/VirtualFolders') {
+      return Response.json([
+        { Name: 'Movies', CollectionType: 'movies', Locations: [movies] },
+        ...(tv.dir ? [{ Name: 'Shows', CollectionType: 'tvshows', Locations: [tv.dir] }] : []),
+      ]);
+    }
+    if (url.pathname === '/Items' && url.searchParams.get('IncludeItemTypes') === 'Series') {
+      if (!refreshed) return Response.json({ Items: [] });
+      const items = fs.existsSync(tv.dir)
+        ? fs.readdirSync(tv.dir).map((folder, i) => ({
+            Id: `show${i}${folder.length}`,
+            Path: path.join(tv.dir, folder),
+          }))
+        : [];
+      return Response.json({ Items: items });
     }
     if (url.pathname === '/Items') {
       if (!refreshed) return Response.json({ Items: [] });
@@ -144,6 +193,7 @@ describe('automatic disc ripping', () => {
   let volumes: string;
   let rips: string;
   let movies: string;
+  let tvDir: string;
   let hw: FakeHardware;
   let sent: Notification[];
   let server: TestServer & { ripper: import('../../src/server/ripper/ripper').Ripper | null };
@@ -157,8 +207,12 @@ describe('automatic disc ripping', () => {
     ],
   };
 
-  async function boot(env: Record<string, string> = {}) {
-    const jf = fakeJellyfin(movies, catalog);
+  const shows = {
+    'the office': [{ title: 'The Office', year: 2005, tmdb: '2316' }],
+  };
+
+  async function boot(env: Record<string, string> = {}, tvLibrary = true) {
+    const jf = fakeJellyfin(movies, catalog, { dir: tvLibrary ? tvDir : '', shows });
     server = await startServer(
       {
         jellyfinUrl: 'http://jellyfin.test',
@@ -166,6 +220,7 @@ describe('automatic disc ripping', () => {
           RIPPER_ENABLED: '1',
           RIPS_DIR: rips,
           MOVIES_DIR: movies,
+          TV_DIR: tvDir,
           DISC_VOLUMES_DIR: volumes,
           MAKEMKVCON: '/fake/makemkvcon',
           HANDBRAKE_CLI: '/fake/HandBrakeCLI',
@@ -173,6 +228,7 @@ describe('automatic disc ripping', () => {
           NTFY_TOPIC: 'wheelhouse-test',
           WHEELHOUSE_PUBLIC_URL: 'http://wheelhouse.local:8787',
           RIP_MIN_FREE_GB: '0',
+          RIP_CLOSE_DVD_PLAYER: '1',
           RIP_POLL_MS: '3600000',
           RIP_IMPORT_POLL_MS: '5',
           RIP_IMPORT_TIMEOUT_MS: '2000',
@@ -215,6 +271,7 @@ describe('automatic disc ripping', () => {
     volumes = path.join(root, 'Volumes');
     rips = path.join(root, 'LaCie', 'Rips');
     movies = path.join(root, 'LaCie', 'Movies');
+    tvDir = path.join(root, 'LaCie', 'TV Shows');
     for (const d of [volumes, rips, movies]) fs.mkdirSync(d, { recursive: true });
     hw = new FakeHardware(volumes);
     sent = [];
@@ -244,6 +301,11 @@ describe('automatic disc ripping', () => {
     // The rip was deleted only after the movie was in place, and the disc was ejected.
     expect(fs.readdirSync(rips)).toEqual([]);
     expect(hw.calls).toContain('drutil eject');
+    // DVD Player (which macOS opens for a new DVD) was quit before ripping.
+    expect(hw.calls.indexOf('pkill -x DVD Player')).toBeLessThan(
+      hw.calls.findIndex((c) => c.includes(' mkv ')),
+    );
+    expect(hw.calls.indexOf('pkill -x DVD Player')).toBeGreaterThanOrEqual(0);
     // The main feature (title 1) was ripped, not the 2-minute extra.
     expect(hw.calls.find((c) => c.includes(' mkv '))).toMatch(/mkv disc:0 1 /);
     // Jellyfin was asked to scan, and the job links to the new movie.
@@ -255,6 +317,31 @@ describe('automatic disc ripping', () => {
     expect(sent).toHaveLength(1);
     expect(sent[0]!.message).toBe('Young Frankenstein (1974) is ready to watch.');
     expect(sent[0]!.click).toBe(`http://wheelhouse.local:8787/movie/${job.movieId}`);
+  });
+
+  it('shows real progress while the title is saved, not 100% once the disc is opened', async () => {
+    await boot();
+    let midway: Record<string, unknown> | undefined;
+    hw.midRip = async () => {
+      [midway] = await jobs();
+    };
+    hw.insert({ label: 'YOUNG_FRANKENSTEIN_WS', titles: [{ duration: FEATURE }] });
+    await server.ripper!.poll();
+    await waitFor('done');
+    expect(midway).toMatchObject({
+      status: 'ripping',
+      progress: 0.5,
+      message: 'Saving to MKV file',
+    });
+  });
+
+  it('says so when MakeMKV is killed mid-rip', async () => {
+    await boot();
+    hw.ripSignal = 'SIGTERM';
+    hw.insert({ label: 'YOUNG_FRANKENSTEIN_WS', titles: [{ duration: FEATURE }] });
+    await server.ripper!.poll();
+    const job = await waitFor('failed');
+    expect(job.message).toMatch(/MakeMKV was stopped \(SIGTERM\) before it finished/);
   });
 
   it('asks which movie it is when the name is ambiguous, then finishes', async () => {
@@ -315,7 +402,7 @@ describe('automatic disc ripping', () => {
 
   it('refuses to file an incomplete compressed movie', async () => {
     await boot();
-    hw.encodedSeconds = 1800; // HandBrake stopped half way through
+    hw.scanSeconds = 1800; // HandBrake stopped half way through
     hw.insert({ label: 'YOUNG_FRANKENSTEIN', titles: [{ duration: FEATURE }] });
     await server.ripper!.poll();
     const failed = await waitFor('failed');
@@ -349,6 +436,179 @@ describe('automatic disc ripping', () => {
     const res = await client.get('/api/rips');
     expect(res.json.health.problems.join(' ')).toMatch(/MakeMKV/);
     expect(res.json.health.problems.join(' ')).toMatch(/Rips folder .* doesn’t exist/);
+  });
+
+  // TV discs ------------------------------------------------------------------
+
+  const officeDisc = (label: string): Disc => ({
+    label,
+    // Four episodes, plus a "play all" title that is the same four back to back.
+    titles: [
+      { duration: '1:29:32' },
+      { duration: '0:22:10' },
+      { duration: '0:22:31' },
+      { duration: '0:22:02' },
+      { duration: '0:22:49' },
+      { duration: '0:03:10' },
+    ],
+  });
+
+  async function confirmEpisodes(job: Record<string, unknown>) {
+    const episodes = job.episodes as { titleIndex: number; episode: number }[];
+    const res = await client.post(`/api/rips/${String(job.id)}/episodes`, {
+      show: { title: 'The Office', year: 2005, tmdbId: '2316', imdbId: null },
+      season: job.season,
+      episodes: episodes.map((e) => ({ titleIndex: e.titleIndex, episode: e.episode })),
+    });
+    expect(res.status).toBe(200);
+  }
+
+  it('rips a TV season disc into numbered episodes, filed for Jellyfin and announced', async () => {
+    await boot();
+    hw.insert(officeDisc('THE_OFFICE_S1_D2'));
+    await server.ripper!.poll();
+    const job = await waitFor('needs_episodes');
+
+    // Recognised as TV: the show, the season and (from "disc 2") the episode numbers.
+    expect(job.kind).toBe('tv');
+    expect(job.title).toBe('The Office');
+    expect(job.season).toBe(1);
+    expect(job.episodes).toEqual([
+      { titleIndex: 1, durationSeconds: 1330, episode: 5, state: 'pending', path: null },
+      { titleIndex: 2, durationSeconds: 1351, episode: 6, state: 'pending', path: null },
+      { titleIndex: 3, durationSeconds: 1322, episode: 7, state: 'pending', path: null },
+      { titleIndex: 4, durationSeconds: 1369, episode: 8, state: 'pending', path: null },
+    ]);
+    expect(sent[0]!.title).toMatch(/needs a hand/);
+    // Nothing is ripped until the episodes are confirmed.
+    expect(hw.calls.some((c) => c.includes(' mkv '))).toBe(false);
+
+    await confirmEpisodes(job);
+    const done = await waitFor('done');
+
+    const season = path.join(tvDir, 'The Office (2005) [tmdbid-2316]', 'Season 01');
+    expect(fs.readdirSync(season).sort()).toEqual([
+      'The Office S01E05.mp4',
+      'The Office S01E06.mp4',
+      'The Office S01E07.mp4',
+      'The Office S01E08.mp4',
+    ]);
+    // Each episode title was ripped once (not the "play all" or the extra), then the disc ejected.
+    expect(hw.calls.filter((c) => c.includes(' mkv ')).map((c) => c.split(' ')[5])).toEqual([
+      '1',
+      '2',
+      '3',
+      '4',
+    ]);
+    expect(hw.calls).toContain('drutil eject');
+    expect(fs.readdirSync(rips)).toEqual([]);
+    expect(done.movieId).toMatch(/^show/);
+    expect(sent.at(-1)!.message).toBe('The Office season 1, episodes 5–8 are ready to watch.');
+    expect(sent.at(-1)!.click).toBe(`http://wheelhouse.local:8787/show/${String(done.movieId)}`);
+  });
+
+  it('carries episode numbers on from the previous disc of the season', async () => {
+    await boot();
+    hw.insert(officeDisc('THE_OFFICE_S1_D1'));
+    await server.ripper!.poll();
+    const first = await waitFor('needs_episodes');
+    expect((first.episodes as { episode: number }[]).map((e) => e.episode)).toEqual([1, 2, 3, 4]);
+    await confirmEpisodes(first);
+    await waitFor('done');
+
+    // A disc whose label doesn't say which disc it is still continues at episode 5.
+    hw.insert(officeDisc('THE_OFFICE_SEASON_1'));
+    await server.ripper!.poll();
+    const [second] = await jobs();
+    for (let i = 0; i < 200 && second!.status !== 'needs_episodes'; i++) {
+      await new Promise((r) => setTimeout(r, 10));
+      Object.assign(second!, (await jobs())[0]);
+    }
+    expect((second!.episodes as { episode: number }[]).map((e) => e.episode)).toEqual([5, 6, 7, 8]);
+  });
+
+  it('checks the episode choices', async () => {
+    await boot();
+    hw.insert(officeDisc('THE_OFFICE_S1_D1'));
+    await server.ripper!.poll();
+    const job = await waitFor('needs_episodes');
+    const post = (body: unknown) => client.post(`/api/rips/${job.id}/episodes`, body);
+    const show = { title: 'The Office', year: 2005, tmdbId: '2316', imdbId: null };
+    const twice = await post({
+      show,
+      season: 1,
+      episodes: [
+        { titleIndex: 1, episode: 3 },
+        { titleIndex: 2, episode: 3 },
+      ],
+    });
+    expect(twice.status).toBe(400);
+    expect(twice.json.error.message).toMatch(/Episode 3 is used twice/);
+    const none = await post({ show, season: 1, episodes: [] });
+    expect(none.json.error.message).toMatch(/at least one/);
+    const missing = await post({ show, season: 1, episodes: [{ titleIndex: 42, episode: 1 }] });
+    expect(missing.json.error.message).toMatch(/not on this disc/);
+  });
+
+  it('lets a wrongly guessed disc be switched between movie and TV', async () => {
+    await boot();
+    hw.insert(officeDisc('THE_OFFICE_S1_D1'));
+    await server.ripper!.poll();
+    const job = await waitFor('needs_episodes');
+    const movie = await client.post(`/api/rips/${job.id}/kind`, { kind: 'movie' });
+    expect(movie.json).toMatchObject({ status: 'needs_choice', kind: 'movie', episodes: [] });
+    const tv = await client.post(`/api/rips/${job.id}/kind`, { kind: 'tv' });
+    expect(tv.json).toMatchObject({ status: 'needs_episodes', kind: 'tv', season: 1 });
+    expect((tv.json.episodes as unknown[]).length).toBe(4);
+  });
+
+  it('keeps finished episodes when one fails, and Retry only redoes the rest', async () => {
+    await boot();
+    hw.insert(officeDisc('THE_OFFICE_S1_D1'));
+    await server.ripper!.poll();
+    const job = await waitFor('needs_episodes');
+    hw.failEncodeNumber = 3; // the third episode's compression fails
+    await confirmEpisodes(job);
+    const failed = await waitFor('failed');
+    expect((failed.episodes as { state: string }[]).map((e) => e.state)).toEqual([
+      'encoded',
+      'encoded',
+      'ripped',
+      'ripped',
+    ]);
+    const encodesBefore = hw.calls.filter((c) => c.startsWith('HandBrakeCLI -i')).length;
+    expect((await client.post(`/api/rips/${job.id}/retry`)).status).toBe(200);
+    await waitFor('done');
+    // Only episodes 3 and 4 were compressed again.
+    expect(hw.calls.filter((c) => c.startsWith('HandBrakeCLI -i')).length - encodesBefore).toBe(2);
+    expect(
+      fs.readdirSync(path.join(tvDir, 'The Office (2005) [tmdbid-2316]', 'Season 01')),
+    ).toHaveLength(4);
+  });
+
+  it('never overwrites an episode that is already in the TV folder', async () => {
+    await boot();
+    const season = path.join(tvDir, 'The Office (2005) [tmdbid-2316]', 'Season 01');
+    fs.mkdirSync(season, { recursive: true });
+    fs.writeFileSync(path.join(season, 'The Office S01E02.mp4'), 'mine');
+    hw.insert(officeDisc('THE_OFFICE_S1_D1'));
+    await server.ripper!.poll();
+    await confirmEpisodes(await waitFor('needs_episodes'));
+    const failed = await waitFor('failed');
+    expect(String(failed.message)).toMatch(/S01E02.mp4” is already in your TV folder/);
+    expect(fs.readFileSync(path.join(season, 'The Office S01E02.mp4'), 'utf8')).toBe('mine');
+    // Nothing was half-filed.
+    expect(fs.readdirSync(season)).toEqual(['The Office S01E02.mp4']);
+  });
+
+  it('warns when Jellyfin has no Shows library for the TV folder', async () => {
+    await boot({}, false);
+    let warnings: string[] = [];
+    for (let i = 0; i < 100 && warnings.length < 1; i++) {
+      warnings = (await client.get('/api/rips')).json.health.warnings as string[];
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    expect(warnings.join(' ')).toMatch(/no Shows library/);
   });
 
   it('is off unless enabled', async () => {

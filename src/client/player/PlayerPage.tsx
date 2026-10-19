@@ -2,6 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import type Hls from 'hls.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
+import { episodeLabel } from '../../shared/episodes';
 import type { PlaybackInfo, PlaybackReport, Preferences } from '../../shared/types';
 import { Icon } from '../components/Icon';
 import { Button, IconButton, Spinner } from '../components/ui';
@@ -10,7 +11,7 @@ import { detectCapabilities } from '../lib/capabilities';
 import { recordError } from '../lib/diagnostics';
 import { formatClock, languageName } from '../lib/format';
 import { sizedImage } from '../lib/images';
-import { useMovie } from '../lib/queries';
+import { invalidateShows, useEpisode, useMovie } from '../lib/queries';
 import { isTvMode, remoteKey, type RemoteKey } from '../lib/tv';
 
 interface StartOptions {
@@ -22,6 +23,8 @@ interface StartOptions {
 }
 
 const PROGRESS_INTERVAL_MS = 10_000;
+/** Countdown before the next episode starts on its own. */
+const UP_NEXT_SECONDS = 10;
 const HIDE_CONTROLS_MS = 3000;
 /** Generous: a slow server may need a while to produce the first transcoded segment. */
 const STARTUP_TIMEOUT_MS = 45_000;
@@ -40,13 +43,55 @@ function report(event: 'start' | 'progress' | 'stop', body: PlaybackReport) {
   );
 }
 
-export default function PlayerPage({ prefs }: { prefs: Preferences }) {
+export default function PlayerPage({
+  prefs,
+  kind = 'movie',
+}: {
+  prefs: Preferences;
+  kind?: 'movie' | 'episode';
+}) {
   const { id = '' } = useParams();
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const location = useLocation();
   const qc = useQueryClient();
-  const movie = useMovie(id);
+  const movie = useMovie(id, kind === 'movie');
+  const episode = useEpisode(id, kind === 'episode');
+  const nextEpisodeId = kind === 'episode' ? (episode.data?.nextId ?? null) : null;
+  const nextEpisode = useEpisode(nextEpisodeId ?? '', nextEpisodeId !== null);
+  // Read by the 'ended' handler, which is attached once per stream.
+  const nextEpisodeRef = useRef<string | null>(null);
+  useEffect(() => {
+    nextEpisodeRef.current = nextEpisodeId;
+  }, [nextEpisodeId]);
+  /** "Next episode in N seconds", for the episode that just ended (`from`). */
+  const [upNext, setUpNext] = useState<{ from: string; to: string; seconds: number } | null>(null);
+  const upNextActive = upNext !== null && upNext.from === id;
+
+  /** What is playing, for the title bar, lock screen and poster frame. */
+  const display = useMemo(() => {
+    if (kind === 'episode') {
+      const e = episode.data;
+      if (!e) return null;
+      const label = episodeLabel(e);
+      return {
+        title: e.showTitle,
+        subtitle: label ? `${label} · ${e.title}` : e.title,
+        mediaTitle: e.title,
+        artist: [e.showTitle, label].filter(Boolean).join(' · '),
+        art: e.image ?? e.backdrop,
+      };
+    }
+    const m = movie.data;
+    if (!m) return null;
+    return {
+      title: m.title,
+      subtitle: null,
+      mediaTitle: m.title,
+      artist: m.directors.join(', '),
+      art: m.images.backdrop ?? m.images.poster,
+    };
+  }, [kind, episode.data, movie.data]);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -121,14 +166,14 @@ export default function PlayerPage({ prefs }: { prefs: Preferences }) {
       } catch (err) {
         const message =
           err instanceof ApiError && err.code === 'MEDIA_SERVER_UNREACHABLE'
-            ? 'Jellyfin is not responding, so this movie can’t be played right now.'
+            ? `Jellyfin is not responding, so this ${kind === 'episode' ? 'episode' : 'movie'} can’t be played right now.`
             : errorMessage(err);
         recordError(`Playback negotiation failed: ${message}`);
         setError(message);
         setLoading(false);
       }
     },
-    [id, stopReport],
+    [id, kind, stopReport],
   );
 
   useEffect(() => {
@@ -249,6 +294,7 @@ export default function PlayerPage({ prefs }: { prefs: Preferences }) {
       // Watch state changes once Jellyfin has processed the stop; refresh views after that.
       void stopped.finally(() => {
         void qc.invalidateQueries({ queryKey: ['movie', id] });
+        invalidateShows(qc);
         void qc.invalidateQueries({ queryKey: ['home'] });
         void qc.invalidateQueries({ queryKey: ['movies'] });
         void qc.invalidateQueries({ queryKey: ['collection'] });
@@ -340,6 +386,9 @@ export default function PlayerPage({ prefs }: { prefs: Preferences }) {
     const onEnded = () => {
       setPlaying(false);
       void stopReport();
+      const next = nextEpisodeRef.current;
+      const from = infoRef.current?.itemId;
+      if (next && from) setUpNext({ from, to: next, seconds: UP_NEXT_SECONDS });
     };
     const onError = () => {
       const i = infoRef.current;
@@ -456,10 +505,35 @@ export default function PlayerPage({ prefs }: { prefs: Preferences }) {
     return () => document.removeEventListener('fullscreenchange', onChange);
   }, []);
 
+  const showId = episode.data?.showId;
   const goBack = useCallback(() => {
     if (location.key !== 'default') navigate(-1);
+    else if (kind === 'episode') navigate(showId ? `/show/${showId}` : '/shows', { replace: true });
     else navigate(`/movie/${id}`, { replace: true });
-  }, [location.key, navigate, id]);
+  }, [location.key, navigate, id, kind, showId]);
+
+  /** The next episode, from where it was left off if it was started before. */
+  const nextResume = nextEpisode.data?.user.played
+    ? 0
+    : (nextEpisode.data?.user.positionSeconds ?? 0);
+  const nextHref = useCallback(
+    (to: string) => `/play/episode/${to}?t=${Math.floor(nextResume)}`,
+    [nextResume],
+  );
+
+  // Count down to the next episode, then play it in place of this one.
+  useEffect(() => {
+    if (!upNext || upNext.from !== id) return;
+    if (upNext.seconds <= 0) {
+      navigate(nextHref(upNext.to), { replace: true });
+      return;
+    }
+    const timer = window.setTimeout(
+      () => setUpNext((u) => (u ? { ...u, seconds: u.seconds - 1 } : u)),
+      1000,
+    );
+    return () => window.clearTimeout(timer);
+  }, [upNext, id, navigate, nextHref]);
 
   const cycleSubtitles = useCallback(() => {
     if (!info) return;
@@ -588,7 +662,8 @@ export default function PlayerPage({ prefs }: { prefs: Preferences }) {
           cycleSubtitles();
           break;
         case 'Escape':
-          if (menu) setMenu(null);
+          if (upNextActive) setUpNext(null);
+          else if (menu) setMenu(null);
           else if (!document.fullscreenElement) goBack();
           else handled = false;
           break;
@@ -612,16 +687,16 @@ export default function PlayerPage({ prefs }: { prefs: Preferences }) {
     showControls,
     menu,
     handleRemoteKey,
+    upNextActive,
   ]);
 
   // Lock-screen / headset controls.
   useEffect(() => {
-    if (!('mediaSession' in navigator) || !movie.data) return;
-    const m = movie.data;
-    const art = m.images.backdrop ?? m.images.poster;
+    if (!('mediaSession' in navigator) || !display) return;
+    const art = display.art;
     navigator.mediaSession.metadata = new MediaMetadata({
-      title: m.title,
-      artist: m.directors.join(', '),
+      title: display.mediaTitle,
+      artist: display.artist,
       artwork: art ? [{ src: sizedImage(art, 512) ?? art, sizes: '512x512' }] : [],
     });
     const handlers: [MediaSessionAction, MediaSessionActionHandler][] = [
@@ -646,7 +721,7 @@ export default function PlayerPage({ prefs }: { prefs: Preferences }) {
         }
       }
     };
-  }, [movie.data, seekBy]);
+  }, [display, seekBy]);
 
   // ---------------------------------------------------------------------------
   // Track switching
@@ -703,8 +778,8 @@ export default function PlayerPage({ prefs }: { prefs: Preferences }) {
 
   // ---------------------------------------------------------------------------
 
-  const m = movie.data;
-  const poster = m ? sizedImage(m.images.backdrop ?? m.images.poster, 1280) : undefined;
+  const poster = display ? sizedImage(display.art, 1280) : undefined;
+  const next = nextEpisode.data;
   const remaining = Math.max(0, totalDuration - current);
 
   return (
@@ -778,10 +853,35 @@ export default function PlayerPage({ prefs }: { prefs: Preferences }) {
         </div>
       )}
 
+      {upNextActive && (
+        <div className="player__upnext" role="status" aria-live="polite">
+          <p className="player__upnext-label">Next episode in {upNext.seconds} s</p>
+          <p className="player__upnext-title">
+            {next
+              ? [episodeLabel(next), next.title].filter(Boolean).join(' · ')
+              : 'Loading the next episode…'}
+          </p>
+          <div className="button-row">
+            <Button
+              variant="primary"
+              icon="play"
+              autoFocus
+              onClick={() => navigate(nextHref(upNext.to), { replace: true })}
+            >
+              Play now
+            </Button>
+            <Button variant="ghost" onClick={() => setUpNext(null)}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
+
       <div className="player__top">
         <IconButton icon="chevronLeft" label="Back" size={26} onClick={goBack} />
         <div className="player__title">
-          <span>{m?.title ?? ''}</span>
+          <span>{display?.title ?? ''}</span>
+          {display?.subtitle && <span className="player__subtitle">{display.subtitle}</span>}
           {info && (
             <span className="player__badges">
               {info.isSample && (

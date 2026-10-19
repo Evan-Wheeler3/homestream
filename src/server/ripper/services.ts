@@ -38,8 +38,21 @@ export class JellyfinAdmin {
   }
 
   /** Look a title up in Jellyfin's metadata providers (TMDB etc). */
-  async searchMovies(name: string, year?: number | null): Promise<RipCandidate[]> {
-    const response = await this.request('/Items/RemoteSearch/Movie', {
+  searchMovies(name: string, year?: number | null): Promise<RipCandidate[]> {
+    return this.remoteSearch('Movie', name, year);
+  }
+
+  /** Look a TV show up in Jellyfin's metadata providers. */
+  searchShows(name: string, year?: number | null): Promise<RipCandidate[]> {
+    return this.remoteSearch('Series', name, year);
+  }
+
+  private async remoteSearch(
+    type: 'Movie' | 'Series',
+    name: string,
+    year?: number | null,
+  ): Promise<RipCandidate[]> {
+    const response = await this.request(`/Items/RemoteSearch/${type}`, {
       method: 'POST',
       body: {
         SearchInfo: { Name: name, ...(year ? { Year: year } : {}) },
@@ -79,10 +92,35 @@ export class JellyfinAdmin {
   }
 
   /** Find the movie Jellyfin created for a file, by its folder name. */
-  async findMovieByFolder(searchTitle: string, folder: string): Promise<string | null> {
+  findMovieByFolder(searchTitle: string, folder: string): Promise<string | null> {
+    return this.findByFolder('Movie', searchTitle, folder);
+  }
+
+  /** Find the show Jellyfin created for a folder of episodes. */
+  findShowByFolder(searchTitle: string, folder: string): Promise<string | null> {
+    return this.findByFolder('Series', searchTitle, folder);
+  }
+
+  /** Folders of Jellyfin's libraries of one kind (e.g. "tvshows"). */
+  async libraryFolders(collectionType: string): Promise<string[]> {
+    const response = await this.request('/Library/VirtualFolders');
+    const libraries = (await response.json()) as {
+      CollectionType?: string;
+      Locations?: string[];
+    }[];
+    return (Array.isArray(libraries) ? libraries : [])
+      .filter((l) => l.CollectionType === collectionType)
+      .flatMap((l) => l.Locations ?? []);
+  }
+
+  private async findByFolder(
+    type: 'Movie' | 'Series',
+    searchTitle: string,
+    folder: string,
+  ): Promise<string | null> {
     const params = new URLSearchParams({
       Recursive: 'true',
-      IncludeItemTypes: 'Movie',
+      IncludeItemTypes: type,
       Fields: 'Path',
       SearchTerm: searchTitle,
       Limit: '50',

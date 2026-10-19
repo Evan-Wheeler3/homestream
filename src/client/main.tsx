@@ -7,6 +7,7 @@ import './styles/components.css';
 import './styles/layout.css';
 import './styles/pages.css';
 import './styles/player.css';
+import './styles/shows.css';
 import './styles/tv.css';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';

@@ -8,6 +8,7 @@ import type {
   PlaybackRequest,
   ServerStatus,
   SessionInfo,
+  ShowsPayload,
   SortField,
 } from '../../shared/types.js';
 import {
@@ -359,6 +360,40 @@ export function apiRouter(deps: ApiDeps): Router {
     );
   }
 
+  // TV shows -------------------------------------------------------------------
+
+  router.get(
+    '/shows',
+    route(async (req): Promise<ShowsPayload> => {
+      const ctx = ctxOf(req);
+      const [shows, nextUp] = await Promise.all([provider.listShows(ctx), provider.nextUp(ctx)]);
+      return { shows, nextUp };
+    }),
+  );
+
+  router.get(
+    '/shows/:id',
+    route(async (req) => {
+      const show = await provider.getShow(ctxOf(req), itemId(req));
+      if (!show) throw notFound('Show not found');
+      return show;
+    }),
+  );
+
+  router.get(
+    '/episodes/:id',
+    route(async (req) => {
+      const episode = await provider.getEpisode(ctxOf(req), itemId(req));
+      if (!episode) throw notFound('Episode not found');
+      return episode;
+    }),
+  );
+
+  router.put(
+    '/episodes/:id/played',
+    route((req) => provider.setPlayed(ctxOf(req), itemId(req), Boolean(req.body?.played))),
+  );
+
   // Home ----------------------------------------------------------------------
 
   router.get(
@@ -587,6 +622,39 @@ export function apiRouter(deps: ApiDeps): Router {
       }),
     );
     router.post(
+      '/rips/:id/episodes',
+      ripAction((req) => {
+        const body = (req.body ?? {}) as Record<string, unknown>;
+        const show = (body.show ?? {}) as Record<string, unknown>;
+        const text = (v: unknown) => (typeof v === 'string' ? v.slice(0, 200) : null);
+        if (typeof show.title !== 'string') throw badRequest('Enter the show’s name.');
+        if (!Array.isArray(body.episodes)) throw badRequest('Pick the episodes to rip.');
+        return toPublicJob(
+          ripper.ripEpisodes(ripId(req), {
+            show: {
+              title: show.title,
+              year: typeof show.year === 'number' ? show.year : null,
+              tmdbId: text(show.tmdbId),
+              imdbId: text(show.imdbId),
+            },
+            season: Number(body.season),
+            episodes: (body.episodes as unknown[]).slice(0, 100).map((e) => {
+              const ep = (e ?? {}) as Record<string, unknown>;
+              return { titleIndex: Number(ep.titleIndex), episode: Number(ep.episode) };
+            }),
+          }),
+        );
+      }),
+    );
+    router.post(
+      '/rips/:id/kind',
+      ripAction(async (req) => {
+        const kind = (req.body as { kind?: unknown })?.kind;
+        if (kind !== 'tv' && kind !== 'movie') throw badRequest('Choose movie or TV.');
+        return toPublicJob(await ripper.setKind(ripId(req), kind));
+      }),
+    );
+    router.post(
       '/rips/:id/retry',
       ripAction((req) => toPublicJob(ripper.retry(ripId(req)))),
     );
@@ -602,7 +670,7 @@ export function apiRouter(deps: ApiDeps): Router {
       ripAction(async (req) => {
         const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
         if (!q) throw badRequest('Type a title to search for.');
-        return { results: await ripper.search(q) };
+        return { results: await ripper.search(q, req.query.kind === 'tv' ? 'tv' : 'movie') };
       }),
     );
     router.post(

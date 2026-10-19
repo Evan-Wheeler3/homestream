@@ -109,7 +109,8 @@
     inset: auto 0 0;
     z-index: var(--z-nav);
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-auto-columns: 1fr;
+    grid-auto-flow: column;
     height: calc(var(--tabbar-height) + var(--safe-bottom));
     padding-bottom: var(--safe-bottom);
     background: color-mix(in oklab, var(--bg) 95%, transparent);

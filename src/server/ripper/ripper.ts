@@ -1,19 +1,27 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { RipCandidate, RipDiscTitle, RipperHealth } from '../../shared/types.js';
+import type {
+  RipCandidate,
+  RipDiscTitle,
+  RipEpisode,
+  RipKind,
+  RipperHealth,
+} from '../../shared/types.js';
 import { nowIso } from '../db.js';
 import { encodeArgs, parseEncodeProgress, parseScanDuration } from './handbrake.js';
 import type { JobRecord, RipJobStore } from './jobs.js';
 import {
   chooseMainTitle,
+  classifyDisc,
   DRIVE_INSERTED,
   parseDiscInfo,
   parseDrives,
   parseMessages,
+  parsePhase,
   parseProgress,
   type DiscTitle,
 } from './makemkv.js';
-import { guessTitle, identify, movieFileNames } from './naming.js';
+import { episodeFileNames, guessTitle, guessTv, identify, movieFileNames } from './naming.js';
 import type { Runner } from './process.js';
 import type { JellyfinAdmin, Notifier } from './services.js';
 
@@ -21,6 +29,8 @@ export interface RipperConfig {
   enabled: boolean;
   ripsDir: string;
   moviesDir: string;
+  /** Where TV episodes are filed (Jellyfin "Shows" library). */
+  tvDir: string;
   /** Where discs appear when inserted (/Volumes on a Mac). */
   volumesDir: string;
   makemkvcon: string;
@@ -29,6 +39,8 @@ export interface RipperConfig {
   quality: number;
   minMinutes: number;
   minFreeGb: number;
+  /** Quit the Mac's DVD Player, which opens and starts playing when a DVD is inserted. */
+  closeDvdPlayer: boolean;
   ntfyServer: string;
   ntfyTopic: string | null;
   /** Address used in notification links, e.g. http://wheelhouse.local:8787 */
@@ -82,6 +94,8 @@ export class Ripper {
   private encoderBusy = false;
   private polling = false;
   private stopped = true;
+  /** Set when Jellyfin has no Shows library for the TV folder (checked in the background). */
+  private tvLibraryWarning: string | null = null;
   private readonly log: Pick<Console, 'info' | 'warn' | 'error'>;
 
   constructor(private readonly deps: RipperDeps) {
@@ -102,6 +116,25 @@ export class Ripper {
     void this.poll();
     this.timer = setInterval(() => void this.poll(), this.config.pollMs);
     this.kickEncoder();
+    void this.checkTvLibrary();
+  }
+
+  /** Warn when Jellyfin has no Shows library that covers the TV folder. */
+  private async checkTvLibrary() {
+    if (!this.deps.jellyfin) return;
+    try {
+      const folders = await this.deps.jellyfin.libraryFolders('tvshows');
+      const tv = path.resolve(this.config.tvDir);
+      const covered = folders.some((f) => {
+        const rel = path.relative(path.resolve(f), tv);
+        return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+      });
+      this.tvLibraryWarning = covered
+        ? null
+        : `Jellyfin has no Shows library for ${this.config.tvDir}, so ripped TV episodes won’t appear. In Jellyfin: Dashboard → Libraries → Add Media Library → Shows, folder ${this.config.tvDir}.`;
+    } catch (error) {
+      this.log.warn('Could not check Jellyfin’s libraries:', describe(error));
+    }
   }
 
   stop() {
@@ -137,6 +170,7 @@ export class Ripper {
     for (const [label, dir] of [
       ['Rips', c.ripsDir],
       ['Movies', c.moviesDir],
+      ...(fs.existsSync(c.tvDir) ? [['TV', c.tvDir] as const] : []),
     ] as const) {
       try {
         fs.accessSync(dir, fs.constants.W_OK);
@@ -155,6 +189,7 @@ export class Ripper {
       );
     }
     if (!c.ntfyTopic) warnings.push('Phone notifications are off (no ntfy topic set).');
+    if (this.tvLibraryWarning) warnings.push(this.tvLibraryWarning);
     return {
       enabled: true,
       problems,
@@ -195,9 +230,14 @@ export class Ripper {
         if (!mounts.has(mount)) this.seenMounts.delete(mount);
 
       // A disc waiting for a title choice was taken out: nothing more can be done.
-      for (const job of this.deps.jobs.withStatus('needs_choice')) {
+      for (const job of this.deps.jobs.withStatus('needs_choice', 'needs_episodes')) {
         if (!mounts.has(job.mountPath)) {
-          this.fail(job, 'The disc was removed before a title was chosen. Insert it again.');
+          this.fail(
+            job,
+            job.status === 'needs_episodes'
+              ? 'The disc was removed before the episodes were confirmed. Insert it again.'
+              : 'The disc was removed before a title was chosen. Insert it again.',
+          );
         }
       }
 
@@ -206,7 +246,7 @@ export class Ripper {
         if (this.seenMounts.has(disc.mount)) continue;
         this.seenMounts.add(disc.mount);
         const waiting = this.deps.jobs
-          .withStatus('needs_choice')
+          .withStatus('needs_choice', 'needs_episodes')
           .find((j) => j.mountPath === disc.mount);
         if (waiting) continue;
         const recent = this.deps.jobs.recentForLabel(disc.label, RECENT_DISC_MS);
@@ -230,11 +270,19 @@ export class Ripper {
   private async runDisc(id: string, chosenIndex?: number) {
     this.discBusy = true;
     try {
+      await this.closeDvdPlayer();
       let job = this.deps.jobs.get(id)!;
       let title: DiscTitle | RipDiscTitle | undefined;
       if (chosenIndex === undefined) {
         const scan = await this.scan(job);
         job = scan.job;
+        const disc = classifyDisc(scan.titles);
+        if (disc.kind === 'tv') {
+          await this.askForEpisodes(job, disc.episodes);
+          return;
+        }
+        await this.identify(job, job.guess ?? job.discLabel);
+        job = this.deps.jobs.get(id)!;
         const choice = chooseMainTitle(scan.titles, this.config.minMinutes);
         if (choice.kind === 'ambiguous') {
           this.deps.jobs.update(id, {
@@ -293,8 +341,7 @@ export class Ripper {
       guess,
       discTitles: info.titles.map(publicTitle),
     });
-    await this.identify(updated, guess);
-    return { job: jobs.get(job.id)!, titles: info.titles };
+    return { job: updated, titles: info.titles };
   }
 
   /** Look the guessed title up; fill in the movie if the match is certain. */
@@ -320,10 +367,245 @@ export class Ripper {
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // TV discs: confirm the show, season and episodes, then rip each episode
+
+  /** Suggest the show, season and episode numbers, and wait for the user to confirm. */
+  private async askForEpisodes(job: JobRecord, episodes: (DiscTitle | RipDiscTitle)[]) {
+    const { jobs } = this.deps;
+    const tv = guessTv(job.discName, job.discLabel);
+    let show: RipCandidate | null = null;
+    let candidates: RipCandidate[] = [];
+    if (this.deps.jellyfin) {
+      try {
+        const outcome = identify(tv.show, await this.deps.jellyfin.searchShows(tv.show), 'show');
+        if (outcome.kind === 'confident') show = outcome.match;
+        candidates = outcome.kind === 'confident' ? [outcome.match] : outcome.candidates;
+      } catch (error) {
+        this.log.warn(`Show lookup failed for “${tv.show}”:`, describe(error));
+      }
+    }
+    const season = tv.season ?? 1;
+    // Carry on from the last disc of this season; failing that, guess from the disc number.
+    const previous = jobs.lastEpisode(
+      { title: show?.title ?? tv.show, tmdbId: show?.tmdbId ?? null },
+      season,
+    );
+    const first =
+      previous > 0
+        ? previous + 1
+        : tv.disc && tv.disc > 1
+          ? (tv.disc - 1) * episodes.length + 1
+          : 1;
+    const message = 'Check the show, season and episode numbers, then start ripping.';
+    const updated = jobs.update(job.id, {
+      kind: 'tv',
+      status: 'needs_episodes',
+      guess: tv.show,
+      title: show?.title ?? null,
+      year: show?.year ?? null,
+      tmdbId: show?.tmdbId ?? null,
+      imdbId: show?.imdbId ?? null,
+      candidates,
+      season,
+      episodes: [...episodes]
+        .sort((a, b) => a.index - b.index)
+        .map((t, i) => ({
+          titleIndex: t.index,
+          durationSeconds: t.durationSeconds,
+          episode: first + i,
+          state: 'pending' as const,
+          path: null,
+        })),
+      message,
+      progress: null,
+    });
+    await this.notify(updated, 'needs a hand', message);
+  }
+
+  /** The user confirmed a TV disc: rip the chosen titles as these episodes. */
+  ripEpisodes(
+    id: string,
+    input: {
+      show: RipCandidate;
+      season: number;
+      episodes: { titleIndex: number; episode: number }[];
+    },
+  ) {
+    const job = this.requireJob(id);
+    if (job.status !== 'needs_episodes' && job.status !== 'needs_choice') {
+      throw new UserError('This disc isn’t waiting for episodes to be chosen.');
+    }
+    const title = input.show.title.trim();
+    if (!title) throw new UserError('Enter the show’s name.');
+    if (!Number.isInteger(input.season) || input.season < 0 || input.season > 99) {
+      throw new UserError('Enter a season number between 0 and 99.');
+    }
+    if (input.episodes.length === 0) throw new UserError('Pick at least one episode to rip.');
+    const numbers = new Set<number>();
+    const titles = new Set<number>();
+    for (const ep of input.episodes) {
+      if (!job.discTitles.some((t) => t.index === ep.titleIndex)) {
+        throw new UserError('That title is not on this disc.');
+      }
+      if (!Number.isInteger(ep.episode) || ep.episode < 1 || ep.episode > 999) {
+        throw new UserError('Episode numbers must be whole numbers from 1.');
+      }
+      if (numbers.has(ep.episode)) throw new UserError(`Episode ${ep.episode} is used twice.`);
+      if (titles.has(ep.titleIndex)) throw new UserError('Each title can only be one episode.');
+      numbers.add(ep.episode);
+      titles.add(ep.titleIndex);
+    }
+    if (this.discBusy) throw new UserError('The drive is busy with another disc.');
+    if (!fs.existsSync(job.mountPath)) throw new UserError('The disc is no longer in the drive.');
+    const year =
+      input.show.year && input.show.year > 1880 && input.show.year < 2100
+        ? Math.round(input.show.year)
+        : null;
+    this.deps.jobs.update(id, {
+      kind: 'tv',
+      title,
+      year,
+      tmdbId: input.show.tmdbId && /^\d+$/.test(input.show.tmdbId) ? input.show.tmdbId : null,
+      imdbId: input.show.imdbId && /^tt\d+$/.test(input.show.imdbId) ? input.show.imdbId : null,
+      season: input.season,
+      episodes: [...input.episodes]
+        .sort((a, b) => a.episode - b.episode)
+        .map((ep) => ({
+          titleIndex: ep.titleIndex,
+          durationSeconds:
+            job.discTitles.find((t) => t.index === ep.titleIndex)?.durationSeconds ?? 0,
+          episode: ep.episode,
+          state: 'pending',
+          path: null,
+        })),
+      status: 'ripping',
+      message: null,
+      progress: 0,
+    });
+    void this.runEpisodes(id);
+    return this.deps.jobs.get(id)!;
+  }
+
+  /** Correct a wrong guess: treat a waiting disc as a movie or as TV episodes. */
+  async setKind(id: string, kind: RipKind) {
+    const job = this.requireJob(id);
+    if (job.status !== 'needs_episodes' && job.status !== 'needs_choice') {
+      throw new UserError('This disc can only be changed while it waits for you.');
+    }
+    if (kind === 'tv') {
+      if (job.status === 'needs_episodes') return job;
+      const titles = job.discTitles.map((t) => ({
+        ...t,
+        name: '',
+        segments: '',
+        outputFile: '',
+      }));
+      const disc = classifyDisc(titles);
+      const episodes =
+        disc.kind === 'tv'
+          ? disc.episodes
+          : titles.filter((t) => t.durationSeconds >= 10 * 60 && t.durationSeconds <= 75 * 60);
+      await this.askForEpisodes(job, episodes);
+    } else {
+      if (job.status === 'needs_choice') return job;
+      this.deps.jobs.update(id, {
+        kind: 'movie',
+        status: 'needs_choice',
+        season: null,
+        episodes: [],
+        title: null,
+        year: null,
+        tmdbId: null,
+        imdbId: null,
+        candidates: [],
+        guess: guessTitle(job.discName, job.discLabel),
+        discTitles: [...job.discTitles].sort((a, b) => b.durationSeconds - a.durationSeconds),
+        message: 'Pick the movie’s title on the disc.',
+      });
+    }
+    return this.deps.jobs.get(id)!;
+  }
+
+  private async runEpisodes(id: string) {
+    this.discBusy = true;
+    try {
+      await this.ripEachEpisode(this.deps.jobs.get(id)!);
+    } catch (error) {
+      this.fail(this.deps.jobs.get(id)!, describe(error));
+    } finally {
+      this.discBusy = false;
+    }
+    void this.poll();
+  }
+
+  private async ripEachEpisode(job: JobRecord) {
+    const { run, jobs } = this.deps;
+    const c = this.config;
+    this.ensureFreeSpace();
+    await this.closeDvdPlayer();
+    const episodes = job.episodes.map((ep) => ({ ...ep }));
+    const todo = episodes.filter((ep) => ep.state === 'pending');
+    const progress = this.progressWriter(job.id);
+    for (const [i, ep] of todo.entries()) {
+      const dir = this.episodeDir(job.id, ep);
+      fs.rmSync(dir, { recursive: true, force: true });
+      fs.mkdirSync(dir, { recursive: true });
+      const label = `Episode ${ep.episode} (${i + 1} of ${todo.length})`;
+      jobs.update(job.id, { message: label });
+      progress.reset();
+      const result = await run(
+        c.makemkvcon,
+        [
+          '-r',
+          '--progress=-same',
+          'mkv',
+          `disc:${job.driveIndex ?? 0}`,
+          String(ep.titleIndex),
+          dir,
+        ],
+        {
+          onLine: (line) => {
+            const phase = parsePhase(line);
+            if (phase !== null) {
+              // Each phase counts from 0 again (see rip()).
+              progress.reset();
+              jobs.update(job.id, { message: phase ? `${label} · ${phase}` : label });
+              return;
+            }
+            const p = parseProgress(line);
+            if (p !== null) progress((i + p) / todo.length);
+          },
+        },
+      );
+      if (result.signal) {
+        throw new UserError(
+          `MakeMKV was stopped (${result.signal}) before it finished. Insert the disc again to start over.`,
+        );
+      }
+      if (result.code !== 0 || !this.findFile(dir, '.mkv')) {
+        const why = parseMessages(result.output).slice(-2).join(' ');
+        throw new UserError(`Ripping episode ${ep.episode} failed. ${why}`.trim());
+      }
+      ep.state = 'ripped';
+      jobs.update(job.id, { episodes });
+    }
+
+    await this.eject(job.mountPath);
+    jobs.update(job.id, { status: 'ripped', progress: null, message: 'Waiting to be compressed' });
+    this.kickEncoder();
+  }
+
+  private episodeDir(id: string, ep: RipEpisode) {
+    return path.join(this.jobDir(id), `episode-${ep.titleIndex}`);
+  }
+
   private async rip(job: JobRecord, title: DiscTitle | RipDiscTitle) {
     const { run, jobs } = this.deps;
     const c = this.config;
     this.ensureFreeSpace();
+    // Again, in case DVD Player opened after the disc was first noticed.
+    await this.closeDvdPlayer();
     const dir = this.jobDir(job.id);
     fs.mkdirSync(dir, { recursive: true });
     jobs.update(job.id, {
@@ -340,11 +622,24 @@ export class Ripper {
       ['-r', '--progress=-same', 'mkv', `disc:${job.driveIndex ?? 0}`, String(title.index), dir],
       {
         onLine: (line) => {
+          const phase = parsePhase(line);
+          if (phase !== null) {
+            // Each phase counts from 0 again; without this the bar sticks at 100%
+            // after the disc is opened, while the movie is still being copied.
+            progress.reset();
+            jobs.update(job.id, { progress: 0, message: phase || null });
+            return;
+          }
           const p = parseProgress(line);
           if (p !== null) progress(p);
         },
       },
     );
+    if (result.signal) {
+      throw new UserError(
+        `MakeMKV was stopped (${result.signal}) before it finished. Insert the disc again to start over.`,
+      );
+    }
     const mkv = this.findFile(dir, '.mkv');
     if (result.code !== 0 || !mkv) {
       const why = parseMessages(result.output).slice(-2).join(' ');
@@ -354,6 +649,20 @@ export class Ripper {
     await this.eject(job.mountPath);
     jobs.update(job.id, { status: 'ripped', progress: null, message: 'Waiting to be compressed' });
     this.kickEncoder();
+  }
+
+  /**
+   * macOS opens DVD Player when a video DVD is inserted, and it holds the drive
+   * while MakeMKV reads. Quit it (nothing happens if it isn't running).
+   */
+  private async closeDvdPlayer() {
+    if (!this.config.closeDvdPlayer) return;
+    try {
+      const result = await this.deps.run('/usr/bin/pkill', ['-x', 'DVD Player']);
+      if (result.code === 0) this.log.info('Closed DVD Player so it doesn’t hold the drive.');
+    } catch (error) {
+      this.log.warn('Could not close DVD Player:', describe(error));
+    }
   }
 
   private async eject(mount: string) {
@@ -388,16 +697,51 @@ export class Ripper {
   }
 
   private async encode(job: JobRecord) {
-    const { run, jobs } = this.deps;
-    const c = this.config;
+    if (job.kind === 'tv') return this.encodeEpisodes(job);
+    const { jobs } = this.deps;
     const dir = this.jobDir(job.id);
     const mkv = this.findFile(dir, '.mkv');
     if (!mkv) throw new UserError('The ripped file is missing from the Rips folder.');
-    const output = path.join(dir, 'compressed.mp4');
-    fs.rmSync(output, { force: true });
     jobs.update(job.id, { status: 'encoding', progress: 0, message: null });
-
     const progress = this.progressWriter(job.id);
+    await this.compress(mkv, path.join(dir, 'compressed.mp4'), job.sourceSeconds ?? 0, progress);
+    jobs.update(job.id, { status: 'filing', progress: null, message: null });
+    await this.finish(job.id);
+  }
+
+  private async encodeEpisodes(job: JobRecord) {
+    const { jobs } = this.deps;
+    const episodes = job.episodes.map((ep) => ({ ...ep }));
+    const todo = episodes.filter((ep) => ep.state === 'ripped');
+    jobs.update(job.id, { status: 'encoding', progress: 0, message: null });
+    const progress = this.progressWriter(job.id);
+    for (const [i, ep] of todo.entries()) {
+      const dir = this.episodeDir(job.id, ep);
+      const mkv = this.findFile(dir, '.mkv');
+      if (!mkv) {
+        throw new UserError(`The rip of episode ${ep.episode} is missing from the Rips folder.`);
+      }
+      jobs.update(job.id, { message: `Episode ${ep.episode} (${i + 1} of ${todo.length})` });
+      await this.compress(mkv, path.join(dir, 'compressed.mp4'), ep.durationSeconds, (p) =>
+        progress((i + p) / todo.length),
+      );
+      ep.state = 'encoded';
+      jobs.update(job.id, { episodes });
+    }
+    jobs.update(job.id, { status: 'filing', progress: null, message: null });
+    await this.finish(job.id);
+  }
+
+  /** Compress one rip with HandBrake and check the result is complete. */
+  private async compress(
+    mkv: string,
+    output: string,
+    expectedSeconds: number,
+    progress: (p: number) => void,
+  ) {
+    const { run } = this.deps;
+    const c = this.config;
+    fs.rmSync(output, { force: true });
     try {
       const result = await run(c.handbrakeCli, encodeArgs(mkv, output, c.preset, c.quality), {
         onLine: (line) => {
@@ -407,22 +751,21 @@ export class Ripper {
       });
       if (result.code !== 0 || !fs.existsSync(output)) {
         const tail = result.output.trim().split(/\r?\n/).slice(-1)[0] ?? '';
-        throw new UserError(`HandBrake couldn’t compress the movie. ${tail}`.trim());
+        throw new UserError(`HandBrake couldn’t compress the video. ${tail}`.trim());
       }
 
       // Check the result is complete before the original is deleted.
       const scan = await run(c.handbrakeCli, ['--scan', '-i', output]);
       const seconds = parseScanDuration(scan.output);
-      const expected = job.sourceSeconds ?? 0;
       const size = fs.statSync(output).size;
-      const tolerance = Math.max(60, expected * 0.02);
+      const tolerance = Math.max(60, expectedSeconds * 0.02);
       if (
         !seconds ||
         size < 1_000_000 ||
-        (expected > 0 && Math.abs(seconds - expected) > tolerance)
+        (expectedSeconds > 0 && Math.abs(seconds - expectedSeconds) > tolerance)
       ) {
         throw new UserError(
-          `The compressed movie looks incomplete (${Math.round((seconds ?? 0) / 60)} of ${Math.round(expected / 60)} minutes). The original rip is kept, so you can retry.`,
+          `The compressed video looks incomplete (${Math.round((seconds ?? 0) / 60)} of ${Math.round(expectedSeconds / 60)} minutes). The original rip is kept, so you can retry.`,
         );
       }
     } catch (error) {
@@ -430,9 +773,6 @@ export class Ripper {
       fs.rmSync(output, { force: true });
       throw error;
     }
-
-    jobs.update(job.id, { status: 'filing', progress: null, message: null });
-    await this.finish(job.id);
   }
 
   // ---------------------------------------------------------------------------
@@ -442,7 +782,9 @@ export class Ripper {
     let job = this.deps.jobs.get(id);
     if (!job) return;
     try {
-      if (job.status === 'filing') {
+      if (job.status === 'filing' && job.kind === 'tv') {
+        job = this.fileEpisodes(job);
+      } else if (job.status === 'filing') {
         if (!job.title) {
           const reason =
             job.candidates.length > 1
@@ -483,13 +825,7 @@ export class Ripper {
 
     jobs.update(job.id, { message: 'Moving into your Movies folder…' });
     fs.mkdirSync(folder, { recursive: true });
-    try {
-      fs.renameSync(source, target);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'EXDEV') throw error;
-      fs.copyFileSync(source, target);
-      fs.rmSync(source);
-    }
+    moveFile(source, target);
     // The original rip is only removed once the movie is safely in place.
     fs.rmSync(this.jobDir(job.id), { recursive: true, force: true });
     return jobs.update(job.id, {
@@ -499,22 +835,74 @@ export class Ripper {
     });
   }
 
+  /** Move each compressed episode into "TV/Show (Year)/Season NN/Show SNNENN.mp4". */
+  private fileEpisodes(job: JobRecord): JobRecord {
+    const { jobs } = this.deps;
+    if (!job.title || job.season == null) {
+      throw new UserError('This disc has no show and season. Dismiss it and insert it again.');
+    }
+    const names = (ep: RipEpisode) =>
+      episodeFileNames({
+        title: job.title!,
+        year: job.year,
+        tmdbId: job.tmdbId,
+        season: job.season!,
+        episode: ep.episode,
+      });
+    const showDir = path.join(this.config.tvDir, names(job.episodes[0]!).folder);
+    const episodes = job.episodes.map((ep) => ({ ...ep }));
+    const todo = episodes.filter((ep) => ep.state !== 'filed');
+    // Check every episode first, so nothing is half-filed.
+    for (const ep of todo) {
+      const n = names(ep);
+      if (fs.existsSync(path.join(showDir, n.seasonFolder, n.file))) {
+        throw new UserError(
+          `“${n.file}” is already in your TV folder. Move or rename it, then press Retry.`,
+        );
+      }
+      if (!fs.existsSync(path.join(this.episodeDir(job.id, ep), 'compressed.mp4'))) {
+        throw new UserError(
+          `The compressed episode ${ep.episode} is missing from the Rips folder.`,
+        );
+      }
+    }
+    jobs.update(job.id, { message: 'Moving into your TV folder…' });
+    for (const ep of todo) {
+      const n = names(ep);
+      const folder = path.join(showDir, n.seasonFolder);
+      const target = path.join(folder, n.file);
+      fs.mkdirSync(folder, { recursive: true });
+      moveFile(path.join(this.episodeDir(job.id, ep), 'compressed.mp4'), target);
+      ep.state = 'filed';
+      ep.path = target;
+      jobs.update(job.id, { episodes });
+    }
+    // The rips are only removed once every episode is safely in place.
+    fs.rmSync(this.jobDir(job.id), { recursive: true, force: true });
+    return jobs.update(job.id, {
+      status: 'importing',
+      moviePath: showDir,
+      message: 'Adding to Jellyfin…',
+    });
+  }
+
   private async importIntoJellyfin(job: JobRecord) {
     const { jellyfin, jobs } = this.deps;
+    const tv = job.kind === 'tv';
     const label = job.year ? `${job.title} (${job.year})` : job.title!;
     let movieId: string | null = null;
     if (jellyfin) {
       await jellyfin.refreshLibrary();
-      const folder = movieFileNames({
-        title: job.title!,
-        year: job.year,
-        tmdbId: job.tmdbId,
-      }).folder;
+      const folder = tv
+        ? path.basename(job.moviePath ?? '')
+        : movieFileNames({ title: job.title!, year: job.year, tmdbId: job.tmdbId }).folder;
       const deadline = Date.now() + this.config.importTimeoutMs;
       while (!movieId && Date.now() < deadline && !this.stopped) {
         await sleep(this.config.importPollMs);
         try {
-          movieId = await jellyfin.findMovieByFolder(job.title!, folder);
+          movieId = tv
+            ? await jellyfin.findShowByFolder(job.title!, folder)
+            : await jellyfin.findMovieByFolder(job.title!, folder);
         } catch (error) {
           this.log.warn('Checking Jellyfin for the new movie failed:', describe(error));
         }
@@ -528,15 +916,20 @@ export class Ripper {
       message:
         movieId || !jellyfin
           ? null
-          : 'Filed. Jellyfin hasn’t listed it yet; it will appear after its next scan.',
+          : tv
+            ? 'Filed. Jellyfin hasn’t listed the episodes yet; they will appear after its next scan.'
+            : 'Filed. Jellyfin hasn’t listed it yet; it will appear after its next scan.',
       finishedAt: nowIso(),
     });
     const base = this.config.publicUrl;
+    const page = movieId ? (tv ? `/show/${movieId}` : `/movie/${movieId}`) : '/';
     await this.deps.notifier.send({
-      title: '🎬 New on Wheelhouse',
-      message: `${label} is ready to watch.`,
-      click: base ? (movieId ? `${base}/movie/${movieId}` : `${base}/`) : undefined,
-      tags: ['movie_camera'],
+      title: tv ? '📺 New on Wheelhouse' : '🎬 New on Wheelhouse',
+      message: tv
+        ? `${job.title} ${episodeRange(job)} ready to watch.`
+        : `${label} is ready to watch.`,
+      click: base ? `${base}${page}` : undefined,
+      tags: [tv ? 'tv' : 'movie_camera'],
     });
     this.log.info(`Added ${label} (${done.moviePath})`);
   }
@@ -581,6 +974,7 @@ export class Ripper {
   retry(id: string) {
     const job = this.requireJob(id);
     if (job.status !== 'failed') throw new UserError('Only failed rips can be retried.');
+    if (job.kind === 'tv') return this.retryEpisodes(job);
     const dir = this.jobDir(job.id);
     if (fs.existsSync(path.join(dir, 'compressed.mp4'))) {
       // Compression finished; only the last steps need repeating.
@@ -599,6 +993,29 @@ export class Ripper {
     return this.deps.jobs.get(id)!;
   }
 
+  /** Pick a TV disc up where it stopped; finished episodes are never redone. */
+  private retryEpisodes(job: JobRecord) {
+    const { jobs } = this.deps;
+    const at = (...states: RipEpisode['state'][]) =>
+      job.episodes.length > 0 && job.episodes.every((ep) => states.includes(ep.state));
+    if (at('encoded', 'filed')) {
+      jobs.update(job.id, { status: 'filing', message: null });
+      void this.finish(job.id);
+    } else if (at('ripped', 'encoded', 'filed')) {
+      jobs.update(job.id, {
+        status: 'ripped',
+        message: 'Waiting to be compressed',
+        progress: null,
+      });
+      this.kickEncoder();
+    } else {
+      throw new UserError(
+        'Not every episode was saved from this disc. Dismiss this and insert the disc again.',
+      );
+    }
+    return jobs.get(job.id)!;
+  }
+
   dismiss(id: string) {
     const job = this.requireJob(id);
     if (['scanning', 'ripping', 'encoding', 'filing', 'importing'].includes(job.status)) {
@@ -613,10 +1030,11 @@ export class Ripper {
     return this.deps.jobs.list();
   }
 
-  async search(query: string): Promise<RipCandidate[]> {
+  async search(query: string, kind: RipKind = 'movie'): Promise<RipCandidate[]> {
     if (!this.deps.jellyfin)
       throw new UserError('Searching needs a Jellyfin API key (run npm run setup:ripper).');
-    return this.deps.jellyfin.searchMovies(query.trim().slice(0, 120));
+    const q = query.trim().slice(0, 120);
+    return kind === 'tv' ? this.deps.jellyfin.searchShows(q) : this.deps.jellyfin.searchMovies(q);
   }
 
   isUserError(error: unknown): error is Error {
@@ -671,11 +1089,16 @@ export class Ripper {
   /** Throttled progress updates (the database is written at most every 2%). */
   private progressWriter(id: string) {
     let last = -1;
-    return (p: number) => {
+    const write = (p: number) => {
       if (p - last < 0.02 && p < 1) return;
       last = p;
       this.deps.jobs.update(id, { progress: Math.round(p * 1000) / 1000 });
     };
+    /** Start counting again (a new phase whose progress begins at 0). */
+    write.reset = () => {
+      last = -1;
+    };
+    return write;
   }
 
   private fail(job: JobRecord, message: string) {
@@ -696,6 +1119,27 @@ export class Ripper {
       tags: ['warning'],
     });
   }
+}
+
+/** Rename, or copy and delete when the target is on another drive. */
+function moveFile(source: string, target: string) {
+  try {
+    fs.renameSync(source, target);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EXDEV') throw error;
+    fs.copyFileSync(source, target);
+    fs.rmSync(source);
+  }
+}
+
+/** "season 1, episodes 5–8 are" / "season 2, episode 3 is" */
+function episodeRange(job: JobRecord): string {
+  const numbers = job.episodes.map((ep) => ep.episode).sort((a, b) => a - b);
+  const season = `season ${job.season}`;
+  if (numbers.length === 1) return `${season}, episode ${numbers[0]} is`;
+  const consecutive = numbers.every((n, i) => i === 0 || n === numbers[i - 1]! + 1);
+  const list = consecutive ? `${numbers[0]}–${numbers[numbers.length - 1]}` : numbers.join(', ');
+  return `${season}, episodes ${list} are`;
 }
 
 function publicTitle(t: DiscTitle | RipDiscTitle): RipDiscTitle {

@@ -12,6 +12,7 @@ import { IconButton } from './ui';
 const NAV: { to: string; label: string; icon: IconName; end?: boolean }[] = [
   { to: '/', label: 'Home', icon: 'home', end: true },
   { to: '/browse', label: 'Browse', icon: 'grid' },
+  { to: '/shows', label: 'TV Shows', icon: 'tv' },
   { to: '/collections', label: 'Collections', icon: 'stack' },
 ];
 
@@ -196,8 +197,9 @@ export function AppShell({ session, prefs }: { session: SessionInfo; prefs: Pref
       <nav className="tabbar" aria-label="Main">
         {[
           ...NAV.slice(0, 2),
+          { ...NAV[2]!, label: 'TV' },
           { to: '/search', label: 'Search', icon: 'search' as const },
-          NAV[2]!,
+          NAV[3]!,
           { to: '/settings', label: 'Settings', icon: 'settings' as const },
         ].map((item) => (
           <NavLink

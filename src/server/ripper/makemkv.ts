@@ -192,7 +192,18 @@ export function chooseMainTitle(titles: DiscTitle[], minMinutes = 40): TitleChoi
   return { kind: 'main', title: longest };
 }
 
-/** Progress from PRGV lines: current/max as a 0–1 fraction. */
+/**
+ * Name of a new phase from a PRGT line (e.g. "Saving to MKV file"). A rip runs
+ * several phases — opening the disc, then saving — and PRGV progress starts
+ * again from 0 in each one.
+ */
+export function parsePhase(line: string): string | null {
+  const rec = parseLine(line);
+  if (!rec || rec.kind !== 'PRGT') return null;
+  return rec.fields[2] ?? '';
+}
+
+/** Progress from PRGV lines: total/max as a 0–1 fraction of the current phase. */
 export function parseProgress(line: string): number | null {
   const rec = parseLine(line);
   if (!rec || rec.kind !== 'PRGV') return null;
@@ -209,4 +220,63 @@ export function parseMessages(output: string): string[] {
     if (rec?.kind === 'MSG' && rec.fields[3]) messages.push(rec.fields[3]);
   }
   return messages;
+}
+
+export type DiscKind = { kind: 'movie' } | { kind: 'tv'; episodes: DiscTitle[] };
+
+const close = (a: number, b: number) => Math.abs(a - b) <= Math.max(10, b * 0.015);
+
+/**
+ * Whether a disc holds TV episodes rather than a movie, and which titles are the
+ * episodes. A season disc has several titles of about the same episode length,
+ * often with a "play all" title that is just those episodes back to back. A disc
+ * with a long title that isn't a "play all" is a movie (extras are often
+ * episode-length too, so they don't count).
+ */
+export function classifyDisc(
+  titles: DiscTitle[],
+  options: { minEpisodeMinutes?: number; maxEpisodeMinutes?: number; movieMinutes?: number } = {},
+): DiscKind {
+  const minEpisode = (options.minEpisodeMinutes ?? 15) * 60;
+  const maxEpisode = (options.maxEpisodeMinutes ?? 70) * 60;
+  const movie = (options.movieMinutes ?? 75) * 60;
+  const byIndex = [...titles].sort((a, b) => a.index - b.index);
+
+  // Titles that play exactly the same segments are one title (e.g. another angle).
+  const seen = new Set<string>();
+  const unique = byIndex.filter((t) => {
+    if (!t.segments) return true;
+    if (seen.has(t.segments)) return false;
+    seen.add(t.segments);
+    return true;
+  });
+
+  const inRange = unique.filter(
+    (t) => t.durationSeconds >= minEpisode && t.durationSeconds <= maxEpisode,
+  );
+  /** Is `t` the other titles played back to back (a run of 2+ consecutive ones)? */
+  const isPlayAll = (t: DiscTitle) => {
+    const others = inRange.filter((o) => o !== t && o.durationSeconds < t.durationSeconds);
+    for (let start = 0; start < others.length; start++) {
+      let sum = 0;
+      for (let end = start; end < others.length; end++) {
+        sum += others[end]!.durationSeconds;
+        if (end > start && close(t.durationSeconds, sum)) return true;
+        if (sum > t.durationSeconds) break;
+      }
+    }
+    return false;
+  };
+
+  if (unique.some((t) => t.durationSeconds >= movie && !isPlayAll(t))) return { kind: 'movie' };
+
+  const candidates = inRange.filter((t) => !isPlayAll(t));
+  if (candidates.length < 2) return { kind: 'movie' };
+  // Episodes run about the same length; shorter extras and longer specials don't.
+  const lengths = candidates.map((t) => t.durationSeconds).sort((a, b) => a - b);
+  const median = lengths[Math.floor(lengths.length / 2)]!;
+  const episodes = candidates.filter(
+    (t) => t.durationSeconds >= median * 0.7 && t.durationSeconds <= median * 1.4,
+  );
+  return episodes.length >= 2 ? { kind: 'tv', episodes } : { kind: 'movie' };
 }

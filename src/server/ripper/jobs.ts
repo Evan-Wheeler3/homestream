@@ -1,10 +1,20 @@
 import { randomUUID } from 'node:crypto';
-import type { RipCandidate, RipDiscTitle, RipJob, RipStatus } from '../../shared/types.js';
+import type {
+  RipCandidate,
+  RipDiscTitle,
+  RipEpisode,
+  RipJob,
+  RipKind,
+  RipStatus,
+} from '../../shared/types.js';
 import { nowIso, type Db } from '../db.js';
 
 interface Row {
   id: string;
   status: RipStatus | 'dismissed';
+  kind: RipKind;
+  season: number | null;
+  episodes: string | null;
   disc_label: string;
   disc_name: string;
   mount_path: string;
@@ -31,6 +41,10 @@ interface Row {
 export interface JobRecord {
   id: string;
   status: RipStatus | 'dismissed';
+  kind: RipKind;
+  /** TV discs: the season and the episodes to rip. */
+  season: number | null;
+  episodes: RipEpisode[];
   discLabel: string;
   discName: string;
   mountPath: string;
@@ -55,6 +69,9 @@ export interface JobRecord {
 
 const COLUMNS: Record<keyof Omit<JobRecord, 'id' | 'createdAt' | 'updatedAt'>, string> = {
   status: 'status',
+  kind: 'kind',
+  season: 'season',
+  episodes: 'episodes',
   discLabel: 'disc_label',
   discName: 'disc_name',
   mountPath: 'mount_path',
@@ -88,6 +105,9 @@ function fromRow(row: Row): JobRecord {
   return {
     id: row.id,
     status: row.status,
+    kind: row.kind === 'tv' ? 'tv' : 'movie',
+    season: row.season,
+    episodes: parseJson(row.episodes, []),
     discLabel: row.disc_label,
     discName: row.disc_name,
     mountPath: row.mount_path,
@@ -115,6 +135,7 @@ export function toPublicJob(job: JobRecord): RipJob {
   return {
     id: job.id,
     status: job.status === 'dismissed' ? 'done' : job.status,
+    kind: job.kind,
     discLabel: job.discLabel,
     progress: job.progress,
     message: job.message,
@@ -125,6 +146,8 @@ export function toPublicJob(job: JobRecord): RipJob {
     discTitles: job.discTitles,
     moviePath: job.moviePath,
     movieId: job.movieId,
+    season: job.season,
+    episodes: job.episodes,
     createdAt: job.createdAt,
     updatedAt: job.updatedAt,
     finishedAt: job.finishedAt,
@@ -134,6 +157,7 @@ export function toPublicJob(job: JobRecord): RipJob {
 export const ACTIVE_STATUSES: RipStatus[] = [
   'scanning',
   'needs_choice',
+  'needs_episodes',
   'ripping',
   'ripped',
   'encoding',
@@ -199,6 +223,29 @@ export class RipJobStore {
       )
       .all(...statuses) as unknown as Row[];
     return rows.map(fromRow);
+  }
+
+  /**
+   * The highest episode number already ripped for a season of a show, so the
+   * next disc of the set carries on numbering where the last one stopped.
+   */
+  lastEpisode(show: { title: string; tmdbId: string | null }, season: number): number {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM rip_jobs WHERE kind = 'tv' AND season = ?
+           AND status NOT IN ('failed', 'needs_episodes')
+           AND (title = ? OR (tmdb_id IS NOT NULL AND tmdb_id = ?))`,
+      )
+      .all(season, show.title, show.tmdbId ?? '') as unknown as Row[];
+    let last = 0;
+    for (const row of rows) {
+      // A dismissed job only counts for the episodes it actually filed.
+      const counts = (ep: RipEpisode) => row.status !== 'dismissed' || ep.state === 'filed';
+      for (const ep of parseJson<RipEpisode[]>(row.episodes, [])) {
+        if (counts(ep)) last = Math.max(last, ep.episode);
+      }
+    }
+    return last;
   }
 
   /** A recent job for the same disc that did not fail (to avoid ripping a disc twice). */

@@ -1,4 +1,6 @@
 import type {
+  Episode,
+  EpisodeDetail,
   Movie,
   MovieDetail,
   MovieUserState,
@@ -6,6 +8,8 @@ import type {
   PlaybackReport,
   PlaybackRequest,
   SessionUser,
+  Show,
+  ShowDetail,
 } from '../../shared/types.js';
 
 /** Identity of the signed-in user as needed to call the media server on their behalf. */
@@ -52,6 +56,11 @@ export interface MediaProvider {
   listMovies(ctx: UserContext): Promise<Movie[]>;
   getMovie(ctx: UserContext, id: string): Promise<ProviderDetail | null>;
   similar(ctx: UserContext, id: string): Promise<string[]>;
+  listShows(ctx: UserContext): Promise<Show[]>;
+  getShow(ctx: UserContext, id: string): Promise<ShowDetail | null>;
+  getEpisode(ctx: UserContext, id: string): Promise<EpisodeDetail | null>;
+  /** Episodes to resume or start next, across all shows, most recently watched first. */
+  nextUp(ctx: UserContext): Promise<Episode[]>;
   getUserState(ctx: UserContext, id: string): Promise<MovieUserState>;
   setFavorite(ctx: UserContext, id: string, favorite: boolean): Promise<MovieUserState>;
   setPlayed(ctx: UserContext, id: string, played: boolean): Promise<MovieUserState>;

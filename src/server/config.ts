@@ -78,6 +78,7 @@ export function loadRipperConfig(env: NodeJS.ProcessEnv): RipperConfig {
     enabled: bool(env.RIPPER_ENABLED, false),
     ripsDir: path.resolve(env.RIPS_DIR || '/Volumes/LaCie/Rips'),
     moviesDir: path.resolve(env.MOVIES_DIR || '/Volumes/LaCie/Movies'),
+    tvDir: path.resolve(env.TV_DIR || '/Volumes/LaCie/TV Shows'),
     volumesDir: env.DISC_VOLUMES_DIR || '/Volumes',
     makemkvcon: env.MAKEMKVCON || firstExisting([MAKEMKVCON_MAC, '/usr/bin/makemkvcon']),
     handbrakeCli:
@@ -92,6 +93,7 @@ export function loadRipperConfig(env: NodeJS.ProcessEnv): RipperConfig {
     quality: num(env.HANDBRAKE_QUALITY, 20),
     minMinutes: num(env.RIP_MIN_MINUTES, 40),
     minFreeGb: num(env.RIP_MIN_FREE_GB, 15),
+    closeDvdPlayer: bool(env.RIP_CLOSE_DVD_PLAYER, process.platform === 'darwin'),
     ntfyServer: env.NTFY_SERVER?.trim() || 'https://ntfy.sh',
     ntfyTopic: env.NTFY_TOPIC?.trim() || null,
     publicUrl,

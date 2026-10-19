@@ -112,6 +112,12 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX rip_jobs_status ON rip_jobs(status);
   `,
+  // 3: TV discs (several episodes per disc)
+  `
+  ALTER TABLE rip_jobs ADD COLUMN kind TEXT NOT NULL DEFAULT 'movie';
+  ALTER TABLE rip_jobs ADD COLUMN season INTEGER;
+  ALTER TABLE rip_jobs ADD COLUMN episodes TEXT;
+  `,
 ];
 
 export type Db = DatabaseSync;

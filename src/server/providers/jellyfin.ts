@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { sortKey } from '../../shared/catalog.js';
 import type {
+  Episode,
+  EpisodeDetail,
   MediaInfo,
   MediaTrack,
   Movie,
@@ -9,6 +11,9 @@ import type {
   PlaybackReport,
   PlaybackRequest,
   Person,
+  Season,
+  Show,
+  ShowDetail,
   SubtitleDelivery,
 } from '../../shared/types.js';
 import { ApiError } from '../errors.js';
@@ -17,6 +22,7 @@ import {
   IMAGE_SUBTITLE_CODECS,
   sanitizeCapabilities,
 } from './deviceProfile.js';
+import { pickNextUp } from './shows.js';
 import type {
   AuthResult,
   MediaProvider,
@@ -45,6 +51,10 @@ const LIST_FIELDS = [
 ].join(',');
 
 const DETAIL_FIELDS = `${LIST_FIELDS},MediaSources,MediaStreams,ExternalUrls`;
+
+const SHOW_FIELDS =
+  'Genres,Overview,DateCreated,SortName,PremiereDate,ChildCount,RecursiveItemCount';
+const EPISODE_FIELDS = 'Overview,PremiereDate';
 
 // Jellyfin JSON is PascalCase, but some endpoints (e.g. /System/Info/Public on 12.x)
 // return camelCase. Normalise everything to PascalCase so mapping code has one shape.
@@ -378,6 +388,210 @@ export class JellyfinProvider implements MediaProvider {
       .map((item) => String(item.Id));
   }
 
+  // ---------------------------------------------------------------------------
+  // TV shows
+
+  private mapShow(item: Json): Show {
+    const id = String(item.Id);
+    const title = str(item.Name) ?? 'Untitled';
+    const imageTags = (item.ImageTags ?? {}) as Record<string, string>;
+    const backdropTags = strArr(item.BackdropImageTags);
+    const data = (item.UserData ?? {}) as Json;
+    const ended = str(item.Status) === 'Ended';
+    const endYear = str(item.EndDate) ? Number(String(item.EndDate).slice(0, 4)) || null : null;
+    return {
+      id,
+      title,
+      sortTitle: sortKey(str(item.SortName) ?? title),
+      year: num(item.ProductionYear),
+      endYear: ended ? endYear : null,
+      genres: strArr(item.Genres),
+      officialRating: str(item.OfficialRating),
+      communityRating: num(item.CommunityRating),
+      overview: str(item.Overview),
+      dateAdded: str(item.DateCreated),
+      images: {
+        poster: this.imageUrl(id, 'Primary', imageTags.Primary ?? null),
+        backdrop: this.imageUrl(id, 'Backdrop', backdropTags[0] ?? null, 0),
+        logo: this.imageUrl(id, 'Logo', imageTags.Logo ?? null),
+      },
+      seasonCount: num(item.ChildCount) ?? 0,
+      episodeCount: num(item.RecursiveItemCount) ?? 0,
+      unwatchedCount: num(data.UnplayedItemCount) ?? 0,
+      favorite: Boolean(data.IsFavorite),
+    };
+  }
+
+  private mapSeason(item: Json): Season {
+    const id = String(item.Id);
+    const imageTags = (item.ImageTags ?? {}) as Record<string, string>;
+    const data = (item.UserData ?? {}) as Json;
+    const number = num(item.IndexNumber);
+    return {
+      id,
+      number,
+      name: str(item.Name) ?? (number === 0 ? 'Specials' : `Season ${number ?? ''}`.trim()),
+      episodeCount: num(item.ChildCount) ?? 0,
+      unwatchedCount: num(data.UnplayedItemCount) ?? 0,
+      poster: this.imageUrl(id, 'Primary', imageTags.Primary ?? null),
+    };
+  }
+
+  private mapEpisode(item: Json): Episode {
+    const id = String(item.Id);
+    const imageTags = (item.ImageTags ?? {}) as Record<string, string>;
+    const runtimeTicks = num(item.RunTimeTicks);
+    // The episode's own still, else the show's thumb or backdrop.
+    const image =
+      this.imageUrl(id, 'Primary', imageTags.Primary ?? null) ??
+      (str(item.ParentThumbItemId)
+        ? this.imageUrl(String(item.ParentThumbItemId), 'Thumb', str(item.ParentThumbImageTag))
+        : null) ??
+      (str(item.ParentBackdropItemId)
+        ? this.imageUrl(
+            String(item.ParentBackdropItemId),
+            'Backdrop',
+            strArr(item.ParentBackdropImageTags)[0] ?? null,
+            0,
+          )
+        : null);
+    return {
+      id,
+      showId: String(item.SeriesId ?? ''),
+      showTitle: str(item.SeriesName) ?? '',
+      seasonId: str(item.SeasonId),
+      seasonNumber: num(item.ParentIndexNumber),
+      number: num(item.IndexNumber),
+      endNumber: num(item.IndexNumberEnd),
+      title: str(item.Name) ?? 'Untitled',
+      overview: str(item.Overview),
+      runtimeMinutes: runtimeTicks ? Math.round(runtimeTicks / TICKS_PER_SECOND / 60) : null,
+      premiereDate: str(item.PremiereDate),
+      image,
+      user: this.mapUserState(item),
+      available: str(item.LocationType) !== 'Virtual' && item.IsMissing !== true,
+    };
+  }
+
+  async listShows(ctx: UserContext): Promise<Show[]> {
+    const shows: Show[] = [];
+    for (let start = 0; ; start += PAGE_SIZE) {
+      const params = new URLSearchParams({
+        userId: ctx.userId,
+        recursive: 'true',
+        includeItemTypes: 'Series',
+        fields: SHOW_FIELDS,
+        enableUserData: 'true',
+        enableImageTypes: 'Primary,Backdrop,Logo',
+        imageTypeLimit: '1',
+        sortBy: 'SortName',
+        startIndex: String(start),
+        limit: String(PAGE_SIZE),
+        enableTotalRecordCount: 'true',
+      });
+      const page = await this.json(`/Items?${params}`, { ctx, timeoutMs: 60_000 });
+      const items = arr(page.Items);
+      shows.push(...items.map((item) => this.mapShow(item)));
+      const total = num(page.TotalRecordCount) ?? 0;
+      if (items.length < PAGE_SIZE || shows.length >= total) break;
+    }
+    return shows;
+  }
+
+  /** Every episode of a show, in season and episode order. */
+  private async showEpisodes(ctx: UserContext, showId: string): Promise<Episode[]> {
+    const params = new URLSearchParams({
+      userId: ctx.userId,
+      fields: EPISODE_FIELDS,
+      enableUserData: 'true',
+      enableImageTypes: 'Primary,Thumb,Backdrop',
+      imageTypeLimit: '1',
+    });
+    const data = await this.json(`/Shows/${encodeURIComponent(showId)}/Episodes?${params}`, {
+      ctx,
+      timeoutMs: 30_000,
+    });
+    return arr(data.Items).map((item) => this.mapEpisode(item));
+  }
+
+  private async item(ctx: UserContext, id: string, fields: string): Promise<Json | null> {
+    try {
+      return await this.json(
+        `/Items/${encodeURIComponent(id)}?${new URLSearchParams({ userId: ctx.userId, fields })}`,
+        { ctx },
+      );
+    } catch (error) {
+      if (error instanceof ApiError && (error.code === 'NOT_FOUND' || error.status === 400))
+        return null;
+      throw error;
+    }
+  }
+
+  async getShow(ctx: UserContext, id: string): Promise<ShowDetail | null> {
+    const item = await this.item(ctx, id, `${SHOW_FIELDS},People`);
+    if (!item || item.Type !== 'Series') return null;
+    const seasonParams = new URLSearchParams({
+      userId: ctx.userId,
+      fields: 'ChildCount',
+      enableUserData: 'true',
+    });
+    const [seasons, episodes] = await Promise.all([
+      this.json(`/Shows/${encodeURIComponent(id)}/Seasons?${seasonParams}`, { ctx }),
+      this.showEpisodes(ctx, id),
+    ]);
+    const cast: Person[] = arr(item.People)
+      .filter((p) => p.Type === 'Actor' || p.Type === 'GuestStar')
+      .slice(0, 30)
+      .map((p) => ({
+        id: str(p.Id),
+        name: String(p.Name),
+        role: str(p.Role),
+        type: String(p.Type),
+        image: str(p.Id) ? this.imageUrl(String(p.Id), 'Primary', str(p.PrimaryImageTag)) : null,
+      }));
+    return {
+      ...this.mapShow(item),
+      cast,
+      seasons: arr(seasons.Items).map((s) => this.mapSeason(s)),
+      episodes,
+      nextUp: pickNextUp(episodes),
+    };
+  }
+
+  async getEpisode(ctx: UserContext, id: string): Promise<EpisodeDetail | null> {
+    const item = await this.item(ctx, id, EPISODE_FIELDS);
+    if (!item || item.Type !== 'Episode') return null;
+    const episode = this.mapEpisode(item);
+    const siblings = episode.showId
+      ? (await this.showEpisodes(ctx, episode.showId)).filter((e) => e.available)
+      : [];
+    const at = siblings.findIndex((e) => e.id === id);
+    const backdropTag = strArr(item.ParentBackdropImageTags)[0] ?? null;
+    return {
+      ...episode,
+      backdrop: str(item.ParentBackdropItemId)
+        ? this.imageUrl(String(item.ParentBackdropItemId), 'Backdrop', backdropTag, 0)
+        : null,
+      previousId: at > 0 ? siblings[at - 1]!.id : null,
+      nextId: at >= 0 && at + 1 < siblings.length ? siblings[at + 1]!.id : null,
+    };
+  }
+
+  async nextUp(ctx: UserContext): Promise<Episode[]> {
+    const params = new URLSearchParams({
+      userId: ctx.userId,
+      limit: '24',
+      fields: EPISODE_FIELDS,
+      enableUserData: 'true',
+      enableResumable: 'true',
+      enableRewatching: 'false',
+      enableImageTypes: 'Primary,Thumb,Backdrop',
+      imageTypeLimit: '1',
+    });
+    const data = await this.json(`/Shows/NextUp?${params}`, { ctx });
+    return arr(data.Items).map((item) => this.mapEpisode(item));
+  }
+
   async getUserState(ctx: UserContext, id: string): Promise<MovieUserState> {
     const item = await this.json(
       `/Items/${encodeURIComponent(id)}?${new URLSearchParams({ userId: ctx.userId })}`,
@@ -448,7 +662,7 @@ export class JellyfinProvider implements MediaProvider {
       );
     }
     const source = arr(data.MediaSources)[0];
-    if (!source) throw new ApiError('MEDIA_UNAVAILABLE', 'This movie has no playable media file.');
+    if (!source) throw new ApiError('MEDIA_UNAVAILABLE', 'This video has no playable media file.');
     const mediaSourceId = String(source.Id);
     const playSessionId = str(data.PlaySessionId) ?? randomUUID().replace(/-/g, '');
     const streams = arr(source.MediaStreams);

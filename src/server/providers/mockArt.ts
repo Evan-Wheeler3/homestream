@@ -110,9 +110,11 @@ export function posterSvg(film: SampleFilm): string {
   const size = Math.min(92, Math.floor(520 / Math.max(longest, 5) / 0.76));
   const lineHeight = size * 1.02;
   const titleTop = H - 120 - lines.length * lineHeight;
-  const director = film.directors.length
-    ? `A FILM BY ${film.directors.slice(0, 2).join(' & ').toUpperCase()}`
-    : 'A HOME MOVIE';
+  const director =
+    film.byline ??
+    (film.directors.length
+      ? `A FILM BY ${film.directors.slice(0, 2).join(' & ').toUpperCase()}`
+      : 'A HOME MOVIE');
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">
   <rect width="${W}" height="${H}" fill="${bg}"/>
   <g>${motif(kind, rand, W, H, ink, accent)}</g>

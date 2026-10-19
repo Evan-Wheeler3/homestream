@@ -103,6 +103,79 @@ export interface MovieDetail extends Movie {
 }
 
 // ---------------------------------------------------------------------------
+// TV shows (owned by the media server, like movies)
+
+export interface Show {
+  id: string;
+  title: string;
+  sortTitle: string;
+  year: number | null;
+  /** Year the show ended, when it has. */
+  endYear: number | null;
+  genres: string[];
+  officialRating: string | null;
+  communityRating: number | null;
+  overview: string | null;
+  dateAdded: string | null;
+  images: MovieImages;
+  seasonCount: number;
+  episodeCount: number;
+  /** Episodes not yet watched. */
+  unwatchedCount: number;
+  favorite: boolean;
+}
+
+export interface Season {
+  id: string;
+  /** 0 is "Specials"; null when the media server doesn't know. */
+  number: number | null;
+  name: string;
+  episodeCount: number;
+  unwatchedCount: number;
+  poster: string | null;
+}
+
+export interface Episode {
+  id: string;
+  showId: string;
+  showTitle: string;
+  seasonId: string | null;
+  seasonNumber: number | null;
+  number: number | null;
+  /** Last episode number of a double episode file (S01E01-E02). */
+  endNumber: number | null;
+  title: string;
+  overview: string | null;
+  runtimeMinutes: number | null;
+  premiereDate: string | null;
+  /** A still from the episode (falls back to the show's backdrop). */
+  image: string | null;
+  user: MovieUserState;
+  available: boolean;
+}
+
+export interface ShowDetail extends Show {
+  cast: Person[];
+  seasons: Season[];
+  /** Every episode, in season and episode order. */
+  episodes: Episode[];
+  /** The episode to resume or watch next (null when everything is watched). */
+  nextUp: Episode | null;
+}
+
+export interface ShowsPayload {
+  shows: Show[];
+  /** Episodes to resume or watch next, across shows, most recent first. */
+  nextUp: Episode[];
+}
+
+export interface EpisodeDetail extends Episode {
+  backdrop: string | null;
+  previousId: string | null;
+  nextId: string | null;
+}
+
+// ---------------------------------------------------------------------------
 // Catalog querying
 
 export type SortField = 'title' | 'year' | 'dateAdded' | 'runtime' | 'rating' | 'random';
@@ -384,6 +457,7 @@ export interface SessionInfo {
 export type RipStatus =
   | 'scanning' // reading the disc's contents
   | 'needs_choice' // several possible main titles; waiting for the user
+  | 'needs_episodes' // a TV disc: waiting for the user to confirm show, season and episodes
   | 'ripping' // copying the movie off the disc
   | 'ripped' // waiting for its turn to be compressed
   | 'encoding' // compressing with HandBrake
@@ -407,9 +481,23 @@ export interface RipDiscTitle {
   chapters: number;
 }
 
+export type RipKind = 'movie' | 'tv';
+
+/** One episode of a TV disc, from the disc title it is ripped from to the filed file. */
+export interface RipEpisode {
+  titleIndex: number;
+  durationSeconds: number;
+  /** Episode number within the season. */
+  episode: number;
+  state: 'pending' | 'ripped' | 'encoded' | 'filed';
+  /** Where the episode was filed, once it is. */
+  path: string | null;
+}
+
 export interface RipJob {
   id: string;
   status: RipStatus;
+  kind: RipKind;
   discLabel: string;
   /** 0–1 while ripping or encoding. */
   progress: number | null;
@@ -423,8 +511,11 @@ export interface RipJob {
   /** Titles to choose from when the status is needs_choice. */
   discTitles: RipDiscTitle[];
   moviePath: string | null;
-  /** Wheelhouse/Jellyfin movie id once imported. */
+  /** Wheelhouse/Jellyfin movie id once imported (the show's id for a TV disc). */
   movieId: string | null;
+  /** TV discs: the season, and the episodes chosen to rip. */
+  season: number | null;
+  episodes: RipEpisode[];
   createdAt: string;
   updatedAt: string;
   finishedAt: string | null;
@@ -437,7 +528,7 @@ export interface RipperHealth {
   /** Things that work but could be better (e.g. no phone notifications). */
   warnings: string[];
   watching: boolean;
-  /** Whether movie names can be looked up (needs a Jellyfin API key). */
+  /** Whether movie and show names can be looked up (needs a Jellyfin API key). */
   canSearch: boolean;
 }
 

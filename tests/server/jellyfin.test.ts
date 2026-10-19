@@ -312,6 +312,130 @@ describe('JellyfinProvider', () => {
   });
 });
 
+describe('JellyfinProvider TV shows', () => {
+  const SERIES = {
+    Id: 'series1',
+    Name: 'The Office',
+    SortName: 'Office',
+    Type: 'Series',
+    ProductionYear: 2005,
+    EndDate: '2013-05-16T00:00:00.0000000Z',
+    Status: 'Ended',
+    ChildCount: 2,
+    RecursiveItemCount: 4,
+    ImageTags: { Primary: 'sp' },
+    BackdropImageTags: ['sb'],
+    UserData: { UnplayedItemCount: 3, IsFavorite: false },
+    People: [{ Name: 'Steve Carell', Type: 'Actor', Role: 'Michael Scott', Id: 'a1' }],
+  };
+  const episode = (n: number, season: number, extra: Record<string, unknown> = {}) => ({
+    Id: `ep${season}${n}`,
+    Type: 'Episode',
+    Name: `Episode ${n}`,
+    SeriesId: 'series1',
+    SeriesName: 'The Office',
+    SeasonId: `season${season}`,
+    ParentIndexNumber: season,
+    IndexNumber: n,
+    RunTimeTicks: 13_200_000_000, // 22 minutes
+    ParentBackdropItemId: 'series1',
+    ParentBackdropImageTags: ['sb'],
+    UserData: { Played: false, PlaybackPositionTicks: 0 },
+    LocationType: 'FileSystem',
+    ...extra,
+  });
+  const EPISODES = [
+    episode(1, 1, {
+      ImageTags: { Primary: 'e1' },
+      UserData: { Played: true, LastPlayedDate: '2026-10-01T00:00:00Z' },
+    }),
+    episode(2, 1),
+    episode(3, 1, { LocationType: 'Virtual' }), // missing from disk
+    episode(1, 2),
+  ];
+  const handler: Handler = (url) => {
+    if (url.pathname === '/Items/series1') return json(SERIES);
+    if (url.pathname === '/Items/ep12') return json(EPISODES[1]);
+    if (url.pathname === '/Shows/series1/Seasons') {
+      return json({
+        Items: [
+          {
+            Id: 'season1',
+            IndexNumber: 1,
+            Name: 'Season 1',
+            ChildCount: 3,
+            UserData: { UnplayedItemCount: 2 },
+          },
+          {
+            Id: 'season2',
+            IndexNumber: 2,
+            Name: 'Season 2',
+            ChildCount: 1,
+            UserData: { UnplayedItemCount: 1 },
+          },
+        ],
+      });
+    }
+    if (url.pathname === '/Shows/series1/Episodes') return json({ Items: EPISODES });
+    if (url.pathname === '/Items') return json({ Items: [SERIES], TotalRecordCount: 1 });
+    return json({}, 404);
+  };
+
+  it('lists shows', async () => {
+    const { impl, calls } = fakeFetch(handler);
+    const [show] = await new JellyfinProvider('http://jf.local', '1', impl).listShows(ctx);
+    expect(calls[0]!.url.searchParams.get('includeItemTypes')).toBe('Series');
+    expect(show).toMatchObject({
+      id: 'series1',
+      title: 'The Office',
+      year: 2005,
+      endYear: 2013,
+      seasonCount: 2,
+      episodeCount: 4,
+      unwatchedCount: 3,
+      images: { poster: '/jf/Items/series1/Images/Primary?tag=sp' },
+    });
+  });
+
+  it('maps seasons and episodes, and picks the next episode', async () => {
+    const { impl } = fakeFetch(handler);
+    const show = await new JellyfinProvider('http://jf.local', '1', impl).getShow(ctx, 'series1');
+    expect(show!.seasons.map((s) => [s.number, s.episodeCount, s.unwatchedCount])).toEqual([
+      [1, 3, 2],
+      [2, 1, 1],
+    ]);
+    expect(show!.cast[0]).toMatchObject({ name: 'Steve Carell', role: 'Michael Scott' });
+    expect(show!.episodes[0]).toMatchObject({
+      seasonNumber: 1,
+      number: 1,
+      runtimeMinutes: 22,
+      image: '/jf/Items/ep11/Images/Primary?tag=e1',
+      user: { played: true },
+    });
+    // No still of its own: the show's backdrop.
+    expect(show!.episodes[1]!.image).toBe('/jf/Items/series1/Images/Backdrop/0?tag=sb');
+    expect(show!.episodes[2]!.available).toBe(false);
+    expect(show!.nextUp!.id).toBe('ep12');
+    expect(
+      await new JellyfinProvider('http://jf.local', '1', fakeFetch(() => json(ITEM)).impl).getShow(
+        ctx,
+        ITEM.Id,
+      ),
+    ).toBeNull();
+  });
+
+  it('links an episode to its neighbours, skipping ones missing from disk', async () => {
+    const { impl } = fakeFetch(handler);
+    const ep = await new JellyfinProvider('http://jf.local', '1', impl).getEpisode(ctx, 'ep12');
+    expect(ep).toMatchObject({
+      showTitle: 'The Office',
+      previousId: 'ep11',
+      nextId: 'ep21',
+      backdrop: '/jf/Items/series1/Images/Backdrop/0?tag=sb',
+    });
+  });
+});
+
 describe('device profile', () => {
   it('only trusts known codec names and falls back to H.264/AAC', () => {
     const caps = sanitizeCapabilities({

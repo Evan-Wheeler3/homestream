@@ -440,6 +440,103 @@ describe('personal data and watch state', () => {
   });
 });
 
+describe('TV shows', () => {
+  it('lists shows with what to watch next', async () => {
+    const client = new Client(server.url);
+    await client.login('binger');
+    const res = await client.get('/api/shows');
+    expect(res.status).toBe(200);
+    expect(res.json.shows.map((s: { id: string }) => s.id)).toEqual([
+      'harbour-lights',
+      'the-night-kitchen',
+      'small-hours',
+    ]);
+    expect(res.json.shows[0]).toMatchObject({
+      title: 'Harbour Lights',
+      seasonCount: 2,
+      episodeCount: 7,
+      unwatchedCount: 5,
+    });
+    // Most recently watched show first: resume Harbour Lights, then the next Night Kitchen.
+    expect(res.json.nextUp.map((e: { id: string }) => e.id)).toEqual([
+      'harbour-lights-s01e03',
+      'the-night-kitchen-s01e02',
+    ]);
+  });
+
+  it('shows seasons and episodes, and the episode to resume', async () => {
+    const client = new Client(server.url);
+    await client.login('binger2');
+    const show = await client.get('/api/shows/harbour-lights');
+    expect(show.json.seasons.map((s: { name: string }) => s.name)).toEqual([
+      'Season 1',
+      'Season 2',
+    ]);
+    expect(show.json.seasons[0]).toMatchObject({ episodeCount: 4, unwatchedCount: 2 });
+    expect(show.json.episodes).toHaveLength(7);
+    expect(show.json.episodes[0]).toMatchObject({
+      seasonNumber: 1,
+      number: 1,
+      title: 'Low Tide',
+      user: { played: true },
+    });
+    expect(show.json.nextUp).toMatchObject({
+      id: 'harbour-lights-s01e03',
+      user: { positionSeconds: 1260 },
+    });
+    expect((await client.get('/api/shows/nope')).status).toBe(404);
+  });
+
+  it('links each episode to the previous and next one, across seasons', async () => {
+    const client = new Client(server.url);
+    await client.login('binger3');
+    const last = await client.get('/api/episodes/harbour-lights-s01e04');
+    expect(last.json).toMatchObject({
+      showTitle: 'Harbour Lights',
+      title: 'Moorings',
+      previousId: 'harbour-lights-s01e03',
+      nextId: 'harbour-lights-s02e01',
+    });
+    const final = await client.get('/api/episodes/harbour-lights-s02e03');
+    expect(final.json.nextId).toBeNull();
+    expect((await client.get('/api/episodes/nope')).status).toBe(404);
+  });
+
+  it('plays an episode and moves on to the next one when it is finished', async () => {
+    const client = new Client(server.url);
+    await client.login('binger4');
+    const info = await client.post('/api/movies/harbour-lights-s01e03/playback', {
+      capabilities: { mp4VideoCodecs: ['h264'], audioCodecs: ['aac'] },
+    });
+    expect(info.json).toMatchObject({ itemId: 'harbour-lights-s01e03', isSample: true });
+    const report = {
+      itemId: 'harbour-lights-s01e03',
+      mediaSourceId: info.json.mediaSourceId,
+      playSessionId: info.json.playSessionId,
+      positionSeconds: 40, // the end of the sample clip
+      isPaused: false,
+      method: 'DirectPlay',
+    };
+    await client.post('/api/playback/start', report);
+    const stopped = await client.post('/api/playback/stop', report);
+    expect(stopped.json.user.played).toBe(true);
+    const show = await client.get('/api/shows/harbour-lights');
+    expect(show.json.nextUp.id).toBe('harbour-lights-s01e04');
+  });
+
+  it('marks episodes watched and unwatched', async () => {
+    const client = new Client(server.url);
+    await client.login('binger5');
+    const watched = await client.put('/api/episodes/small-hours-s01e01/played', { played: true });
+    expect(watched.json.played).toBe(true);
+    const show = await client.get('/api/shows/small-hours');
+    expect(show.json.unwatchedCount).toBe(4);
+    expect(show.json.nextUp.id).toBe('small-hours-s01e02');
+    await client.put('/api/episodes/small-hours-s01e01/played', { played: false });
+    expect((await client.get('/api/shows/small-hours')).json.unwatchedCount).toBe(5);
+  });
+});
+
 describe('robustness', () => {
   it('returns JSON errors for malformed input and unknown endpoints', async () => {
     const client = new Client(server.url);
