@@ -30,12 +30,16 @@
     "test:jellyfin": "vitest run --config vitest.jellyfin.config.ts",
     "check": "npm run format:check && npm run lint && npm run typecheck && npm run test",
     "backup": "node --disable-warning=ExperimentalWarning --env-file-if-exists=.env scripts/backup.mjs",
-    "check:jellyfin": "node --env-file-if-exists=.env scripts/setup.mjs --check"
+    "check:jellyfin": "node --env-file-if-exists=.env scripts/setup.mjs --check",
+    "cloud:upload": "tsx --env-file-if-exists=.env scripts/cloud.ts upload",
+    "cloud:people": "tsx --env-file-if-exists=.env scripts/cloud.ts people",
+    "cloud:bootstrap": "tsx --env-file-if-exists=.env scripts/cloud.ts bootstrap"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.3.0",
     "@fontsource/instrument-serif": "^5.3.0",
     "@tanstack/react-query": "^5.104.2",
+    "aws4fetch": "1.0.20",
     "express": "^5.3.0",
     "hls.js": "^1.7.3",
     "hono": "4.13.12",
@@ -53,7 +57,6 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
-    "aws4fetch": "1.0.20",
     "eslint": "^10.12.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^17.13.0",

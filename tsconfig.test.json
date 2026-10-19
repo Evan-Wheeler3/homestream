@@ -12,6 +12,7 @@
     "playwright.config.ts",
     "vitest.config.ts",
     "vitest.jellyfin.config.ts",
-    "src/shared"
+    "src/shared",
+    "scripts/cloud.ts"
   ]
 }

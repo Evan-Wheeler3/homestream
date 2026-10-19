@@ -140,7 +140,8 @@ export interface IngestMovie {
   };
   images: { poster: string | null; backdrop: string | null; logo: string | null };
   video: { key: string; bytes: number; sha256: string; durationSeconds: number | null };
-  subtitles: StoredSubtitle[];
+  /** Leave out to keep the movie's current subtitles. */
+  subtitles?: StoredSubtitle[];
   subtitleStatus: 'disc' | 'downloaded' | 'none';
   franchise: { id: string; name: string; poster: string | null; backdrop: string | null } | null;
   sourcePath: string | null;
@@ -185,7 +186,21 @@ export async function ingestMovie(env: CloudEnv, sql: Sql, id: string, body: unk
       image: imageKey && isServableKey(imageKey) ? mediaUrl(imageKey) : null,
     })),
   };
-  const subtitles = (input.subtitles ?? []).filter((s) => isServableKey(s.key));
+  // No `subtitles` sent: keep whatever the movie already has.
+  const previous = input.subtitles
+    ? null
+    : await sql.get<{ subtitles: string; subtitle_status: IngestMovie['subtitleStatus'] }>(
+        'SELECT subtitles, subtitle_status FROM movies WHERE id = ?',
+        id,
+      );
+  const subtitles = input.subtitles
+    ? input.subtitles.filter((s) => isServableKey(s.key))
+    : previous
+      ? (JSON.parse(previous.subtitles) as StoredSubtitle[])
+      : [];
+  const subtitleStatus = input.subtitles
+    ? input.subtitleStatus
+    : (previous?.subtitle_status ?? 'none');
   const now = nowIso();
   const statements = [
     sql.stmt(
@@ -210,7 +225,7 @@ export async function ingestMovie(env: CloudEnv, sql: Sql, id: string, body: unk
       input.video.sha256,
       input.video.durationSeconds,
       JSON.stringify(subtitles),
-      subtitles.length ? input.subtitleStatus : 'none',
+      subtitles.length ? subtitleStatus : 'none',
       input.sourcePath,
       summary.dateAdded ?? now,
       now,
