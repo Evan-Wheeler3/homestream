@@ -437,7 +437,15 @@ export interface HomePayload {
         decades: { decade: number; count: number; poster: string | null }[];
       }
     | { type: 'randomPick'; id: 'randomPick'; movie: Movie | null }
-    | { type: 'yearInReview'; id: 'yearInReview'; year: number; movies: number; hours: number }
+    | {
+        type: 'yearInReview';
+        id: 'yearInReview';
+        year: number;
+        movies: number;
+        /** TV episodes (cloud edition). */
+        episodes?: number;
+        hours: number;
+      }
     | { type: 'franchises'; id: 'franchises'; franchises: FranchiseSummary[] }
   )[];
   libraryCount: number;

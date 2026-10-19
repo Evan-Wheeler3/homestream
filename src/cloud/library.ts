@@ -31,6 +31,7 @@ import { notFound } from '../server/errors.js';
 import { loadSnapshot, movieRow, type Snapshot, type StoredDetail } from './catalog.js';
 import type { Sql } from './db.js';
 import type { CloudStore, CollectionRow } from './store.js';
+import { wrappedEpisodes } from './shows.js';
 
 const ROW_LIMIT = 20;
 
@@ -155,7 +156,12 @@ export class CloudLibrary {
 
   async wrapped(year: number | null) {
     const snap = await this.snapshot();
-    return buildWrapped(snap.movies, await this.store.watchEvents(this.userId), year);
+    return buildWrapped(
+      snap.movies,
+      await this.store.watchEvents(this.userId),
+      year,
+      await wrappedEpisodes(this.sql, this.userId),
+    );
   }
 
   async facets() {
@@ -460,14 +466,21 @@ export class CloudLibrary {
         }
         case 'yearInReview': {
           const year = new Date().getFullYear();
-          const w = buildWrapped(snap.movies, await this.store.watchEvents(this.userId), year);
-          if (w.moviesWatched > 0) {
+          const w = buildWrapped(
+            snap.movies,
+            await this.store.watchEvents(this.userId),
+            year,
+            await wrappedEpisodes(this.sql, this.userId),
+          );
+          const episodes = w.tv?.episodesWatched ?? 0;
+          if (w.moviesWatched > 0 || episodes > 0) {
             sections.push({
               type: 'yearInReview',
               id: 'yearInReview',
               year,
               movies: w.moviesWatched,
-              hours: w.hoursWatched,
+              episodes,
+              hours: Math.round((w.hoursWatched + (w.tv?.hoursWatched ?? 0)) * 10) / 10,
             });
           }
           break;

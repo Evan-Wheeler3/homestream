@@ -192,6 +192,12 @@
   align-items: flex-end;
   isolation: isolate;
   overflow: hidden;
+  /* Sideways swipes change the title; up and down still scroll the page. */
+  touch-action: pan-y;
+}
+.hero__content.is-dragging {
+  transition: none;
+  animation: none;
 }
 .hero__media {
   position: absolute;

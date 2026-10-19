@@ -8,6 +8,35 @@ export interface WatchEvent {
   finished: boolean;
 }
 
+/** A TV episode, with this person's watch state (cloud edition). */
+export interface WrappedEpisode {
+  id: string;
+  showId: string;
+  showTitle: string;
+  poster: string | null;
+  runtimeMinutes: number | null;
+  genres: string[];
+  played: boolean;
+  lastPlayed: string | null;
+}
+
+export interface TopShow {
+  showId: string;
+  name: string;
+  poster: string | null;
+  episodes: number;
+  hours: number;
+}
+
+export interface WrappedTv {
+  episodesWatched: number;
+  hoursWatched: number;
+  showsWatched: number;
+  topShows: TopShow[];
+  /** The most episodes of one show watched in a single day (two or more). */
+  binge: (Omit<TopShow, 'hours'> & { day: string }) | null;
+}
+
 export interface Ranked {
   name: string;
   count: number;
@@ -34,6 +63,8 @@ export interface Wrapped {
   movies: Movie[];
   /** True when some of it comes from Jellyfin's "last played" dates rather than Wheelhouse's own history. */
   approximate: boolean;
+  /** TV shows watched in the period (null when there's no TV in the library). */
+  tv: WrappedTv | null;
 }
 
 interface Viewing {
@@ -56,7 +87,12 @@ const yearOf = (iso: string) => Number(iso.slice(0, 4));
  * is used where it exists; movies watched elsewhere (Jellyfin's apps, or
  * before Wheelhouse recorded history) count once, at their last-played date.
  */
-export function buildWrapped(movies: Movie[], events: WatchEvent[], year: number | null): Wrapped {
+export function buildWrapped(
+  movies: Movie[],
+  events: WatchEvent[],
+  year: number | null,
+  episodes: WrappedEpisode[] = [],
+): Wrapped {
   const byId = new Map(movies.map((m) => [m.id, m]));
   const viewings: Viewing[] = [];
   const withHistory = new Set<string>();
@@ -73,7 +109,11 @@ export function buildWrapped(movies: Movie[], events: WatchEvent[], year: number
     viewings.push({ movie: m, at: m.user.lastPlayed, seconds: (m.runtimeMinutes ?? 0) * 60 });
   }
 
-  const years = [...new Set(viewings.map((v) => yearOf(v.at)))]
+  const episodeIds = new Set(episodes.map((e) => e.id));
+  const tvYears = episodes
+    .flatMap((e) => (e.played && e.lastPlayed ? [e.lastPlayed] : []))
+    .concat(events.filter((ev) => episodeIds.has(ev.itemId)).map((ev) => ev.at));
+  const years = [...new Set([...viewings.map((v) => v.at), ...tvYears].map(yearOf))]
     .filter((y) => y > 1900)
     .sort((a, b) => b - a);
   const inRange = viewings
@@ -131,5 +171,75 @@ export function buildWrapped(movies: Movie[], events: WatchEvent[], year: number
     latest: inRange.at(-1)?.movie ?? null,
     movies: list.sort((a, b) => b.latest.localeCompare(a.latest)).map((w) => w.movie),
     approximate,
+    tv: episodes.length ? buildTv(episodes, events, year) : null,
+  };
+}
+
+/** TV in the period: Wheelhouse's own history, plus episodes marked watched elsewhere (once). */
+function buildTv(episodes: WrappedEpisode[], events: WatchEvent[], year: number | null): WrappedTv {
+  const byId = new Map(episodes.map((e) => [e.id, e]));
+  const viewings: { episode: WrappedEpisode; at: string; seconds: number }[] = [];
+  const withHistory = new Set<string>();
+  for (const ev of events) {
+    const episode = byId.get(ev.itemId);
+    if (!episode) continue;
+    withHistory.add(episode.id);
+    viewings.push({ episode, at: ev.at, seconds: ev.seconds });
+  }
+  for (const e of episodes) {
+    if (withHistory.has(e.id) || !e.played || !e.lastPlayed) continue;
+    viewings.push({ episode: e, at: e.lastPlayed, seconds: (e.runtimeMinutes ?? 0) * 60 });
+  }
+  const inRange = viewings.filter((v) => year == null || yearOf(v.at) === year);
+
+  const watched = new Set<string>();
+  const shows = new Map<string, TopShow & { ids: Set<string> }>();
+  const perDay = new Map<string, number>();
+  let seconds = 0;
+  for (const v of inRange) {
+    seconds += v.seconds;
+    watched.add(v.episode.id);
+    const show =
+      shows.get(v.episode.showId) ??
+      ({
+        showId: v.episode.showId,
+        name: v.episode.showTitle,
+        poster: v.episode.poster,
+        episodes: 0,
+        hours: 0,
+        ids: new Set<string>(),
+      } as TopShow & { ids: Set<string> });
+    show.ids.add(v.episode.id);
+    show.episodes = show.ids.size;
+    show.hours += v.seconds / 3600;
+    shows.set(v.episode.showId, show);
+    const key = `${v.episode.showId}|${v.at.slice(0, 10)}`;
+    perDay.set(key, (perDay.get(key) ?? 0) + 1);
+  }
+  const round = (h: number) => Math.round(h * 10) / 10;
+  const topShows = [...shows.values()]
+    .sort((a, b) => b.hours - a.hours || b.episodes - a.episodes || a.name.localeCompare(b.name))
+    .slice(0, 5)
+    .map(({ ids: _ids, ...s }) => ({ ...s, hours: round(s.hours) }));
+  const [bestKey, bestCount] = [...perDay.entries()].sort(
+    (a, b) => b[1] - a[1] || a[0].localeCompare(b[0]),
+  )[0] ?? ['', 0];
+  const [bingeShow, bingeDay] = bestKey.split('|');
+  const bingeInfo = bingeShow ? shows.get(bingeShow) : undefined;
+  return {
+    episodesWatched: watched.size,
+    hoursWatched: round(seconds / 3600),
+    showsWatched: shows.size,
+    topShows,
+    binge:
+      bestCount >= 2 && bingeInfo
+        ? {
+            showId: bingeInfo.showId,
+            name: bingeInfo.name,
+            poster: bingeInfo.poster,
+            episodes: bestCount,
+            day: bingeDay!,
+          }
+        : null,
   };
 }

@@ -210,6 +210,32 @@ test('TV shows: the show, its season and episodes, and an episode opens in the p
   await expect(page.locator('video')).toHaveAttribute('src', /\/api\/media\/shows\/tmdbtv-e2e\//);
 });
 
+test('Wrapped includes TV: episodes, top shows and the biggest binge', async ({ page }) => {
+  test.skip(!local, 'Adds watch history');
+  await signIn(page);
+  await page.evaluate(async () => {
+    for (const id of ['tmdbtv-e2e-s01e01', 'tmdbtv-e2e-s01e02']) {
+      const body = { itemId: id, playSessionId: `w-${id}`, positionSeconds: 0 };
+      const post = (path: string, b: unknown) =>
+        fetch(path, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-requested-with': 'wheelhouse' },
+          body: JSON.stringify(b),
+        });
+      await post('/api/playback/start', body);
+      await post('/api/playback/stop', { ...body, positionSeconds: 59 });
+    }
+  });
+  await page.goto('/wrapped');
+  await expect(page.getByRole('heading', { name: 'TV', exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Test Show' }).first()).toBeVisible();
+  await expect(page.getByText('Biggest binge')).toBeVisible();
+  // Let the cards finish animating in before the picture.
+  await page.waitForTimeout(1200);
+  if (process.env.SHOTS)
+    await page.screenshot({ path: `${process.env.SHOTS}/wrapped-tv.png`, fullPage: true });
+});
+
 test('Discs shows the Mac as offline when it is not reporting', async ({ page }) => {
   test.skip(!local, 'The real Mac may be online');
   await signIn(page);

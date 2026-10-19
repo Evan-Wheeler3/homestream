@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildWrapped, type WatchEvent } from '../../src/shared/wrapped';
+import { buildWrapped, type WatchEvent, type WrappedEpisode } from '../../src/shared/wrapped';
 import { movie } from '../fixtures';
 
 const films = [
@@ -72,5 +72,57 @@ describe('Wheelhouse Wrapped', () => {
     expect(quiet.moviesWatched).toBe(0);
     expect(quiet.hoursWatched).toBe(0);
     expect(quiet.longest).toBeNull();
+  });
+});
+
+describe('Wheelhouse Wrapped: TV', () => {
+  const ep = (id: string, show: string, extra: Partial<WrappedEpisode> = {}): WrappedEpisode => ({
+    id,
+    showId: show,
+    showTitle: show === 'bb' ? 'Breaking Bad' : 'The Office',
+    poster: `/api/media/shows/${show}/poster.jpg`,
+    runtimeMinutes: show === 'bb' ? 47 : 22,
+    genres: ['Drama'],
+    played: true,
+    lastPlayed: null,
+    ...extra,
+  });
+  const episodes = [
+    ep('bb1', 'bb'),
+    ep('bb2', 'bb'),
+    ep('bb3', 'bb'),
+    ep('of1', 'of'),
+    // Watched elsewhere: counted once, at its last-played date.
+    ep('of2', 'of', { lastPlayed: '2026-04-01T20:00:00Z' }),
+    ep('of3', 'of', { played: false }),
+  ];
+  const tvEvents: WatchEvent[] = [
+    ...events,
+    { itemId: 'bb1', at: '2026-02-07T19:00:00Z', seconds: 47 * 60, finished: true },
+    { itemId: 'bb2', at: '2026-02-07T20:00:00Z', seconds: 47 * 60, finished: true },
+    { itemId: 'bb3', at: '2026-02-07T21:00:00Z', seconds: 47 * 60, finished: true },
+    { itemId: 'of1', at: '2026-03-01T20:00:00Z', seconds: 22 * 60, finished: true },
+    { itemId: 'bb1', at: '2025-11-01T20:00:00Z', seconds: 47 * 60, finished: true },
+  ];
+
+  it('counts episodes, hours and top shows, and finds the biggest binge', () => {
+    const w = buildWrapped(films, tvEvents, 2026, episodes);
+    expect(w.moviesWatched).toBe(3);
+    expect(w.tv).toMatchObject({ episodesWatched: 5, showsWatched: 2 });
+    expect(w.tv!.hoursWatched).toBeCloseTo((47 * 3 + 22 * 2) / 60, 1);
+    expect(w.tv!.topShows.map((s) => [s.name, s.episodes])).toEqual([
+      ['Breaking Bad', 3],
+      ['The Office', 2],
+    ]);
+    expect(w.tv!.binge).toMatchObject({ name: 'Breaking Bad', episodes: 3, day: '2026-02-07' });
+    expect(w.years).toContain(2025);
+  });
+
+  it('has no TV section without a TV library, and none watched in a quiet year', () => {
+    expect(buildWrapped(films, tvEvents, 2026).tv).toBeNull();
+    expect(buildWrapped(films, tvEvents, 2020, episodes).tv).toMatchObject({
+      episodesWatched: 0,
+      binge: null,
+    });
   });
 });

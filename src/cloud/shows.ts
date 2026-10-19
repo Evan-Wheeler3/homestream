@@ -11,6 +11,7 @@ import type {
   ShowsPayload,
 } from '../shared/types.js';
 import { badRequest, notFound } from '../server/errors.js';
+import type { WrappedEpisode } from '../shared/wrapped.js';
 import { mediaUrl, toUserState, type StoredSubtitle } from './catalog.js';
 import { nowIso, type Sql } from './db.js';
 import type { CloudEnv } from './env.js';
@@ -415,4 +416,41 @@ export function listIngestedEpisodes(sql: Sql) {
     subtitle_status: string;
     source_path: string | null;
   }>('SELECT id, show_id, video_bytes, video_sha256, subtitle_status, source_path FROM episodes');
+}
+
+/** Every episode with this person's watch state, for Wrapped. */
+export async function wrappedEpisodes(sql: Sql, userId: string): Promise<WrappedEpisode[]> {
+  const rows = await sql.all<{
+    id: string;
+    show_id: string;
+    runtime_minutes: number | null;
+    show_title: string;
+    show_summary: string;
+    played: number | null;
+    last_played: string | null;
+  }>(
+    `SELECT e.id, e.show_id, e.runtime_minutes, s.title AS show_title, s.summary AS show_summary,
+            u.played, u.last_played
+     FROM episodes e JOIN shows s ON s.id = e.show_id
+     LEFT JOIN user_state u ON u.item_id = e.id AND u.user_id = ?`,
+    userId,
+  );
+  const info = new Map<string, StoredShow>();
+  return rows.map((r) => {
+    let show = info.get(r.show_id);
+    if (!show) {
+      show = JSON.parse(r.show_summary) as StoredShow;
+      info.set(r.show_id, show);
+    }
+    return {
+      id: r.id,
+      showId: r.show_id,
+      showTitle: r.show_title,
+      poster: show.images.poster,
+      runtimeMinutes: r.runtime_minutes,
+      genres: show.genres,
+      played: r.played === 1,
+      lastPlayed: r.last_played,
+    };
+  });
 }

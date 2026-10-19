@@ -980,6 +980,27 @@ describe('cloud: TV shows', () => {
     expect(detail.nextUp.id).toBe('tmdbtv-1396-s02e01');
   });
 
+  it('puts watched episodes in Wrapped and on the Home card', async () => {
+    const c = cloud();
+    await signedInAdmin(c);
+    await addShow(c);
+    for (const id of ['tmdbtv-1396-s01e01', 'tmdbtv-1396-s01e02']) {
+      const report = { itemId: id, playSessionId: id, positionSeconds: 0 };
+      await c.call('POST', '/api/playback/start', { body: report });
+      await c.call('POST', '/api/playback/stop', { body: { ...report, positionSeconds: 2800 } });
+    }
+    const year = new Date().getFullYear();
+    const w = (await (await c.call('GET', `/api/wrapped?year=${year}`)).json()) as {
+      tv: { episodesWatched: number; topShows: { name: string }[]; binge: { episodes: number } };
+    };
+    expect(w.tv).toMatchObject({ episodesWatched: 2, binge: { episodes: 2 } });
+    expect(w.tv.topShows[0]!.name).toBe('Breaking Bad');
+    const home = (await (await c.call('GET', '/api/home')).json()) as {
+      sections: { type: string; episodes?: number }[];
+    };
+    expect(home.sections.find((s) => s.type === 'yearInReview')).toMatchObject({ episodes: 2 });
+  });
+
   it('refuses episodes whose show or video is missing', async () => {
     const c = cloud();
     const res = await c.mac('PUT', '/episodes/tmdbtv-9-s01e01', {

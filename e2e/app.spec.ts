@@ -515,6 +515,35 @@ test('shows a clear offline banner and recovers when the server is back', async 
   await expect(page.getByRole('link', { name: /Heat/ })).toBeVisible();
 });
 
+test('home hero: swipe left and right to change the featured title @phone', async ({ page }) => {
+  await signIn(page);
+  const hero = page.locator('.hero');
+  await expect(hero).toBeVisible();
+  const current = () => page.locator('.hero__dot[aria-selected="true"]').getAttribute('aria-label');
+  const first = await current();
+  const box = (await hero.boundingBox())!;
+  const y = box.y + box.height / 2;
+  const swipe = async (from: number, to: number) => {
+    const base = { pointerId: 7, pointerType: 'touch', isPrimary: true, bubbles: true };
+    await hero.dispatchEvent('pointerdown', { ...base, clientX: from, clientY: y });
+    await hero.dispatchEvent('pointermove', { ...base, clientX: (from + to) / 2, clientY: y });
+    await hero.dispatchEvent('pointermove', { ...base, clientX: to, clientY: y });
+    await hero.dispatchEvent('pointerup', { ...base, clientX: to, clientY: y });
+  };
+  await swipe(box.x + box.width * 0.8, box.x + box.width * 0.2);
+  await expect.poll(current).not.toBe(first);
+  const second = await current();
+  await swipe(box.x + box.width * 0.2, box.x + box.width * 0.8);
+  await expect.poll(current).toBe(first);
+  // A mostly-vertical drag is a page scroll and doesn't change the title.
+  const base = { pointerId: 8, pointerType: 'touch', isPrimary: true, bubbles: true };
+  await hero.dispatchEvent('pointerdown', { ...base, clientX: box.x + 100, clientY: y });
+  await hero.dispatchEvent('pointermove', { ...base, clientX: box.x + 60, clientY: y - 80 });
+  await hero.dispatchEvent('pointerup', { ...base, clientX: box.x + 40, clientY: y - 120 });
+  expect(await current()).toBe(first);
+  expect(second).not.toBe(first);
+});
+
 test('phone layout uses the bottom tab bar @phone', async ({ page }) => {
   const user = uniqueUser('phone-user');
   await signIn(page, user);

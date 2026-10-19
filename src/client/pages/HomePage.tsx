@@ -104,10 +104,17 @@ function Section({ section }: { section: HomePayload['sections'][number] }) {
       return (
         <Link to="/wrapped" className="year-promo">
           <span className="eyebrow">Wheelhouse Wrapped</span>
-          <span className="year-promo__title display">Your {section.year} in movies</span>
+          <span className="year-promo__title display">
+            Your {section.year} in movies{section.episodes ? ' and TV' : ''}
+          </span>
           <span className="year-promo__stats">
-            {plural(section.movies, 'movie')} ·{' '}
-            {section.hours >= 10 ? Math.round(section.hours) : section.hours} hours
+            {[
+              section.movies ? plural(section.movies, 'movie') : null,
+              section.episodes ? plural(section.episodes, 'episode') : null,
+            ]
+              .filter(Boolean)
+              .join(' · ')}{' '}
+            · {section.hours >= 10 ? Math.round(section.hours) : section.hours} hours
           </span>
           <Icon name="chevronRight" size={22} />
         </Link>
