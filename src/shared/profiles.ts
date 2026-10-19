@@ -26,7 +26,6 @@ export const PROFILE_EMOJI = [
   '🐼',
   '🦁',
   '🐯',
-  '🦄',
   '🐉',
   '👻',
   '🎃',
@@ -36,7 +35,6 @@ export const PROFILE_EMOJI = [
   '🎸',
   '🏀',
   '⚡',
-  '🌈',
   '😎',
 ] as const;
 
