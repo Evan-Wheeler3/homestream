@@ -36,6 +36,7 @@ import { formatBytes, formatClock, relativeTime, SUBTITLE_LANGUAGE_OPTIONS } fro
 import { sizedImage } from '../lib/images';
 import { useCollections, useRefreshCatalog, useStatus, useUpdatePreferences } from '../lib/queries';
 import { SORT_OPTIONS } from './BrowsePage';
+import { BackupsPanel, PeoplePanel, StoragePanel, SubtitlesPanel } from './CloudSettings';
 import { setTvSetting, useTvMode } from '../lib/tv';
 
 /** Check for and install updates (git installs; administrators only). */
@@ -626,7 +627,9 @@ function ServerStatusPanel() {
           <dd>
             {s.source === 'jellyfin'
               ? 'Jellyfin'
-              : 'Built-in sample library (no Jellyfin configured)'}
+              : s.source === 'cloud'
+                ? 'Cloudflare (movies in R2 storage)'
+                : 'Built-in sample library (no Jellyfin configured)'}
           </dd>
         </div>
         {ms.url && (
@@ -680,7 +683,7 @@ function ServerStatusPanel() {
             </dd>
           </div>
         )}
-        {s.backups && (
+        {s.backups && s.source !== 'cloud' && (
           <div className="facts__row">
             <dt>Backups</dt>
             <dd>
@@ -734,9 +737,9 @@ function ServerStatusPanel() {
           busy={status.isFetching}
           onClick={() => status.refetch()}
         >
-          Test connection
+          {s.source === 'cloud' ? 'Check again' : 'Test connection'}
         </Button>
-        {s.backups && (
+        {s.backups && s.source !== 'cloud' && (
           <Button
             icon="upload"
             variant="secondary"
@@ -763,7 +766,7 @@ function ServerStatusPanel() {
               onSuccess: (r) =>
                 toast.show(
                   r.stale
-                    ? 'Jellyfin unreachable — kept cached library'
+                    ? 'Media server unreachable — kept cached library'
                     : `Library refreshed · ${r.count} movies`,
                   r.stale ? 'error' : 'info',
                 ),
@@ -775,8 +778,9 @@ function ServerStatusPanel() {
         </Button>
       </div>
       <p className="field__hint">
-        The Jellyfin address is set in the <code>.env</code> file on the host computer (see README).
-        New movies appear automatically within a few minutes of Jellyfin scanning them.
+        {s.source === 'cloud'
+          ? 'New movies appear as soon as the Mac has uploaded them. “Refresh library” checks every movie’s file is in storage.'
+          : 'The Jellyfin address is set in the .env file on the host computer (see README). New movies appear automatically within a few minutes of Jellyfin scanning them.'}
       </p>
     </>
   );
@@ -893,6 +897,8 @@ export default function SettingsPage({
   };
 
   const customAccent = !ACCENT_PRESETS.some((p) => p.value === prefs.accent);
+  const cloud = session.source === 'cloud';
+  const admin = session.user.isAdmin;
 
   return (
     <div className="page settings route-enter">
@@ -908,10 +914,16 @@ export default function SettingsPage({
           ['home', 'Home'],
           ['library', 'Library'],
           ['playback', 'Playback'],
-          ['server', 'Server'],
-          ...(session.user.isAdmin ? [['sharing', 'Sharing']] : []),
+          ['server', cloud ? 'Library' : 'Server'],
+          ...(admin ? [['sharing', cloud ? 'People' : 'Sharing']] : []),
+          ...(admin && cloud
+            ? [
+                ['storage', 'Storage'],
+                ['subtitles', 'Subtitles'],
+              ]
+            : []),
           ['discs', 'Discs'],
-          ['updates', 'Updates'],
+          ...(cloud ? [] : [['updates', 'Updates']]),
           ['diagnostics', 'Diagnostics'],
           ['account', 'Account'],
         ].map(([id, label]) => (
@@ -1050,18 +1062,20 @@ export default function SettingsPage({
         title="Playback"
         description="How movies start and how much bandwidth they may use."
       >
-        <SelectField<string>
-          label="Maximum streaming quality"
-          value={String(prefs.playback.maxBitrate ?? 'auto')}
-          options={BITRATE_OPTIONS.map((o) => ({
-            value: String(o.value ?? 'auto'),
-            label: o.label,
-          }))}
-          onChange={(v) =>
-            save({ playback: { ...prefs.playback, maxBitrate: v === 'auto' ? null : Number(v) } })
-          }
-          hint="Files above this bitrate are converted by Jellyfin to a smaller stream. Lower it for slow Wi-Fi or mobile data."
-        />
+        {!cloud && (
+          <SelectField<string>
+            label="Maximum streaming quality"
+            value={String(prefs.playback.maxBitrate ?? 'auto')}
+            options={BITRATE_OPTIONS.map((o) => ({
+              value: String(o.value ?? 'auto'),
+              label: o.label,
+            }))}
+            onChange={(v) =>
+              save({ playback: { ...prefs.playback, maxBitrate: v === 'auto' ? null : Number(v) } })
+            }
+            hint="Files above this bitrate are converted by Jellyfin to a smaller stream. Lower it for slow Wi-Fi or mobile data."
+          />
+        )}
         <SelectField<Preferences['playback']['resumeBehavior']>
           label="When a movie is part-watched"
           value={prefs.playback.resumeBehavior}
@@ -1081,21 +1095,59 @@ export default function SettingsPage({
           }
           hint="Turned on automatically when a movie has subtitles in this language."
         />
-        <Switch
-          label="Prefer direct play"
-          description="Play the original file whenever this device supports it (best quality, least server load). Turn off to always let Jellyfin prepare a compatible stream."
-          checked={prefs.playback.preferDirectPlay}
-          onChange={(preferDirectPlay) =>
-            save({ playback: { ...prefs.playback, preferDirectPlay } })
-          }
-        />
+        {!cloud && (
+          <Switch
+            label="Prefer direct play"
+            description="Play the original file whenever this device supports it (best quality, least server load). Turn off to always let Jellyfin prepare a compatible stream."
+            checked={prefs.playback.preferDirectPlay}
+            onChange={(preferDirectPlay) =>
+              save({ playback: { ...prefs.playback, preferDirectPlay } })
+            }
+          />
+        )}
       </Section>
 
-      <Section id="server" title="Server" description="Connection to your media server.">
+      <Section
+        id="server"
+        title={cloud ? 'Library' : 'Server'}
+        description={cloud ? 'Your movies in the cloud.' : 'Connection to your media server.'}
+      >
         <ServerStatusPanel />
       </Section>
 
-      {session.user.isAdmin && (
+      {admin && cloud && (
+        <Section
+          id="sharing"
+          title="People"
+          description="Wheelhouse is invite-only. Invite people by name; each link works once."
+        >
+          <PeoplePanel myId={session.user.id} />
+        </Section>
+      )}
+
+      {admin && cloud && (
+        <Section
+          id="storage"
+          title="Storage and backups"
+          description="What your library takes up, and what it costs."
+        >
+          <StoragePanel />
+          <h3 className="section-label">Backups</h3>
+          <BackupsPanel />
+        </Section>
+      )}
+
+      {admin && cloud && (
+        <Section
+          id="subtitles"
+          title="Subtitles"
+          description="English subtitles for each movie: read from the disc, or downloaded from OpenSubtitles."
+        >
+          <SubtitlesPanel />
+        </Section>
+      )}
+
+      {admin && !cloud && (
         <Section
           id="sharing"
           title="Share with family"
@@ -1107,7 +1159,7 @@ export default function SettingsPage({
         </Section>
       )}
 
-      {session.user.isAdmin && (
+      {admin && !cloud && (
         <Section
           id="updates"
           title="Updates"
@@ -1120,7 +1172,11 @@ export default function SettingsPage({
       <Section
         id="discs"
         title="Disc ripping"
-        description="Insert a DVD and it’s added to your library automatically."
+        description={
+          cloud
+            ? 'Insert a DVD in the Mac: it’s ripped, compressed and uploaded here automatically.'
+            : 'Insert a DVD and it’s added to your library automatically.'
+        }
       >
         {session.ripper ? (
           <ButtonLink to="/rips" icon="disc">

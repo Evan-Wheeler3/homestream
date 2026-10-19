@@ -1,0 +1,33 @@
+// Wheelhouse in the cloud: one Worker serves the React app (dist/client) and the API.
+// Secrets (never in this file): wrangler secret put PEPPER | MAC_TOKEN | NTFY_TOPIC |
+// OPENSUBTITLES_API_KEY | OPENSUBTITLES_USERNAME | OPENSUBTITLES_PASSWORD | TMDB_READ_TOKEN
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "wheelhouse",
+  "main": "src/cloud/worker.ts",
+  "compatibility_date": "2026-09-01",
+  "assets": {
+    "directory": "dist/client",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"],
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "wheelhouse",
+      "database_id": "d5775d31-e358-4ac5-b8c2-3c93eaaf5c4c",
+      "migrations_dir": "migrations",
+    },
+  ],
+  "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "wheelhouse-media" }],
+  // Nightly database backup to R2 (04:17 UTC).
+  "triggers": { "crons": ["17 4 * * *"] },
+  "vars": {
+    // Password hashing strength (PBKDF2-SHA256). Raise to 100000 on Workers Paid.
+    "PBKDF2_ITERATIONS": "10000",
+    "NTFY_SERVER": "https://ntfy.sh",
+    "BACKUPS_KEEP": "14",
+  },
+  "observability": { "enabled": true },
+}

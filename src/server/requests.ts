@@ -2,6 +2,9 @@ import { randomUUID } from 'node:crypto';
 import type { Movie, MovieRequest, MovieRequestStatus } from '../shared/types.js';
 import { nowIso, type Db } from './db.js';
 import { badRequest, notFound } from './errors.js';
+import { findInLibrary, titleKey } from '../shared/requests.js';
+
+export { findInLibrary, titleKey };
 
 const MAX_OPEN_PER_PERSON = 25;
 
@@ -16,18 +19,6 @@ interface RequestRow {
   item_id: string | null;
   created_at: string;
   updated_at: string;
-}
-
-/** Title comparison that ignores case, punctuation and a leading "The"/"A". */
-export function titleKey(title: string): string {
-  return title
-    .normalize('NFKD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLowerCase()
-    .replace(/&/g, ' and ')
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim()
-    .replace(/^(the|a|an) /, '');
 }
 
 /** "Can you add …?" requests from family members, shown to the administrator. */
@@ -155,17 +146,4 @@ export class MovieRequests {
     }
     return done;
   }
-}
-
-/** A library movie matching a requested title (and year, when given, ±1). */
-export function findInLibrary(library: Movie[], title: string, year: number | null): Movie | null {
-  const key = titleKey(title);
-  return (
-    library.find(
-      (m) =>
-        (titleKey(m.title) === key ||
-          (m.originalTitle != null && titleKey(m.originalTitle) === key)) &&
-        (year == null || m.year == null || Math.abs(m.year - year) <= 1),
-    ) ?? null
-  );
 }

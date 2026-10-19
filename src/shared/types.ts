@@ -6,7 +6,8 @@
 //  - `personal` (rating, notes), collections and preferences are owned by this app
 //    and stored in its SQLite database, keyed by stable Jellyfin item / user IDs.
 
-export type MediaSourceKind = 'jellyfin' | 'mock';
+/** Where the library comes from: Jellyfin, the built-in samples, or Cloudflare. */
+export type MediaSourceKind = 'jellyfin' | 'mock' | 'cloud';
 
 export interface MovieImages {
   /** Same-origin URL; append width params with `imageUrl()` on the client. */
@@ -772,3 +773,80 @@ export type ApiErrorCode =
   | 'MEDIA_UNAVAILABLE'
   | 'CONFLICT'
   | 'INTERNAL';
+
+// -----------------------------------------------------------------------------
+// Cloud edition: people and invitations, storage, backups, subtitles, the Mac
+
+export interface CloudPerson {
+  id: string;
+  name: string;
+  /** Null until they've accepted their invitation. */
+  username: string | null;
+  isAdmin: boolean;
+  status: 'pending' | 'active';
+  createdAt: string;
+  lastSeenAt: string | null;
+  /** Their unused invitation or password-reset link, if any. */
+  link: { id: string; kind: 'invite' | 'reset'; expiresAt: string } | null;
+  /** Number of devices signed in. */
+  sessions: number;
+}
+
+/** A newly made invitation or reset link. The token is shown once and never stored. */
+export interface InviteLink {
+  url: string;
+  expiresAt: string;
+  person: CloudPerson;
+}
+
+/** What an invitation link is for (shown before choosing a username and password). */
+export interface InviteInfo {
+  name: string;
+  kind: 'invite' | 'reset';
+  /** Set for password resets: the account's existing username. */
+  username: string | null;
+  expiresAt: string;
+}
+
+export interface StorageReport {
+  movies: number;
+  objects: number;
+  bytes: number;
+  videoBytes: number;
+  /** R2's free monthly storage allowance. */
+  freeBytes: number;
+  /** Estimated monthly storage cost in US dollars (beyond the free allowance). */
+  monthlyUsd: number;
+  pricePerGbMonth: number;
+  plan: string;
+}
+
+export interface CloudBackup {
+  key: string;
+  bytes: number;
+  createdAt: string;
+}
+
+export interface SubtitleStatus {
+  id: string;
+  title: string;
+  year: number | null;
+  status: 'disc' | 'downloaded' | 'none';
+  label: string | null;
+  release: string | null;
+}
+
+export interface SubtitleChoice {
+  fileId: number;
+  release: string;
+  downloads: number;
+  hearingImpaired: boolean;
+}
+
+/** The Discs page in the cloud: the Mac's last report. */
+export interface RipsPayload {
+  health: RipperHealth;
+  jobs: RipJob[];
+  /** Absent outside the cloud edition. */
+  mac?: { online: boolean; lastSeen: string | null };
+}

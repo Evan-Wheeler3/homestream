@@ -4,6 +4,7 @@ import type { SessionUser } from '../shared/types.js';
 import type { AppConfig } from './config.js';
 import { nowIso, type Db } from './db.js';
 import { ApiError } from './errors.js';
+import { deviceNameFromUserAgent } from '../shared/devices.js';
 import type { UserContext } from './providers/types.js';
 
 export const SESSION_COOKIE = 'pc_session';
@@ -56,37 +57,7 @@ export function parseCookies(header: string | undefined): Record<string, string>
   return out;
 }
 
-/** Friendly device name for the Jellyfin dashboard, e.g. "iPhone · Safari". */
-export function deviceNameFromUserAgent(ua: string | undefined): string {
-  if (!ua) return 'Web browser';
-  const device = /iPhone/.test(ua)
-    ? 'iPhone'
-    : /iPad/.test(ua)
-      ? 'iPad'
-      : /Android/.test(ua)
-        ? 'Android'
-        : /Macintosh/.test(ua)
-          ? 'Mac'
-          : /Windows/.test(ua)
-            ? 'Windows'
-            : /CrOS/.test(ua)
-              ? 'Chromebook'
-              : /Linux/.test(ua)
-                ? 'Linux'
-                : /SMART-TV|Tizen|Web0S|webOS/i.test(ua)
-                  ? 'TV'
-                  : 'Device';
-  const browser = /Edg\//.test(ua)
-    ? 'Edge'
-    : /Firefox\//.test(ua)
-      ? 'Firefox'
-      : /Chrome\//.test(ua)
-        ? 'Chrome'
-        : /Safari\//.test(ua)
-          ? 'Safari'
-          : 'Browser';
-  return `${device} · ${browser}`;
-}
+export { deviceNameFromUserAgent };
 
 export class SessionStore {
   constructor(

@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router';
-import type { PublicProfile, SessionInfo } from '../../shared/types';
+import type { MediaSourceKind, PublicProfile, SessionInfo } from '../../shared/types';
 import { Icon } from '../components/Icon';
 import { Button, Spinner } from '../components/ui';
 import { api, ApiError, errorMessage } from '../lib/api';
@@ -54,7 +54,7 @@ export function LoginPage() {
 
   const health = useQuery({
     queryKey: ['health'],
-    queryFn: () => api<{ ok: boolean; source: 'jellyfin' | 'mock' }>('/health'),
+    queryFn: () => api<{ ok: boolean; source: MediaSourceKind }>('/health'),
     retry: 1,
   });
   const existing = useQuery({
@@ -78,7 +78,11 @@ export function LoginPage() {
       qc.setQueryData(keys.session, session);
       navigate(state.from && state.from !== '/login' ? state.from : '/', { replace: true });
     } catch (err) {
-      if (err instanceof ApiError && err.code === 'MEDIA_SERVER_UNREACHABLE') {
+      if (
+        err instanceof ApiError &&
+        err.code === 'MEDIA_SERVER_UNREACHABLE' &&
+        source !== 'cloud'
+      ) {
         setError(
           'Jellyfin is not responding. Check that the Jellyfin server is running, then try again.',
         );
@@ -117,7 +121,9 @@ export function LoginPage() {
         <p className="login__lede">
           {source === 'mock'
             ? 'Sample library mode. Sign in with any name and the sample password (MOCK_PASSWORD, “demo” by default).'
-            : 'Sign in with your Jellyfin account.'}
+            : source === 'cloud'
+              ? 'Sign in with the username and password you chose when you were invited.'
+              : 'Sign in with your Jellyfin account.'}
         </p>
 
         {state.expired && !error && (
@@ -227,11 +233,13 @@ export function LoginPage() {
           </form>
         )}
         <p className="login__foot faint">
-          {source === 'jellyfin'
-            ? 'Accounts are managed in your Jellyfin dashboard.'
-            : source === 'mock'
-              ? 'Connect Jellyfin by setting JELLYFIN_URL — see the README.'
-              : ' '}
+          {source === 'cloud'
+            ? 'Invite only. Forgot your password? Ask for a reset link.'
+            : source === 'jellyfin'
+              ? 'Accounts are managed in your Jellyfin dashboard.'
+              : source === 'mock'
+                ? 'Connect Jellyfin by setting JELLYFIN_URL — see the README.'
+                : ' '}
         </p>
       </main>
     </div>

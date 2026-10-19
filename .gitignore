@@ -8,3 +8,7 @@ playwright-report/
 test-results/
 *.log
 .DS_Store
+
+# Cloudflare: local secrets and simulator state
+.dev.vars*
+.wrangler/

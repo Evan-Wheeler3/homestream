@@ -22,7 +22,7 @@ import type {
   RipCandidate,
   RipJob,
   RipKind,
-  RipperHealth,
+  RipsPayload,
   ServerStatus,
   SessionInfo,
   ShowDetail,
@@ -406,7 +406,7 @@ const WORKING: RipJob['status'][] = [
 export function useRips(enabled = true) {
   return useQuery({
     queryKey: keys.rips,
-    queryFn: () => api<{ health: RipperHealth; jobs: RipJob[] }>('/rips'),
+    queryFn: () => api<RipsPayload>('/rips'),
     enabled,
     // Refresh often while a disc is being worked on, slowly otherwise (to notice new discs).
     refetchInterval: (query) =>

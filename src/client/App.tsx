@@ -27,6 +27,7 @@ import { RipsPage } from './pages/RipsPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { SearchPage } from './pages/SearchPage';
 import { VotePage } from './pages/VotePage';
+import { InvitePage } from './pages/InvitePage';
 import { ShowDetailPage } from './pages/ShowDetailPage';
 import { ShowsPage } from './pages/ShowsPage';
 
@@ -62,7 +63,12 @@ function AuthLostWatcher() {
   const qc = useQueryClient();
   useEffect(() => {
     // The login and voting pages work without a session.
-    if (!authLost || location.pathname === '/login' || location.pathname.startsWith('/vote'))
+    if (
+      !authLost ||
+      location.pathname === '/login' ||
+      location.pathname.startsWith('/vote') ||
+      location.pathname.startsWith('/invite')
+    )
       return;
     qc.clear();
     navigate('/login', {
@@ -161,6 +167,7 @@ export function App() {
             <Route path="/login" element={<LoginPage />} />
             <Route path="/vote" element={<VotePage />} />
             <Route path="/vote/:code" element={<VotePage />} />
+            <Route path="/invite/:token" element={<InvitePage />} />
             <Route path="/*" element={<Protected />} />
           </Routes>
         </BrowserRouter>

@@ -676,7 +676,7 @@ export function RipsPage({ session }: { session: SessionInfo }) {
       </div>
     );
   }
-  const { health, jobs } = rips.data;
+  const { health, jobs, mac } = rips.data;
 
   return (
     <div className="page rips route-enter">
@@ -706,6 +706,19 @@ export function RipsPage({ session }: { session: SessionInfo }) {
         </div>
       </header>
 
+      {mac && !mac.online && (
+        <div className="rips__notice rips__notice--error" role="status">
+          <Icon name="offline" size={18} />
+          <div>
+            <strong>Mac offline.</strong>{' '}
+            {mac.lastSeen
+              ? `Last heard from ${relativeTime(mac.lastSeen)}. This is what it was doing then.`
+              : 'The Mac hasn’t reported in yet.'}{' '}
+            Switch it on (and wake it up) to rip discs; movies already in the library play without
+            it.
+          </div>
+        </div>
+      )}
       {health.problems.length > 0 && (
         <div className="rips__notice rips__notice--error" role="alert">
           <Icon name="alert" size={18} />
