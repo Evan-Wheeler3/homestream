@@ -406,6 +406,43 @@ test('player: sample clip plays, is labelled as mock, and returns', async ({ pag
   await expect(page).toHaveURL(/\/movie\/his-girl-friday-1940/);
 });
 
+test('player: AirPlay button appears when a TV is nearby and shows when it plays there', async ({
+  page,
+}) => {
+  // Pretend to be Safari with an Apple TV on the network.
+  await page.addInitScript(() => {
+    (window as unknown as Record<string, unknown>).WebKitPlaybackTargetAvailabilityEvent =
+      function () {};
+    (window as unknown as { pickerOpened: number }).pickerOpened = 0;
+    (
+      HTMLVideoElement.prototype as unknown as Record<string, unknown>
+    ).webkitShowPlaybackTargetPicker = function () {
+      (window as unknown as { pickerOpened: number }).pickerOpened++;
+    };
+  });
+  await signIn(page);
+  await page.goto('/movie/his-girl-friday-1940');
+  await page.getByRole('link', { name: 'Play', exact: true }).click();
+  const video = page.locator('video');
+  await expect(video).toHaveAttribute('x-webkit-airplay', 'allow');
+  await expect(page.getByRole('button', { name: 'AirPlay' })).toHaveCount(0);
+  await video.evaluate((v) => {
+    const e = new Event('webkitplaybacktargetavailabilitychanged');
+    Object.assign(e, { availability: 'available' });
+    v.dispatchEvent(e);
+  });
+  await page.mouse.move(300, 300);
+  await page.getByRole('button', { name: 'AirPlay' }).click();
+  expect(
+    await page.evaluate(() => (window as unknown as { pickerOpened: number }).pickerOpened),
+  ).toBe(1);
+  await video.evaluate((v) => {
+    Object.defineProperty(v, 'webkitCurrentPlaybackTargetIsWireless', { value: true });
+    v.dispatchEvent(new Event('webkitcurrentplaybacktargetiswirelesschanged'));
+  });
+  await expect(page.getByText('Playing on your TV')).toBeVisible();
+});
+
 test('search page: keyboard shortcut, Enter opens the top result', async ({ page }) => {
   await signIn(page);
   await page.keyboard.press('/');

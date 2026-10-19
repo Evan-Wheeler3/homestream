@@ -319,3 +319,27 @@
   max-width: 50ch;
   color: rgb(255 255 255 / 0.85);
 }
+
+/* Sent to a TV with AirPlay or Cast. */
+.player__remote {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: var(--s-2);
+  text-align: center;
+  background: radial-gradient(circle at center, rgb(255 255 255 / 0.06), #000 70%);
+  pointer-events: none;
+}
+.player__remote svg {
+  color: var(--accent);
+}
+.player__remote p {
+  margin: 0;
+  font-size: var(--text-lg, 1.25rem);
+  font-weight: 600;
+}
+.player .icon-btn.is-active {
+  color: var(--accent);
+}

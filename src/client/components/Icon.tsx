@@ -85,6 +85,19 @@ const PATHS = {
     </>
   ),
   fullscreen: <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />,
+  airplay: (
+    <>
+      <path d="M6 17H4.5A1.5 1.5 0 0 1 3 15.5v-9A1.5 1.5 0 0 1 4.5 5h15A1.5 1.5 0 0 1 21 6.5v9a1.5 1.5 0 0 1-1.5 1.5H18" />
+      <path d="m12 14 4.5 6h-9z" fill="currentColor" stroke="none" />
+    </>
+  ),
+  cast: (
+    <>
+      <path d="M3 8V6.5A1.5 1.5 0 0 1 4.5 5h15A1.5 1.5 0 0 1 21 6.5v11a1.5 1.5 0 0 1-1.5 1.5H14" />
+      <path d="M3 12a7 7 0 0 1 7 7M3 15.5A3.5 3.5 0 0 1 6.5 19" />
+      <circle cx="3.5" cy="18.5" r="0.6" fill="currentColor" />
+    </>
+  ),
   exitFullscreen: <path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" />,
   captions: (
     <>

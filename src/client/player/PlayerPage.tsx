@@ -13,6 +13,7 @@ import { formatClock, languageName } from '../lib/format';
 import { sizedImage } from '../lib/images';
 import { invalidateShows, useEpisode, useMovie } from '../lib/queries';
 import { isTvMode, remoteKey, type RemoteKey } from '../lib/tv';
+import { useRemotePlayback } from './remote';
 
 interface StartOptions {
   startSeconds: number;
@@ -115,6 +116,7 @@ export default function PlayerPage({
   const [fullscreen, setFullscreen] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [menu, setMenu] = useState<null | 'subtitles' | 'audio'>(null);
+  const remote = useRemotePlayback(videoRef, info);
   // The user's subtitle choice for the current play session (null entry = use default).
   const [trackChoice, setTrackChoice] = useState<{ session: string; index: number | null } | null>(
     null,
@@ -793,6 +795,7 @@ export default function PlayerPage({
         ref={videoRef}
         className="player__video"
         playsInline
+        x-webkit-airplay="allow"
         preload="metadata"
         poster={poster}
         onClick={togglePlay}
@@ -810,6 +813,13 @@ export default function PlayerPage({
             />
           ))}
       </video>
+      {remote.active && (
+        <div className="player__remote" role="status">
+          <Icon name={remote.kind === 'cast' ? 'cast' : 'airplay'} size={56} />
+          <p>Playing on your TV</p>
+          <span className="faint">Use these controls, or your TV’s remote.</span>
+        </div>
+      )}
 
       {(loading || waiting) && !error && (
         <div className="player__center" aria-live="polite">
@@ -1049,6 +1059,24 @@ export default function PlayerPage({
                   </div>
                 )}
               </div>
+            )}
+            {remote.kind && (
+              <IconButton
+                icon={remote.kind === 'airplay' ? 'airplay' : 'cast'}
+                label={
+                  remote.kind === 'airplay'
+                    ? remote.active
+                      ? 'AirPlay (playing on TV)'
+                      : 'AirPlay'
+                    : remote.active
+                      ? 'Cast (playing on TV)'
+                      : 'Cast to TV'
+                }
+                size={24}
+                pressed={remote.active}
+                className={remote.active ? 'is-active' : undefined}
+                onClick={remote.open}
+              />
             )}
             <IconButton
               icon={fullscreen ? 'exitFullscreen' : 'fullscreen'}
