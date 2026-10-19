@@ -410,7 +410,11 @@ test('search page: keyboard shortcut, Enter opens the top result', async ({ page
   await signIn(page);
   await page.keyboard.press('/');
   await expect(page).toHaveURL(/\/search/);
+  // The search page loads on demand: wait for its box to take focus before typing.
+  const box = page.getByPlaceholder('Titles, directors, actors…');
+  await expect(box).toBeFocused();
   await page.keyboard.type('rashomon');
+  await expect(box).toHaveValue('rashomon');
   await expect(page.getByText('1 result')).toBeVisible();
   await page.keyboard.press('Enter');
   await expect(page).toHaveURL('/movie/rashomon-1950');

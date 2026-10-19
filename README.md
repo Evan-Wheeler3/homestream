@@ -96,6 +96,19 @@ Mac only rips new discs and uploads them by itself. Jellyfin isn't needed in thi
    From then on, new discs upload by themselves, and the cloud Discs page shows the Mac's progress (or
    "Mac offline").
 
+**Automatic deploys from GitHub:** once two repository secrets are set, every push that passes
+the tests is published to Cloudflare by GitHub Actions (the `deploy` job in `.github/workflows/ci.yml`),
+including new database migrations. Nothing needs to run on the Mac.
+
+1. Cloudflare dashboard → **My Profile → API Tokens → Create Token** → template **Edit Cloudflare
+   Workers**. Add **Account → D1 → Edit** to its permissions, then create it and copy the token.
+2. Copy your **Account ID** (Workers & Pages overview, right-hand side).
+3. GitHub → this repository → **Settings → Secrets and variables → Actions → New repository secret**:
+   `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
+
+The Worker's own secrets (e.g. `OMDB_API_KEY`) can be added in the browser too: Cloudflare dashboard →
+**Workers & Pages → wheelhouse → Settings → Variables and Secrets → Add** (type _Secret_).
+
 **Going back to the local setup:** remove `WHEELHOUSE_MODE=ripper` from `.env`, restart the same way,
 and open Jellyfin again.
 

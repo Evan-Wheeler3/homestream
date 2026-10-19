@@ -44,3 +44,41 @@ jobs:
             playwright-report/
             test-results/
           retention-days: 7
+
+  # Publishes the Cloudflare edition after every successful push to the main
+  # working branch. Needs two repository secrets (Settings → Secrets and
+  # variables → Actions): CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID.
+  # Without them this job skips itself.
+  deploy:
+    name: Deploy to Cloudflare
+    needs: [check, e2e]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/claude/peaceful-cray-8hwjin' || github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-cloudflare
+      cancel-in-progress: false
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Check Cloudflare is connected
+        id: secrets
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "No Cloudflare secrets: skipping deploy."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.secrets.outputs.ready == 'true'
+        uses: actions/checkout@v4
+      - if: steps.secrets.outputs.ready == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - if: steps.secrets.outputs.ready == 'true'
+        run: npm ci
+      # Builds the app, applies new database migrations, then publishes the Worker.
+      - if: steps.secrets.outputs.ready == 'true'
+        run: npm run cloud:deploy
