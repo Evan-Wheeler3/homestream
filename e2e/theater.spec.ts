@@ -103,11 +103,19 @@ test('theater: "In the theater" on a movie page opens the box office with that m
   await signIn(page);
   await page.goto('/browse');
   await page.locator('a.poster-card').first().click();
-  const heading = await page.getByRole('heading', { level: 1 }).innerText();
-  await page.getByRole('link', { name: 'In the theater' }).click();
+  await expect(page).toHaveURL(/\/movie\//);
+  const theaterLink = page.getByRole('link', { name: 'In the theater' });
+  await expect(theaterLink).toBeVisible();
+  const id = decodeURIComponent(new URL(page.url()).pathname.split('/').pop()!);
+  const { title } = (await (
+    await page.request.get(`/api/movies/${encodeURIComponent(id)}`)
+  ).json()) as {
+    title: string;
+  };
+  await theaterLink.click();
   const box = page.getByRole('dialog', { name: 'Box office' });
   await expect(box).toBeVisible({ timeout: 30_000 });
-  await expect(box.locator('.boxoffice__title')).toContainText(heading.split('\n')[0]!);
+  await expect(box.locator('.boxoffice__title')).toContainText(title);
 });
 
 test('theater on a phone: a thumbstick walks you around @phone', async ({ page }, info) => {
