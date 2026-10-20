@@ -2,9 +2,13 @@
 // and the React app's files for every other path.
 import { backupNow } from './admin.js';
 import { createApp } from './app.js';
+import { readSession, SESSION_COOKIE } from './auth.js';
 import { nowIso, Sql } from './db.js';
 import { refreshRatings } from './ratings.js';
 import type { CloudEnv } from './env.js';
+import { THEATER_USER_HEADER } from './theater.js';
+
+export { TheaterHouse } from './theater.js';
 
 const app = createApp();
 
@@ -16,6 +20,7 @@ interface Ctx {
 export default {
   async fetch(request: Request, env: CloudEnv, ctx: Ctx): Promise<Response> {
     const url = new URL(request.url);
+    if (url.pathname === '/api/theater/socket') return theaterSocket(request, env);
     if (url.pathname.startsWith('/api/')) return app.fetch(request, env, ctx as never);
     if (!env.ASSETS) return new Response('Not found', { status: 404 });
     return env.ASSETS.fetch(request);
@@ -42,3 +47,39 @@ export default {
     );
   },
 };
+
+const cookie = (request: Request, name: string) =>
+  request.headers
+    .get('cookie')
+    ?.split(/;\s*/)
+    .find((c) => c.startsWith(`${name}=`))
+    ?.slice(name.length + 1);
+
+/** Joins the shared theater (a WebSocket), as the person signed in. */
+async function theaterSocket(request: Request, env: CloudEnv): Promise<Response> {
+  if (request.headers.get('upgrade')?.toLowerCase() !== 'websocket') {
+    return new Response('Expected a WebSocket', { status: 426 });
+  }
+  // Only Wheelhouse's own pages may open it with your cookie.
+  const origin = request.headers.get('origin');
+  if (origin && new URL(origin).host !== new URL(request.url).host) {
+    return new Response('Forbidden', { status: 403 });
+  }
+  if (!env.THEATER) return new Response('The theater isn’t set up', { status: 503 });
+  const session = await readSession(new Sql(env.DB), cookie(request, SESSION_COOKIE));
+  if (!session) return new Response('Sign in to continue', { status: 401 });
+  const { user } = session;
+  const headers = new Headers(request.headers);
+  headers.set(
+    THEATER_USER_HEADER,
+    JSON.stringify({
+      userId: user.id,
+      name: user.name,
+      color: user.look?.color ?? null,
+      emoji: user.look?.emoji ?? null,
+      image: user.look?.image ?? null,
+    }),
+  );
+  const house = env.THEATER.get(env.THEATER.idFromName('wheelhouse'));
+  return house.fetch(new Request(request.url, { headers }));
+}

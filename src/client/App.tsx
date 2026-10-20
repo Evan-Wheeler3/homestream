@@ -39,6 +39,7 @@ const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const SpinPage = lazy(() => import('./pages/SpinPage'));
 const WrappedPage = lazy(() => import('./pages/WrappedPage'));
 const NightPage = lazy(() => import('./pages/NightPage'));
+const TheaterPage = lazy(() => import('./theater/TheaterPage'));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -173,6 +174,14 @@ function Protected() {
           <Route path="night" element={<NightPage />} />
           <Route path="requests" element={<RequestsPage session={session.data} />} />
           <Route path="downloads" element={<DownloadsPage />} />
+          <Route
+            path="theater"
+            element={
+              <Suspense fallback={<PageLoader label="Opening the doors" />}>
+                <TheaterPage />
+              </Suspense>
+            }
+          />
           <Route
             path="settings"
             element={<SettingsPage session={session.data} prefs={preferences} />}

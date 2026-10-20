@@ -14,6 +14,7 @@ const NAV: { to: string; label: string; icon: IconName; end?: boolean }[] = [
   { to: '/browse', label: 'Browse', icon: 'grid' },
   { to: '/shows', label: 'TV Shows', icon: 'tv' },
   { to: '/collections', label: 'Collections', icon: 'stack' },
+  { to: '/theater', label: 'Theater', icon: 'film' },
 ];
 
 /** Re-check the app server and, if needed, Jellyfin (via a catalog refresh). */
@@ -93,6 +94,7 @@ function TvRail({
     { to: '/browse', label: 'Browse', icon: 'grid' },
     { to: '/shows', label: 'TV Shows', icon: 'tv' },
     { to: '/collections', label: 'Collections', icon: 'stack' },
+    { to: '/theater', label: 'Theater', icon: 'film' },
     { to: '/spin', label: 'Spin the wheel', icon: 'wheel' },
     { to: '/night', label: 'Movie night', icon: 'user' },
     { to: '/wrapped', label: 'Your year', icon: 'star' },
@@ -140,7 +142,8 @@ export function AppShell({ session, prefs }: { session: SessionInfo; prefs: Pref
   const navigate = useNavigate();
   const location = useLocation();
   const qc = useQueryClient();
-  const onPlayer = location.pathname.startsWith('/play/');
+  // The player and the theater take the whole screen.
+  const onPlayer = location.pathname.startsWith('/play/') || location.pathname === '/theater';
   const tv = useTvMode().enabled;
 
   useEffect(() => {
@@ -161,7 +164,7 @@ export function AppShell({ session, prefs }: { session: SessionInfo; prefs: Pref
         (event.key === 'k' && (event.metaKey || event.ctrlKey)) ||
         (event.key === '/' && !typing)
       ) {
-        if (location.pathname.startsWith('/play/')) return;
+        if (location.pathname.startsWith('/play/') || location.pathname === '/theater') return;
         event.preventDefault();
         navigate('/search');
       }

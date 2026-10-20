@@ -315,6 +315,16 @@ export function MovieDetailPage({ prefs }: { prefs: Preferences }) {
               </ButtonLink>
             )}
             {m.available && (
+              <ButtonLink
+                to={`/theater?movie=${encodeURIComponent(m.id)}`}
+                variant="secondary"
+                size="lg"
+                icon="film"
+              >
+                In the theater
+              </ButtonLink>
+            )}
+            {m.available && (
               <DownloadButton
                 meta={{
                   id: m.id,

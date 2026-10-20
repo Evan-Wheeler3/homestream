@@ -1,0 +1,578 @@
+/* Wheelhouse Cinemas: the voxel theater (src/client/theater). The 3D view fills
+   the screen; everything else floats over it. */
+.theater {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-player);
+  background: #070512;
+  color: #f4e9ff;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+.theater--message {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: var(--s-3);
+}
+.theater__opening {
+  font-family: 'Courier New', ui-monospace, monospace;
+  letter-spacing: 0.12em;
+  color: #ffd23f;
+}
+.theater__world,
+.theater__canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.theater__canvas {
+  cursor: grab;
+  image-rendering: pixelated;
+}
+.theater__canvas:active {
+  cursor: grabbing;
+}
+/* The <video> each screen draws from: in the page (so it can go full screen), out of sight. */
+.theater__videos {
+  position: absolute;
+  width: 2px;
+  height: 2px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+.theater__video {
+  width: 2px;
+  height: 2px;
+}
+.theater__video:fullscreen {
+  width: 100%;
+  height: 100%;
+  opacity: 1;
+  background: #000;
+}
+
+.theater__top {
+  position: absolute;
+  top: calc(var(--safe-top) + var(--s-3));
+  left: var(--s-3);
+  right: var(--s-3);
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  pointer-events: none;
+}
+.theater__top > * {
+  pointer-events: auto;
+}
+.theater__spacer {
+  flex: 1;
+}
+.theater__place,
+.theater__status {
+  font-family: 'Courier New', ui-monospace, monospace;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  font-size: var(--text-sm);
+  padding: var(--s-1) var(--s-3);
+  border-radius: var(--r-pill);
+  background: rgba(10, 4, 18, 0.72);
+  border: 1px solid rgba(255, 210, 63, 0.45);
+  color: #ffd23f;
+}
+.theater__status {
+  white-space: nowrap;
+  border-color: rgba(46, 230, 214, 0.5);
+  color: #2ee6d6;
+  cursor: pointer;
+}
+.theater__status--solo {
+  color: #f4e9ff;
+  border-color: rgba(244, 233, 255, 0.3);
+}
+.theater__status--reconnecting,
+.theater__status--connecting {
+  color: #ff8a3d;
+  border-color: rgba(255, 138, 61, 0.5);
+}
+.theater .icon-btn,
+.theater .btn--secondary,
+.theater .btn--ghost {
+  background: rgba(10, 4, 18, 0.72);
+  color: #f4e9ff;
+}
+.theater__travel {
+  position: absolute;
+  top: calc(var(--safe-top) + 64px);
+  right: var(--s-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  padding: var(--s-2);
+  border-radius: var(--r-md);
+  background: rgba(10, 4, 18, 0.88);
+  border: 1px solid rgba(255, 63, 164, 0.45);
+}
+.theater__travel .btn {
+  justify-content: flex-start;
+}
+
+/* Your ticket stub */
+.ticket {
+  position: absolute;
+  top: calc(var(--safe-top) + 64px);
+  left: var(--s-3);
+  display: grid;
+  gap: 2px;
+  min-width: 210px;
+  max-width: min(320px, calc(100vw - 2 * var(--s-3)));
+  padding: var(--s-3) var(--s-4);
+  border-radius: 6px;
+  background: linear-gradient(180deg, #ffd23f, #ffb43f);
+  color: #2a0b1c;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+  /* Perforated edge */
+  mask:
+    radial-gradient(circle at 0 50%, transparent 8px, #000 9px) left / 51% 100% no-repeat,
+    radial-gradient(circle at 100% 50%, transparent 8px, #000 9px) right / 51% 100% no-repeat;
+}
+.ticket__admit {
+  font-family: 'Courier New', ui-monospace, monospace;
+  font-size: var(--text-2xs);
+  font-weight: 800;
+  letter-spacing: 0.3em;
+}
+.ticket__theater {
+  font-family: 'Courier New', ui-monospace, monospace;
+  font-size: var(--text-xl);
+  font-weight: 800;
+}
+.ticket__title {
+  font-weight: var(--weight-semibold);
+}
+.ticket__kind {
+  font-size: var(--text-xs);
+  opacity: 0.8;
+}
+.ticket__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  margin-top: var(--s-2);
+}
+.ticket .btn--ghost {
+  background: rgba(42, 11, 28, 0.12);
+  color: #2a0b1c;
+}
+
+.theater__bottom {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--safe-bottom) + var(--s-3));
+  translate: -50% 0;
+  width: min(760px, calc(100vw - 2 * var(--s-3)));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s-2);
+}
+.theater__prompt {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-4);
+  border-radius: var(--r-pill);
+  border: 2px solid #ffd23f;
+  background: rgba(10, 4, 18, 0.85);
+  color: #ffd23f;
+  font-family: 'Courier New', ui-monospace, monospace;
+  font-weight: 800;
+  font-size: var(--text-md);
+  box-shadow: 0 0 18px rgba(255, 210, 63, 0.35);
+  cursor: pointer;
+  animation: theater-pulse 1.6s ease-in-out infinite;
+}
+.theater__prompt kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.6em;
+  height: 1.6em;
+  border-radius: 4px;
+  background: #ffd23f;
+  color: #1a0820;
+  font-family: inherit;
+}
+@keyframes theater-pulse {
+  50% {
+    box-shadow: 0 0 28px rgba(255, 210, 63, 0.6);
+  }
+}
+.theater__social {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  border-radius: var(--r-pill);
+  background: rgba(10, 4, 18, 0.6);
+}
+.theater__react {
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  font-size: 20px;
+  cursor: pointer;
+}
+.theater__react:hover,
+.theater__react:focus-visible {
+  background: rgba(255, 255, 255, 0.12);
+}
+.theater__say .input {
+  width: min(260px, 60vw);
+}
+.theater__snack {
+  font-size: 22px;
+  padding: 0 var(--s-2);
+  border-left: 1px solid rgba(255, 255, 255, 0.15);
+}
+.theater__floats {
+  position: absolute;
+  left: 50%;
+  bottom: 140px;
+  pointer-events: none;
+}
+.theater__float {
+  position: absolute;
+  font-size: 44px;
+  animation: theater-float 2s ease-out forwards;
+}
+@keyframes theater-float {
+  from {
+    transform: translate(-50%, 0) scale(0.6);
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+    transform: translate(-50%, -20px) scale(1);
+  }
+  to {
+    transform: translate(-50%, -180px) scale(1.1);
+    opacity: 0;
+  }
+}
+.theater__chat {
+  position: absolute;
+  left: var(--s-3);
+  bottom: calc(var(--safe-bottom) + 180px);
+  display: grid;
+  gap: 4px;
+  max-width: min(360px, 70vw);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  pointer-events: none;
+}
+.theater__chat li {
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: rgba(10, 4, 18, 0.72);
+  font-size: var(--text-sm);
+}
+.theater__chat strong {
+  color: #2ee6d6;
+}
+
+.theater__countdown {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-family: 'Courier New', ui-monospace, monospace;
+  font-weight: 800;
+  font-size: min(40vw, 260px);
+  color: rgba(255, 210, 63, 0.92);
+  text-shadow: 0 0 30px rgba(255, 63, 164, 0.8);
+  pointer-events: none;
+  animation: theater-tick 1s ease-out infinite;
+}
+@keyframes theater-tick {
+  from {
+    transform: scale(1.15);
+    opacity: 1;
+  }
+  to {
+    transform: scale(0.9);
+    opacity: 0.6;
+  }
+}
+.theater__caption {
+  position: absolute;
+  left: 50%;
+  bottom: 170px;
+  translate: -50% 0;
+  max-width: min(720px, 90vw);
+  padding: 4px 12px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.7);
+  font-size: var(--text-lg);
+  text-align: center;
+  white-space: pre-line;
+  pointer-events: none;
+}
+.theater__notice {
+  position: absolute;
+  top: 40%;
+  left: 50%;
+  translate: -50% -50%;
+  max-width: 80vw;
+  padding: var(--s-2) var(--s-4);
+  border-radius: var(--r-md);
+  background: rgba(10, 4, 18, 0.85);
+  text-align: center;
+}
+.theater__sound {
+  position: absolute;
+  top: 30%;
+  left: 50%;
+  translate: -50% 0;
+}
+.theater__solo {
+  position: absolute;
+  top: calc(var(--safe-top) + 58px);
+  left: 50%;
+  translate: -50% 0;
+  margin: 0;
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
+/* Seated: the movie controls */
+.seatbar {
+  width: 100%;
+  display: grid;
+  gap: var(--s-1);
+  padding: var(--s-2) var(--s-3);
+  border-radius: var(--r-md);
+  background: rgba(10, 4, 18, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  opacity: 0.35;
+  transition: opacity var(--dur-2);
+}
+.seatbar:hover,
+.seatbar:focus-within,
+.theater--seated .seatbar:not(:hover) {
+  opacity: 1;
+}
+.seatbar__row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+.seatbar__time {
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+.seatbar__scrub {
+  flex: 1;
+  min-width: 80px;
+  accent-color: #ffd23f;
+}
+.seatbar__volume {
+  width: 90px;
+  accent-color: #ffd23f;
+}
+.seatbar__spacer {
+  flex: 1;
+}
+.seatbar__note {
+  font-size: var(--text-xs);
+}
+
+/* Phones: a thumbstick */
+.joystick {
+  position: absolute;
+  left: calc(var(--s-5) + env(safe-area-inset-left));
+  bottom: calc(var(--safe-bottom) + 110px);
+  width: 112px;
+  height: 112px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  border: 2px solid rgba(255, 210, 63, 0.5);
+  touch-action: none;
+}
+.joystick__knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 48px;
+  height: 48px;
+  margin: -24px 0 0 -24px;
+  border-radius: 50%;
+  background: rgba(255, 210, 63, 0.75);
+  box-shadow: 0 0 14px rgba(255, 210, 63, 0.6);
+}
+
+/* Dialogs */
+.boxoffice__search {
+  width: 100%;
+  margin-bottom: var(--s-3);
+}
+.boxoffice__list {
+  display: grid;
+  gap: 2px;
+  max-height: min(50vh, 460px);
+  overflow: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.boxoffice__movie {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  width: 100%;
+  padding: var(--s-1) var(--s-2);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.boxoffice__movie:hover,
+.boxoffice__movie:focus-visible {
+  background: var(--surface-2);
+}
+.boxoffice__movie img,
+.boxoffice__noposter {
+  width: 32px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 2px;
+  background: var(--surface-3);
+  image-rendering: pixelated;
+}
+.boxoffice__chosen {
+  display: flex;
+  gap: var(--s-5);
+  align-items: flex-start;
+}
+.boxoffice__poster {
+  width: 140px;
+  border-radius: var(--r-sm);
+  image-rendering: pixelated;
+}
+.boxoffice__options {
+  display: grid;
+  gap: var(--s-2);
+  justify-items: start;
+}
+.boxoffice__title {
+  margin: 0;
+  font-size: var(--text-xl);
+}
+.boxoffice__label {
+  margin: var(--s-2) 0 0;
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.boxoffice__hint {
+  margin: 0;
+  max-width: 44ch;
+  font-size: var(--text-sm);
+}
+.boxoffice__section {
+  margin-bottom: var(--s-4);
+}
+.boxoffice__joins {
+  display: grid;
+  gap: var(--s-2);
+  margin: var(--s-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+.boxoffice__joins li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  padding: var(--s-2) var(--s-3);
+  border-radius: var(--r-sm);
+  background: var(--accent-soft);
+}
+@media (max-width: 560px) {
+  .boxoffice__chosen {
+    flex-direction: column;
+  }
+  .boxoffice__poster {
+    width: 96px;
+  }
+}
+.snacks {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: var(--s-2);
+  margin: 0 0 var(--s-3);
+  padding: 0;
+  list-style: none;
+}
+.snacks__item {
+  display: grid;
+  justify-items: center;
+  gap: var(--s-1);
+  width: 100%;
+  padding: var(--s-3);
+  border: var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  color: inherit;
+  cursor: pointer;
+}
+.snacks__item[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.snacks__emoji {
+  font-size: 36px;
+}
+.people {
+  display: grid;
+  gap: var(--s-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.people__row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+}
+.people__face {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  font-size: 18px;
+  color: #1b1022;
+  font-weight: 800;
+}
+.theater-help {
+  display: grid;
+  gap: var(--s-3);
+  padding-left: var(--s-5);
+}
+.theater-help .icon {
+  vertical-align: -3px;
+}

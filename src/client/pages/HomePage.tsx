@@ -1,3 +1,4 @@
+import { Fragment } from 'react';
 import { Link } from 'react-router';
 import type { HomePayload, Movie, Preferences } from '../../shared/types';
 import { CollectionCard } from '../components/CollectionCard';
@@ -249,8 +250,11 @@ export function HomePage({ prefs }: { prefs: Preferences }) {
         <div className="home__spacer" />
       )}
       <div className="home__sections">
-        {data.sections.map((section) => (
-          <Section key={section.type === 'row' ? section.row.id : section.id} section={section} />
+        {data.sections.map((section, i) => (
+          <Fragment key={section.type === 'row' ? section.row.id : section.id}>
+            <Section section={section} />
+            {i === 0 && <TheaterPromo />}
+          </Fragment>
         ))}
         {data.sections.length === 0 && (
           <StatusView
@@ -261,5 +265,22 @@ export function HomePage({ prefs }: { prefs: Preferences }) {
         )}
       </div>
     </div>
+  );
+}
+
+/** The way into the voxel theater. */
+function TheaterPromo() {
+  return (
+    <Link to="/theater" className="theater-promo">
+      <span className="theater-promo__marquee" aria-hidden="true">
+        WHEELHOUSE CINEMAS
+      </span>
+      <span className="theater-promo__title display">Go to the movies</span>
+      <span className="theater-promo__text">
+        Walk in, grab popcorn, get a ticket for any movie and take a seat. Watch together with
+        whoever else is there.
+      </span>
+      <Icon name="chevronRight" size={22} />
+    </Link>
   );
 }

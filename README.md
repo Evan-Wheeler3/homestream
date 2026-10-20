@@ -129,7 +129,6 @@ instead.
 - **Audio tracks:** you can't switch between them; the browser plays the default track.
 - **Converting files for slow connections:** there's no transcoding, so every movie streams in its
   original format. Movies are converted once on the Mac when needed.
-- **Profile pictures:** they aren't uploaded; profiles show initials.
 - **Signing out:** each browser remembers its own sign-ins, so there's no button that signs you out
   of every device at once.
 - **An extra login wall:** Cloudflare Access isn't set up. You can add it, but leave `/invite*`,
@@ -145,6 +144,28 @@ instead.
 
 ## What it does
 
+- **Wheelhouse Cinemas (the voxel theater)**: an 80s-style blocky movie theater you walk around in
+  (Home → _Go to the movies_, **Theater** in the menu, or _In the theater_ on any movie). There's a lobby
+  with a neon marquee, a box office, a concession stand (popcorn, soda, candy and more, all free), an
+  arcade corner, a hallway of eight auditoriums with stadium seating, and **The Collection**: a gallery
+  with a pixel-art poster for every movie in the library, A to Z. Get a ticket at the box office or from
+  any poster, walk to your theater (the door won't let you in without a ticket, or tap _Find me a seat_),
+  and **sit down to start the movie**: a "3, 2, 1" film leader plays on the screen, the house lights dim
+  and the movie plays on the big screen. Seated, you get play/pause, seeking, volume, subtitles,
+  **Full screen** (the movie fills your device) and _Open in the player_.
+  - **Watch together** (cloud edition): everyone in the building sees each other as blocky people in
+    their profile colour, with their emoji or photo as a face. Pick _Watch together_ at the box office
+    and others can join the same showing from the box office; everyone streams their own copy, kept
+    within a fraction of a second of each other, and anyone seated can pause or seek for all.
+    _Private screening_ gives you a theater of your own that pauses when you stand up. Emoji reactions
+    and short messages float over people's heads.
+  - **New movies appear by themselves**: the theater is built from the library each time it opens, so
+    a newly ripped movie is in the box office, on the _New arrivals_ wall in the lobby and in The
+    Collection straight away. Nothing extra happens at rip time; posters are turned into pixel art in
+    the browser.
+  - Controls: W A S D or the arrow keys and drag to look (E or Enter to use things) on a computer; a
+    thumbstick on phones; arrows and OK on a TV remote. On the home (Jellyfin) server it works the same
+    but it's just you.
 - **Home**: a featured film with backdrop (rotates; source configurable), Continue Watching, Recently Added,
   Personal Favorites, your collections, a “Spin the wheel” invitation, and genre/decade shelves. Sections can be hidden and
   reordered, and any collection can be pinned as its own row. Empty rows never appear.

@@ -65,9 +65,16 @@ export interface R2Bucket {
   list(options?: { prefix?: string; cursor?: string; limit?: number }): Promise<R2Objects>;
 }
 
+export interface DurableObjectNamespace {
+  idFromName(name: string): unknown;
+  get(id: unknown): { fetch(request: Request): Promise<Response> };
+}
+
 export interface CloudEnv {
   DB: D1Database;
   MEDIA: R2Bucket;
+  /** The voxel theater everyone walks around in together (absent in tests). */
+  THEATER?: DurableObjectNamespace;
   /** Static files of the React app (absent in tests). */
   ASSETS?: { fetch(request: Request): Promise<Response> };
 
