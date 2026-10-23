@@ -709,8 +709,9 @@ export class TheaterEngine {
     if (!this.inputEnabled && !simulated) return;
     const k = this.keys;
     let forward = simulated?.forward ?? this.stick.y;
-    let strafe = simulated?.strafe ?? 0;
-    let turn = simulated ? 0 : -this.stick.x * 0.85;
+    // The thumbstick only moves you (sideways steps sideways); looking is the other thumb's job.
+    let strafe = simulated?.strafe ?? this.stick.x;
+    let turn = 0;
     if (!simulated) {
       if (k.has('w') || k.has('ArrowUp')) forward += 1;
       if (k.has('s') || k.has('ArrowDown')) forward -= 1;

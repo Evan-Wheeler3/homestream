@@ -501,8 +501,8 @@ export function PeopleList({
 
 /**
  * Touch controls: put your left thumb down anywhere on the left of the screen
- * and a thumbstick appears there (up and down walk, left and right turn; push
- * it all the way to run). Drag anywhere else to look around. Buttons on the
+ * and a thumbstick appears there: it moves you (push it all the way to run)
+ * and never turns the view. Drag anywhere else to look around and turn. Buttons on the
  * right: use, jump and run.
  */
 export function TouchControls({
@@ -887,7 +887,7 @@ export function HelpDialog({
       </ol>
       <p className="muted">
         {touch
-          ? 'Put your left thumb down anywhere on the left of the screen to walk: push up to go, left or right to turn, all the way to run. Drag on the right to look around. Big buttons on the right use things and jump.'
+          ? 'Put your left thumb down anywhere on the left of the screen to walk: push it the way you want to go (all the way to run). Drag on the right to look around and turn. Big buttons on the right use things and jump.'
           : 'W/S or ↑/↓ walk, ←/→ turn, A/D step sideways, Shift runs, Space jumps, drag to look. E (or Enter) uses things; 1 and 2 eat and drink.'}
       </p>
     </Dialog>

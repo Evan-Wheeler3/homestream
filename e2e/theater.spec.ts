@@ -187,7 +187,7 @@ test('theater: "In the theater" on a movie page opens the box office with that m
   await expect(box.locator('.boxoffice__title')).toContainText(title);
 });
 
-test('theater on a phone: put a thumb down anywhere on the left to walk, and turn @phone', async ({
+test('theater on a phone: the thumbstick moves you, the other thumb turns the view @phone', async ({
   page,
 }, info) => {
   test.setTimeout(180_000);
@@ -207,18 +207,22 @@ test('theater on a phone: put a thumb down anywhere on the left to walk, and tur
   await expect(page.locator('.touch__stick')).toBeVisible();
   await expect(page.locator('.theater__place')).toHaveText('Hallway', { timeout: 60_000 });
   await page.mouse.up();
-  // Push it to the right: you turn right.
-  const yaw = () =>
-    page.evaluate(
-      () => (window as unknown as { __theater: { engine: Engine } }).__theater.engine.yaw,
-    );
-  const before = await yaw();
+  // Push it to the right: you step right, and the view doesn't turn at all.
+  const state = () =>
+    page.evaluate(() => {
+      const e = (window as unknown as { __theater: { engine: Engine } }).__theater.engine;
+      return { x: e.body.x, yaw: e.yaw };
+    });
+  const yaw = async () => (await state()).yaw;
+  const before = await state();
   await page.mouse.move(x, y);
   await page.mouse.down();
   await page.mouse.move(x + 60, y, { steps: 4 });
   await page.waitForTimeout(1500);
   await page.mouse.up();
-  expect(await yaw()).toBeLessThan(before - 0.2);
+  const after = await state();
+  expect(after.yaw).toBe(before.yaw);
+  expect(after.x).toBeGreaterThan(before.x + 0.2);
   // Drag on the right half: you look around.
   const looked = await yaw();
   await page.mouse.move(size.width * 0.7, size.height * 0.4);

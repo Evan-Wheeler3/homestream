@@ -175,7 +175,7 @@ instead.
     away. Nothing extra happens at rip time.
   - **Controls**: on a computer, W/S or ↑/↓ walk, ←/→ turn, A/D step sideways, Shift runs, Space jumps,
     drag to look, E or Enter uses things. On a phone, put your left thumb down anywhere on the left to
-    get a thumbstick (up to walk, left/right to turn, all the way to run), drag on the right to look,
+    get a thumbstick that moves you (all the way to run), drag on the right to look and turn,
     and use the big buttons for Use, Jump and Run; it works upright or sideways. On a TV remote the
     arrows walk and turn and OK uses things. Sound effects can be muted. On the home (Jellyfin) server
     it works the same but it's just you.
