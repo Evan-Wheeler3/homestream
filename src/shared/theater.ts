@@ -33,8 +33,10 @@ export const WALLET = 30;
 export interface HeldItem {
   id: SnackId;
   level: number;
+  /** Set down in your seat's cupholder (only while you're sitting). */
+  down?: boolean;
 }
-/** Left hand, right hand. Seated, they're in your seat's cupholders. */
+/** Left hand, right hand (or the matching cupholder while you're seated). */
 export type Hands = [HeldItem | null, HeldItem | null];
 
 /** The playable arcade machines. */
@@ -215,10 +217,11 @@ function parseHands(raw: unknown): Hands | null {
   const hands = raw.map((h: unknown) => {
     if (h === null) return null;
     if (!h || typeof h !== 'object') return undefined;
-    const { id, level } = h as Record<string, unknown>;
+    const { id, level, down } = h as Record<string, unknown>;
     const snack = SNACKS.find((s) => s.id === id)?.id;
     const l = finite(level, 0, 1);
-    return snack && l !== null ? { id: snack, level: l } : undefined;
+    if (!snack || l === null) return undefined;
+    return down === true ? { id: snack, level: l, down: true } : { id: snack, level: l };
   });
   return hands.includes(undefined) ? null : (hands as Hands);
 }

@@ -216,13 +216,13 @@ describe('the theater', () => {
       t: 'hands',
       hands: [
         { id: 'popcorn', level: 0.75 },
-        { id: 'soda', level: 1 },
+        { id: 'soda', level: 1, down: true },
       ],
       bite: 0,
     });
     expect(state.players.get('a')!.hands).toEqual([
       { id: 'popcorn', level: 0.75 },
-      { id: 'soda', level: 1 },
+      { id: 'soda', level: 1, down: true },
     ]);
     expect(inbox.some(({ m }) => m.t === 'bite')).toBe(true);
     state.handle('a', { t: 'score', game: 'snake', score: 120 });

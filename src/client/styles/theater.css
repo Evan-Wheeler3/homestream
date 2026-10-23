@@ -184,6 +184,7 @@
 
 .theater__bottom {
   position: absolute;
+  pointer-events: none;
   left: 50%;
   bottom: calc(var(--safe-bottom) + var(--s-3));
   translate: -50% 0;
@@ -192,6 +193,9 @@
   flex-direction: column;
   align-items: center;
   gap: var(--s-2);
+}
+.theater__bottom > * {
+  pointer-events: auto;
 }
 .theater__prompt {
   display: inline-flex;
@@ -409,10 +413,15 @@
   font-size: var(--text-xs);
 }
 
-/* Phones: a floating thumbstick on the left, look anywhere else, buttons on the right */
+/* Phones: a floating thumbstick on the left, look anywhere else, buttons on the right.
+   The touch layer sits under every other control, so buttons always get the tap. */
+.theater > :not(.theater__world, .theater__videos, .touch) {
+  z-index: 2;
+}
 .touch {
   position: absolute;
   inset: 0;
+  z-index: 1;
   touch-action: none;
 }
 .touch__hint {
@@ -449,6 +458,7 @@
 }
 .touch__buttons {
   position: absolute;
+  z-index: 2;
   right: calc(var(--s-4) + env(safe-area-inset-right));
   bottom: calc(var(--safe-bottom) + 96px);
   display: flex;
@@ -538,18 +548,32 @@
   color: #1a0820;
   font-size: var(--text-2xs);
 }
-.hands__toss {
-  position: absolute;
-  top: -8px;
-  right: -8px;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  border: 0;
-  background: #ff3fa4;
-  color: #fff;
-  font-size: 11px;
+.hands__slot {
+  flex-direction: column;
+  gap: 4px;
+}
+.hands__slot--down .hands__use {
+  border-style: dashed;
+}
+.hands__actions {
+  display: flex;
+  gap: 4px;
+}
+.hands__action {
+  flex: 1;
+  min-height: 34px;
+  padding: 2px 8px;
+  border-radius: var(--r-pill);
+  border: 1px solid rgba(46, 230, 214, 0.6);
+  background: rgba(10, 4, 18, 0.82);
+  color: #f4e9ff;
+  font-size: var(--text-xs);
+  font-weight: 700;
+  white-space: nowrap;
   cursor: pointer;
+}
+.hands__action--toss {
+  border-color: rgba(255, 63, 164, 0.7);
 }
 .theater__wallet {
   font-family: 'Courier New', ui-monospace, monospace;

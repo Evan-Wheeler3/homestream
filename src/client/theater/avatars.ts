@@ -76,6 +76,7 @@ export class Avatar {
   private readonly arms: THREE.Mesh[] = [];
   private readonly face: THREE.MeshLambertMaterial;
   private readonly held: (THREE.Mesh | null)[] = [null, null];
+  private down = [false, false];
   private handsKey = '';
   /** Raised-arm animation after a bite (per hand: seconds left). */
   private readonly biting = [0, 0];
@@ -139,8 +140,9 @@ export class Avatar {
     }
   }
 
-  /** What they're carrying, in their hands (hidden while seated: it's in the cupholders). */
+  /** What they're carrying, in their hands (or set down in a cupholder while seated). */
   setHands(hands: Hands) {
+    this.down = hands.map((h) => Boolean(h?.down));
     const key = JSON.stringify(hands.map((h) => h && [h.id, Math.round(h.level * 10)]));
     if (key === this.handsKey) return;
     this.handsKey = key;
@@ -209,7 +211,9 @@ export class Avatar {
       this.biting[i] = Math.max(0, this.biting[i]! - dt);
       arm.parent!.rotation.x = (i ? -swing : swing) - lift;
     });
-    for (const item of this.held) if (item) item.visible = !this.seated;
+    this.held.forEach((item, i) => {
+      if (item) item.visible = !(this.seated && this.down[i]) || this.biting[i]! > 0;
+    });
     const now = performance.now();
     for (let i = this.floating.length - 1; i >= 0; i--) {
       const f = this.floating[i]!;

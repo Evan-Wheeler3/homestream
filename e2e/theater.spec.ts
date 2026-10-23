@@ -128,8 +128,11 @@ test('theater: snacks in your hands, a ticket for today’s movie, and the show 
     .toBeGreaterThan(0.5);
   await page.waitForTimeout(1500);
   await page.screenshot({ path: info.outputPath('theater-playing.png') });
-  // A sip from the cupholder.
+  // Sitting down put both snacks in the cupholders. A sip, then hold the soda.
+  await expect(hands.getByRole('button', { name: 'Pick up the soda' })).toBeVisible();
   await hands.getByRole('button', { name: 'Drink (Soda)' }).click();
+  await hands.getByRole('button', { name: 'Pick up the soda' }).click();
+  await expect(hands.getByRole('button', { name: 'Put the soda in the cupholder' })).toBeVisible();
 
   await controls.getByRole('button', { name: 'Pause' }).click();
   await expect(controls.getByRole('button', { name: 'Play', exact: true })).toBeVisible();
@@ -230,6 +233,63 @@ test('theater on a phone: the thumbstick moves you, the other thumb turns the vi
   await page.mouse.move(size.width * 0.5, size.height * 0.4, { steps: 4 });
   await page.mouse.up();
   expect(await yaw()).toBeGreaterThan(looked + 0.3);
+});
+
+test('theater on a phone: snacks, cupholders and the movie controls all take a tap @phone', async ({
+  page,
+}, info) => {
+  test.setTimeout(240_000);
+  await signIn(page);
+  const welcome = await enter(page);
+  await welcome.getByRole('button', { name: 'Let’s go' }).tap();
+  await page.getByRole('button', { name: 'Go to…' }).tap();
+  await page.getByRole('button', { name: 'Concessions' }).tap();
+  await page.getByRole('button', { name: /Buy snacks/ }).tap();
+  const stand = page.getByRole('dialog', { name: 'Concessions' });
+  await stand.getByRole('button', { name: /Popcorn/ }).tap();
+  await stand.getByRole('button', { name: /Soda/ }).tap();
+  await expect(stand).toBeHidden();
+  const hands = page.getByRole('group', { name: 'Your snacks' });
+  await hands.getByRole('button', { name: 'Eat (Popcorn)' }).tap();
+  await expect(hands.locator('.hands__bar span').first()).not.toHaveAttribute(
+    'style',
+    'width: 100%;',
+  );
+
+  // A ticket and a seat: sitting down puts the snacks in the cupholders.
+  await page.getByRole('button', { name: 'Go to…' }).tap();
+  await page.getByRole('button', { name: 'Box office' }).tap();
+  await page.getByRole('button', { name: /Buy a ticket/ }).tap();
+  const box = page.getByRole('dialog', { name: 'Box office' });
+  await box.locator('.lineup__card').first().tap();
+  await box.getByRole('radio', { name: 'Private screening' }).tap();
+  await box.getByRole('button', { name: 'Get a ticket' }).tap();
+  await page
+    .getByRole('complementary', { name: 'Your ticket' })
+    .getByRole('button', { name: 'Find me a seat' })
+    .tap();
+  await page.getByRole('button', { name: /Sit in seat/ }).tap();
+  await expect(hands.getByRole('button', { name: 'Pick up the soda' })).toBeVisible();
+  await hands.getByRole('button', { name: 'Drink (Soda)' }).tap();
+  await hands.getByRole('button', { name: 'Pick up the soda' }).tap();
+  await expect(hands.getByRole('button', { name: 'Put the soda in the cupholder' })).toBeVisible();
+
+  const controls = page.getByRole('group', { name: 'Movie controls' });
+  await expect(controls.getByRole('button', { name: 'Pause' })).toBeVisible({ timeout: 15_000 });
+  await page.waitForTimeout(800);
+  await page.screenshot({ path: info.outputPath('theater-phone-seated.png') });
+  await controls.getByRole('button', { name: 'Pause' }).tap();
+  await expect(controls.getByRole('button', { name: 'Play', exact: true })).toBeVisible();
+  await controls.getByRole('button', { name: 'Play', exact: true }).tap();
+  await expect(controls.getByRole('button', { name: 'Pause' })).toBeVisible();
+
+  // Drop the popcorn; stand up and the soda comes with you.
+  await hands.getByRole('button', { name: 'Throw away the popcorn' }).tap();
+  await expect(hands.getByRole('button', { name: /Popcorn/ })).toHaveCount(0);
+  await controls.getByRole('button', { name: 'Stand up' }).tap();
+  await expect(controls).toBeHidden();
+  await expect(hands.getByRole('button', { name: 'Drink (Soda)' })).toBeVisible();
+  await expect(hands.getByRole('button', { name: /cupholder|Pick up/ })).toHaveCount(0);
 });
 
 test('theater on a phone turned sideways: the view fills the screen @phone', async ({

@@ -271,23 +271,27 @@ export function Concessions({
         ))}
       </ul>
       <p className="muted snacks__hint">
-        Snacks go in your hands. Sit down and they go in your seat’s cupholders. Eat or drink with
-        the buttons by your hands (or 1 and 2), and toss the empties in a bin.
+        Snacks go in your hands. Sit down and they go in your seat’s cupholders (Pick up to hold one
+        again). Eat or drink with the buttons by your hands (or 1 and 2), and Drop to toss one.
       </p>
     </Dialog>
   );
 }
 
-/** Your two hands, and what's in them. */
+/** Your two hands, and what's in them (seated: or in the cupholders). */
 export function HandsBar({
   hands,
   keys,
+  seated,
   onUse,
+  onHolder,
   onToss,
 }: {
   hands: Hands;
   keys: boolean;
+  seated: boolean;
   onUse(hand: 0 | 1): void;
+  onHolder(hand: 0 | 1): void;
   onToss(hand: 0 | 1): void;
 }) {
   if (!hands.some(Boolean)) return null;
@@ -298,9 +302,11 @@ export function HandsBar({
         if (!h)
           return <span key={i} className="hands__slot hands__slot--empty" aria-hidden="true" />;
         const snack = SNACKS.find((s) => s.id === h.id)!;
+        const name = snack.label.toLowerCase();
         const verb = h.level <= 0 ? 'Empty' : snack.kind === 'drink' ? 'Drink' : 'Eat';
+        const down = seated && h.down;
         return (
-          <span key={i} className="hands__slot">
+          <span key={i} className={`hands__slot ${down ? 'hands__slot--down' : ''}`}>
             <button
               type="button"
               className="hands__use"
@@ -318,14 +324,26 @@ export function HandsBar({
                 {keys && <kbd>{hand + 1}</kbd>} {verb}
               </span>
             </button>
-            <button
-              type="button"
-              className="hands__toss"
-              aria-label={`Throw away the ${snack.label.toLowerCase()}`}
-              onClick={() => onToss(hand)}
-            >
-              ✕
-            </button>
+            <span className="hands__actions">
+              {seated && (
+                <button
+                  type="button"
+                  className="hands__action"
+                  aria-label={down ? `Pick up the ${name}` : `Put the ${name} in the cupholder`}
+                  onClick={() => onHolder(hand)}
+                >
+                  {down ? '✋ Pick up' : '⬇ Cupholder'}
+                </button>
+              )}
+              <button
+                type="button"
+                className="hands__action hands__action--toss"
+                aria-label={`Throw away the ${name}`}
+                onClick={() => onToss(hand)}
+              >
+                🗑 Drop
+              </button>
+            </span>
           </span>
         );
       })}
@@ -874,7 +892,7 @@ export function HelpDialog({
         </li>
         <li>
           🍿 Buy snacks at the <strong>concessions</strong> stand. They go in your hands, then your
-          seat’s cupholders. Eat and drink with the buttons by your hands.
+          seat’s cupholders. Eat, drink, pick up, put down or drop with the buttons by your hands.
         </li>
         <li>
           🎟️ Find your theater and <strong>sit in a seat</strong>: the curtains open, 3, 2, 1, and

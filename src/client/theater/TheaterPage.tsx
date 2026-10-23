@@ -397,13 +397,26 @@ function Cinema({ me, cloud, movies }: { me: SessionUser; cloud: boolean; movies
       const snack = SNACKS.find((s) => s.id === h.id)!;
       const level = Math.max(0, Math.round((h.level - 1 / snack.bites) * 1000) / 1000);
       const next: Hands = [...handsRef.current] as Hands;
-      next[hand] = { id: h.id, level };
+      next[hand] = { ...h, level };
       play(snack.kind === 'drink' ? 'slurp' : 'crunch');
       engineRef.current?.biteAnimation(hand);
       updateHands(next, hand);
       if (level <= 0) toast.show(`That was the last of the ${snack.label.toLowerCase()}.`);
     },
     [toast, updateHands],
+  );
+
+  /** Seated: set a snack down in its cupholder, or pick it back up. */
+  const holder = useCallback(
+    (hand: 0 | 1) => {
+      const h = handsRef.current[hand];
+      if (!h || !engineRef.current?.isSeated) return;
+      const next: Hands = [...handsRef.current] as Hands;
+      next[hand] = h.down ? { id: h.id, level: h.level } : { ...h, down: true };
+      play('toss');
+      updateHands(next);
+    },
+    [updateHands],
   );
 
   const toss = useCallback(
@@ -497,6 +510,13 @@ function Cinema({ me, cloud, movies }: { me: SessionUser; cloud: boolean; movies
           toast.show(`Theater ${n} needs a ticket. Get one at the box office in the lobby.`),
         onInteract: () => interact(),
         onEat: (hand) => eat(hand),
+        onSeated: (seated) => {
+          // Sit down and your snacks go in the cupholders; stand up and you take them with you.
+          const next = handsRef.current.map((h) =>
+            h ? { id: h.id, level: h.level, ...(seated && { down: true }) } : null,
+          ) as Hands;
+          if (JSON.stringify(next) !== JSON.stringify(handsRef.current)) updateHands(next);
+        },
       },
       movies.map((m) => ({ id: m.id, title: m.title, year: m.year, poster: m.images.poster })),
       lineup,
@@ -529,7 +549,7 @@ function Cinema({ me, cloud, movies }: { me: SessionUser; cloud: boolean; movies
     };
     // Built once per visit (the search parameter only matters on arrival).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cloud, movies, onMessage, toast, interact, eat, lineup]);
+  }, [cloud, movies, onMessage, toast, interact, eat, updateHands, lineup]);
 
   // Sounds need a first tap or key press.
   useEffect(() => {
@@ -840,7 +860,14 @@ function Cinema({ me, cloud, movies }: { me: SessionUser; cloud: boolean; movies
             <kbd>E</kbd> {prompt.label}
           </button>
         )}
-        <HandsBar hands={hands} keys={!touch} onUse={eat} onToss={(h) => toss(h)} />
+        <HandsBar
+          hands={hands}
+          keys={!touch}
+          seated={seated}
+          onUse={eat}
+          onHolder={holder}
+          onToss={(h) => toss(h)}
+        />
         {seated && myShowing && (
           <SeatControls
             showing={myShowing}
@@ -915,7 +942,7 @@ function Cinema({ me, cloud, movies }: { me: SessionUser; cloud: boolean; movies
       {touch && (
         <TouchControls
           seated={seated}
-          useLabel={dialog ? null : (prompt?.label ?? null)}
+          useLabel={dialog || seated ? null : (prompt?.label ?? null)}
           sprint={sprint}
           onStick={stickTo}
           onLook={(dx, dy) => engineRef.current?.look(dx, dy, true)}

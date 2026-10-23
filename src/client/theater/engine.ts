@@ -54,6 +54,8 @@ export interface EngineEvents {
   onInteract(): void;
   /** 1 or 2: eat or drink from that hand. */
   onEat(hand: 0 | 1): void;
+  /** Sat down or stood up (snacks go into the cupholders and back). */
+  onSeated(seated: boolean): void;
 }
 
 const TURN_SPEED = 2.4;
@@ -437,8 +439,8 @@ export class TheaterEngine {
             }
           : p,
       )
-      .filter((p) => p.seat !== null && p.ticket !== null && p.hands.some(Boolean));
-    if (me && this.seat && !seated.some((p) => p.id === me) && this.holding) {
+      .filter((p) => p.seat !== null && p.ticket !== null && p.hands.some((h) => h?.down));
+    if (me && this.seat && !seated.some((p) => p.id === me) && this.hands.some((h) => h?.down)) {
       seated.push({
         id: me,
         hands: this.hands,
@@ -455,7 +457,7 @@ export class TheaterEngine {
       const pose = seatPose(t, p.seat!);
       const across = t.side === -1 ? 1 : -1;
       p.hands.forEach((h, i) => {
-        if (!h) return;
+        if (!h?.down) return;
         const [sx, sz] = CUPHOLDERS[i]!;
         const w = toWorld(t, pose.u + sz, pose.v + sx * across);
         const item = snackModel(h.id, h.level);
@@ -578,6 +580,7 @@ export class TheaterEngine {
     this.pitch = Math.atan2((SCREEN.bottom + SCREEN.top) / 2 - (pose.y + SEATED_EYE_HEIGHT), dist);
     this.updateHolders();
     this.updatePrompt(true);
+    this.events.onSeated(true);
   }
 
   standUp() {
@@ -589,6 +592,7 @@ export class TheaterEngine {
     this.pitch = 0;
     this.updateHolders();
     this.updatePrompt(true);
+    this.events.onSeated(false);
   }
 
   get isSeated() {
@@ -776,13 +780,14 @@ export class TheaterEngine {
       const side = hand === 0 ? -1 : 1;
       const t = this.biting[hand]!;
       const lift = t > 0 ? Math.sin((t / 0.6) * Math.PI) : 0;
-      // Seated, it comes up out of the cupholder only for a bite.
-      item.visible = !seated || lift > 0.05;
+      // In the cupholder, it comes up only for a bite.
+      const down = seated && Boolean(this.hands[hand]?.down);
+      item.visible = !down || lift > 0.05;
       const sway = Math.sin(this.bob) * 0.012 * this.bobAmount;
       item.scale.setScalar(0.7);
       item.position.set(
         side * (0.36 - lift * 0.32),
-        -0.44 + lift * 0.3 + sway - (seated ? (1 - lift) * 0.3 : 0),
+        -0.44 + lift * 0.3 + sway - (down ? (1 - lift) * 0.3 : 0),
         -0.72 + lift * 0.34,
       );
       item.rotation.set(lift * 0.6, side * -0.25 * (1 - lift), 0);

@@ -161,8 +161,9 @@ instead.
     subtitles, **Full screen** and _Open in the player_.
   - **Concessions**: arrive with $30 in Wheelhouse Bucks and buy popcorn, soda, candy, nachos, hot
     dogs, pretzels, ice cream or water. They're in your hands (and everyone sees them in yours); sit
-    down and they go in your seat's cupholders. Eat and drink (1 and 2, or the buttons by your hands)
-    with a crunch or a slurp until they're gone, then toss them in a bin.
+    down and they go in your seat's cupholders (Pick up and Cupholder move one between hand and
+    holder). Eat and drink (1 and 2, or the buttons by your hands) with a crunch or a slurp until
+    they're gone, then Drop them or toss them in a bin.
   - **The arcade is real**: Snack Snake, Brick Breaker and Popcorn Catch, with high scores shared by
     everyone (kept on Cloudflare) and shown on the machines.
   - **Watch together** (cloud edition): everyone in the building sees each other as blocky people in
