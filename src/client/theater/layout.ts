@@ -94,6 +94,8 @@ export const screenYaw = (t: TheaterPlan) => (t.side === -1 ? -Math.PI / 2 : Mat
 
 export const rowU = (row: number) => FIRST_ROW_U + row * ROW_STEP;
 export const rowHeight = (row: number) => RISER * (row + 1);
+/** Where you stand to sit in a row: the middle of the walkway in front of it. */
+export const ROW_WALKWAY = 0.85;
 
 /** The stepped floor: flat by the screen, then one riser per row toward the back. */
 export function stadiumHeight(u: number): number {
@@ -155,7 +157,8 @@ export function posterSlot(plan: GalleryPlan, i: number) {
   const span = (POSTER_COLS - 1) * 1.25;
   return {
     x: facing === 1 ? -span / 2 + col * 1.25 : span / 2 - col * 1.25,
-    y: row === 0 ? 2.95 : 1.35,
+    // Eye level first, then the row above.
+    y: row === 0 ? 1.6 : 3.2,
     z: plan.dividers[divider]! + facing * 0.22,
     facing,
   };
@@ -167,7 +170,7 @@ export const dividerHalfLength = DIVIDER_HALF;
 // What's solid: a half-metre grid. Doorways into theaters are solid unless you
 // hold a ticket for that theater.
 
-const CELL = 0.5;
+const CELL = 0.25;
 const GX0 = -30;
 const GX1 = 30;
 const GZ1 = 20;
@@ -258,8 +261,11 @@ export class SolidMap {
       this.rect(t.door.wallX0, t.door.z0, t.door.wallX1, t.door.z1, 10 + t.number);
       // Seats.
       for (let seat = 0; seat < ROWS * SEATS_PER_ROW; seat++) {
+        // Just the seat and its back, leaving a walkway in front of each row.
         const p = seatPose(t, seat);
-        solid(p.x - 0.4, p.z - 0.4, p.x + 0.4, p.z + 0.4);
+        const a = toWorld(t, rowU(p.row) - 0.2, -(SEATS_PER_ROW - 1) / 2 + p.col - 0.45);
+        const b = toWorld(t, rowU(p.row) + 0.5, -(SEATS_PER_ROW - 1) / 2 + p.col + 0.45);
+        solid(a.x, a.z, b.x, b.z);
       }
     }
     // Lobby furniture: counters, the ticket taker's podium, arcade machines, benches.

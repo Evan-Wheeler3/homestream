@@ -163,9 +163,10 @@ instead.
     a newly ripped movie is in the box office, on the _New arrivals_ wall in the lobby and in The
     Collection straight away. Nothing extra happens at rip time; posters are turned into pixel art in
     the browser.
-  - Controls: W A S D or the arrow keys and drag to look (E or Enter to use things) on a computer; a
-    thumbstick on phones; arrows and OK on a TV remote. On the home (Jellyfin) server it works the same
-    but it's just you.
+  - Controls: on a computer, W/S or ↑/↓ walk, ←/→ turn, A/D step sideways, drag to look, E or Enter
+    to use things. On a phone, the thumbstick walks (up/down) and turns (left/right); drag elsewhere to
+    look. On a TV remote, the arrows walk and turn and OK uses things. On the home (Jellyfin) server it
+    works the same but it's just you.
 - **Home**: a featured film with backdrop (rotates; source configurable), Continue Watching, Recently Added,
   Personal Favorites, your collections, a “Spin the wheel” invitation, and genre/decade shelves. Sections can be hidden and
   reordered, and any collection can be pinned as its own row. Empty rows never appear.

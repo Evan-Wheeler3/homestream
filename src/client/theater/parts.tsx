@@ -474,8 +474,8 @@ export function HelpDialog({
       </ol>
       <p className="muted">
         {touch
-          ? 'Walk with the thumbstick, drag anywhere else to look around, and tap the button that appears to use things.'
-          : 'Walk with W A S D or the arrow keys, drag to look around, and press E (or Enter) to use things.'}
+          ? 'Push the thumbstick up to walk and left or right to turn, drag anywhere else to look around, and tap the button that appears to use things.'
+          : 'Walk with W and S (or ↑ and ↓), turn with ← and →, step sideways with A and D, drag to look around, and press E (or Enter) to use things.'}
       </p>
     </Dialog>
   );

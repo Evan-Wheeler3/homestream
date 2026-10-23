@@ -93,10 +93,10 @@ export interface World {
   gallery: GalleryPlan;
   atlas: PosterAtlas;
   posters: THREE.Mesh;
-  /** Which movie a poster triangle belongs to. */
-  posterMovie(faceIndex: number): string | undefined;
+  /** The poster nearest the middle of your view, within a few metres. */
+  posterInView(x: number, z: number, yaw: number): string | undefined;
   /** Draws only the parts of the building that can be seen from a place. */
-  showFrom(place: Place): void;
+  showFrom(place: Place, z: number): void;
   theaters: TheaterView[];
   hotspots: Hotspot[];
   /** Little animations: popping corn, blinking bulbs, arcade screens. */
@@ -849,7 +849,7 @@ export function buildWorld(movies: GalleryMovie[]): World {
   const positions: number[] = [];
   const uvs: number[] = [];
   const indices: number[] = [];
-  const quadMovie: string[] = [];
+  const placed: typeof quads = [];
   const corner = new THREE.Vector3();
   for (const q of quads) {
     const uv = atlas.uv(q.movieId);
@@ -867,7 +867,7 @@ export function buildWorld(movies: GalleryMovie[]): World {
     }
     uvs.push(uv[0], uv[1], uv[2], uv[1], uv[2], uv[3], uv[0], uv[3]);
     indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
-    quadMovie.push(q.movieId);
+    placed.push(q);
     inArea(q.z > HALL.z0 ? 'lobby' : 'gallery');
     // A gold frame behind it.
     const back = new THREE.Vector3(0, 0, -0.03).applyMatrix4(rot);
@@ -952,16 +952,43 @@ export function buildWorld(movies: GalleryMovie[]): World {
     gallery,
     atlas,
     posters,
-    posterMovie: (face) => quadMovie[Math.floor(face / 2)],
-    showFrom(place) {
-      // What can be seen from here (walls hide the rest).
+    posterInView(x, z, yaw) {
+      const fx = -Math.sin(yaw);
+      const fz = -Math.cos(yaw);
+      let best: { id: string; score: number } | undefined;
+      for (const q of placed) {
+        const dx = q.x - x;
+        const dz = q.z - z;
+        const d = Math.hypot(dx, dz);
+        // Close enough, on the side of the wall you're on, and roughly ahead.
+        if (d > 3.2 || d < 0.05) continue;
+        if (Math.sin(q.yaw) * -dx + Math.cos(q.yaw) * -dz <= 0) continue;
+        const ahead = (dx * fx + dz * fz) / d;
+        if (ahead < 0.75) continue;
+        const score = (1 - ahead) * 4 + d * 0.1;
+        if (!best || score < best.score) best = { id: q.movieId, score };
+      }
+      return best?.id;
+    },
+    showFrom(place, z) {
+      // What can be seen from here (walls hide the rest). From the hallway only
+      // the nearest doorways show anything of the auditoriums behind them.
+      const near = (n: number) => {
+        const t = THEATERS[n - 1]!;
+        return Math.abs((t.door.z0 + t.door.z1) / 2 - z) < 14;
+      };
       const visible = new Set<string>(
         place.kind === 'theater'
           ? [`theater-${place.number}`, 'hall']
           : place.kind === 'gallery'
             ? ['gallery', 'hall']
             : place.kind === 'hall'
-              ? ['lobby', 'hall', 'gallery', ...THEATERS.map((t) => `theater-${t.number}`)]
+              ? [
+                  'hall',
+                  ...(z > -40 ? ['lobby'] : []),
+                  ...(z < -50 ? ['gallery'] : []),
+                  ...THEATERS.filter((t) => near(t.number)).map((t) => `theater-${t.number}`),
+                ]
               : ['lobby', 'hall'],
       );
       for (const [area, meshes] of areaMeshes) {

@@ -10,11 +10,13 @@ import {
   floorHeight,
   HALL,
   placeAt,
+  ROW_WALKWAY,
   rowU,
   SCREEN,
   SEATED_EYE_HEIGHT,
   seatPose,
   THEATERS,
+  toLocal,
   toWorld,
   type Place,
 } from './layout';
@@ -51,7 +53,6 @@ export class TheaterEngine {
   private readonly screenLight = new THREE.PointLight(0xbfd4ff, 0, 30, 1.2);
   private readonly avatars = new Map<string, Avatar>();
   private readonly keys = new Set<string>();
-  private readonly raycaster = new THREE.Raycaster();
   private readonly clock = new THREE.Clock();
   private readonly screenSources = new Map<number, THREE.Texture>();
   private readonly glowSample = document.createElement('canvas');
@@ -66,7 +67,7 @@ export class TheaterEngine {
   private y = 0;
   private seat: { theater: number; seat: number } | null = null;
   private ticket: number | null = null;
-  private joystick = { x: 0, y: 0 };
+  private joystick = { x: 0, y: 0, strafe: false };
   private dragging: { id: number; x: number; y: number } | null = null;
   private lastSent = { x: Infinity, z: Infinity, yaw: Infinity, at: 0 };
   private prompt: Prompt | null = null;
@@ -98,7 +99,7 @@ export class TheaterEngine {
     this.scene.fog = new THREE.Fog(0x070512, 40, 140);
     this.world = buildWorld(movies);
     this.scene.add(this.world.root, this.hemi, this.ambient, this.screenLight);
-    this.world.showFrom(this.place);
+    this.world.showFrom(this.place, this.z);
     this.addSky();
     this.glowSample.width = this.glowSample.height = 4;
     this.resize();
@@ -215,7 +216,8 @@ export class TheaterEngine {
 
   /** The on-screen thumbstick, -1..1 each way (y up = forward). */
   setJoystick(x: number, y: number) {
-    this.joystick = { x, y };
+    // A little dead zone so walking straight doesn't drift into a turn.
+    this.joystick = { x: Math.abs(x) < 0.15 ? 0 : x, y: Math.abs(y) < 0.15 ? 0 : y, strafe: false };
   }
 
   // ---------------------------------------------------------------------------
@@ -403,7 +405,7 @@ export class TheaterEngine {
     const pose = seatPose(t, this.seat.seat);
     this.seat = null;
     // Step out into the gap in front of the seat.
-    const out = toWorld(t, rowU(pose.row) - 0.6, -4.5 + pose.col);
+    const out = toWorld(t, rowU(pose.row) - ROW_WALKWAY, -4.5 + pose.col);
     this.x = out.x;
     this.z = out.z;
     this.pitch = 0;
@@ -432,7 +434,7 @@ export class TheaterEngine {
       // In front of the seat, ready to sit.
       const t = THEATERS[place.theater - 1]!;
       const pose = seatPose(t, place.seat);
-      const p = toWorld(t, rowU(pose.row) - 0.6, -4.5 + pose.col);
+      const p = toWorld(t, rowU(pose.row) - ROW_WALKWAY, -4.5 + pose.col);
       Object.assign(this, { x: p.x, z: p.z, yaw: pose.yaw + Math.PI });
     } else if (typeof place === 'object') {
       const t = THEATERS[place.theater - 1]!;
@@ -495,9 +497,10 @@ export class TheaterEngine {
   private walk(dt: number) {
     if (!this.inputEnabled) return;
     const k = this.keys;
+    // The thumbstick: up and down walk, left and right turn (easy with one thumb).
     let forward = this.joystick.y;
-    let strafe = this.joystick.x;
-    let turn = 0;
+    let strafe = this.joystick.strafe ? this.joystick.x : 0;
+    let turn = this.joystick.strafe ? 0 : -this.joystick.x * 0.8;
     if (k.has('w') || k.has('ArrowUp')) forward += 1;
     if (k.has('s') || k.has('ArrowDown')) forward -= 1;
     if (k.has('a')) strafe -= 1;
@@ -512,19 +515,31 @@ export class TheaterEngine {
     const cos = Math.cos(this.yaw);
     const dx = (-sin * forward + cos * strafe) * scale;
     const dz = (-cos * forward - sin * strafe) * scale;
-    // Slide along walls: try each direction on its own.
-    for (const [nx, nz] of [
-      [this.x + dx, this.z],
-      [this.x, this.z + dz],
-    ] as const) {
-      const hit = this.world.solid.blocked(nx, nz, this.ticket);
-      if (hit === null) {
-        this.x = nx;
-        this.z = nz;
-      } else if (typeof hit === 'number' && performance.now() - this.blockedAt > 2500) {
-        this.blockedAt = performance.now();
-        this.events.onBlocked(hit);
-      }
+    // Slide along walls: try each direction on its own, the second from wherever
+    // the first left you.
+    this.step(this.x + dx, this.z);
+    this.step(this.x, this.z + dz);
+  }
+
+  /**
+   * Walks for `seconds` at a steady 60 frames a second, with the same walls as
+   * the real thing (tests use it to check routes without waiting on rendering).
+   */
+  simulate(input: { forward?: number; strafe?: number }, seconds: number) {
+    const saved = this.joystick;
+    this.joystick = { x: input.strafe ?? 0, y: input.forward ?? 0, strafe: true };
+    for (let t = 0; t < seconds; t += 1 / 60) this.walk(1 / 60);
+    this.joystick = saved;
+  }
+
+  private step(nx: number, nz: number) {
+    const hit = this.world.solid.blocked(nx, nz, this.ticket);
+    if (hit === null) {
+      this.x = nx;
+      this.z = nz;
+    } else if (typeof hit === 'number' && performance.now() - this.blockedAt > 2500) {
+      this.blockedAt = performance.now();
+      this.events.onBlocked(hit);
     }
   }
 
@@ -539,9 +554,9 @@ export class TheaterEngine {
     const place = placeAt(this.x, this.z, this.world.gallery);
     if (JSON.stringify(place) !== JSON.stringify(this.place)) {
       this.place = place;
-      this.world.showFrom(place);
       this.events.onPlace(place);
     }
+    this.world.showFrom(place, this.z);
   }
 
   /** Lights the auditorium with the colour of what's on screen. */
@@ -589,12 +604,18 @@ export class TheaterEngine {
       // Seats: the nearest free one within reach, in a theater you hold a ticket for.
       if (this.place.kind === 'theater' && this.ticket === this.place.number) {
         const t = THEATERS[this.ticket - 1]!;
+        // The row in front of you as you stand in its walkway (not the back of the
+        // row behind), the seat nearest across.
+        const me = toLocal(t, this.x, this.z);
         let best: { seat: number; d: number } | null = null;
         for (let seat = 0; seat < SEAT_COUNT; seat++) {
-          const p = seatPose(t, seat);
-          const d = Math.hypot(p.x - this.x, p.z - this.z);
           if (this.taken.has(`${t.number}:${seat}`)) continue;
-          if (d < 1.5 && (!best || d < best.d)) best = { seat, d };
+          const row = Math.floor(seat / 10);
+          const du = rowU(row) - me.u;
+          const dv = Math.abs(-4.5 + (seat % 10) - me.v);
+          if (du < 0 || du > 1.4 || dv > 0.8) continue;
+          const d = du + dv;
+          if (!best || d < best.d) best = { seat, d };
         }
         if (best) {
           const row = String.fromCharCode(65 + Math.floor(best.seat / 10));
@@ -618,11 +639,8 @@ export class TheaterEngine {
         }
       }
       if (!next && this.place.kind !== 'theater') {
-        // A poster you're looking at, up close.
-        this.raycaster.setFromCamera(new THREE.Vector2(0, 0), this.camera);
-        this.raycaster.far = 3.5;
-        const hit = this.raycaster.intersectObject(this.world.posters)[0];
-        const movieId = hit?.faceIndex != null ? this.world.posterMovie(hit.faceIndex) : undefined;
+        // The poster you're looking at.
+        const movieId = this.world.posterInView(this.x, this.z, this.yaw);
         if (movieId) next = { kind: 'poster', label: 'Get a ticket', movieId };
       }
     }
