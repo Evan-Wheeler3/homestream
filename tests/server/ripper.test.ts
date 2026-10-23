@@ -477,6 +477,35 @@ describe('automatic disc ripping', () => {
     expect(hw.calls.find((c) => c.includes(' mkv '))).toMatch(/mkv disc:0 4 /);
   });
 
+  it('the Eject button takes the disc out, but not in the middle of a rip', async () => {
+    await boot();
+    // Waiting for a choice: ejecting is fine, and the job says the disc was taken out.
+    const decoys = Array.from({ length: 6 }, (_, i) => ({
+      duration: FEATURE,
+      segments: `1,${i + 2},3`,
+    }));
+    hw.insert({ label: 'YOUNG_FRANKENSTEIN', titles: decoys });
+    await server.ripper!.poll();
+    await waitFor('needs_choice');
+    const res = await client.post('/api/rips/eject', {});
+    expect(res.status).toBe(200);
+    expect(hw.calls).toContain('drutil eject');
+    expect(fs.readdirSync(volumes)).toEqual([]);
+    await server.ripper!.poll();
+    const failed = await waitFor('failed');
+    expect(String(failed.message)).toMatch(/removed before a title was chosen/);
+
+    // Mid-rip: no, use Stop.
+    hw.hangRip = true;
+    hw.insert({ label: 'GODZILLA', titles: [{ duration: FEATURE }] });
+    await server.ripper!.poll();
+    const ripping = await waitFor('ripping');
+    const busy = await client.post('/api/rips/eject', {});
+    expect(busy.status).toBe(400);
+    expect(busy.json.error.message).toMatch(/Use Stop/);
+    expect((await client.delete(`/api/rips/${ripping.id}`)).status).toBeLessThan(300);
+  });
+
   it('keeps the rip when compression fails, and Retry finishes the job', async () => {
     await boot();
     hw.failNextEncode = true;

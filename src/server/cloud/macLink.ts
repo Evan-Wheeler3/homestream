@@ -201,6 +201,8 @@ export async function runCommand(ripper: Ripper, c: Command) {
       return ripper.retry(c.jobId);
     case 'dismiss':
       return ripper.dismiss(c.jobId);
+    case 'eject':
+      return ripper.ejectDisc();
     default:
       throw new Error(`Unknown action ${c.action}`);
   }

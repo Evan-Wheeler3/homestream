@@ -604,12 +604,20 @@ describe('cloud: the Mac', () => {
     };
     expect(after.commands).toHaveLength(0);
 
+    // Eject is for the drive, not one disc.
+    expect((await c.call('POST', '/api/rips/eject', { body: {} })).status).toBe(200);
+    const eject = (await (await c.mac('POST', '/status', { health, jobs: [job] })).json()) as {
+      commands: { action: string; jobId: string }[];
+    };
+    expect(eject.commands).toMatchObject([{ action: 'eject', jobId: '' }]);
+
     c.db.raw.prepare(`UPDATE mac_status SET updated_at = '2000-01-01T00:00:00.000Z'`).run();
     const offline = (await (await c.call('GET', '/api/rips')).json()) as {
       mac: { online: boolean };
     };
     expect(offline.mac.online).toBe(false);
     expect((await c.call('POST', `/api/rips/${job.id}/retry`, { body: {} })).status).toBe(400);
+    expect((await c.call('POST', '/api/rips/eject', { body: {} })).status).toBe(400);
   });
 
   it('imports a person’s data as a pending invite, and again without duplicates', async () => {

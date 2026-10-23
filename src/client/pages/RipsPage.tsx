@@ -651,7 +651,7 @@ function RipCard({ job, canSearch }: { job: RipJob; canSearch: boolean }) {
 
 export function RipsPage({ session }: { session: SessionInfo }) {
   const rips = useRips(Boolean(session.ripper));
-  const { testNotification } = useRipActions();
+  const { testNotification, eject } = useRipActions();
   const toast = useToast();
 
   if (!session.ripper) {
@@ -689,6 +689,21 @@ export function RipsPage({ session }: { session: SessionInfo }) {
           </p>
         </div>
         <div className="page-header__actions">
+          <Button
+            icon="disc"
+            busy={eject.isPending}
+            disabled={Boolean(mac && !mac.online)}
+            onClick={async () => {
+              try {
+                await eject.mutateAsync();
+                toast.show(mac ? 'Sent to the Mac: the disc will come out.' : 'Disc ejected.');
+              } catch (error) {
+                toast.show(errorMessage(error), 'error');
+              }
+            }}
+          >
+            Eject disc
+          </Button>
           <Button
             icon="check"
             busy={testNotification.isPending}

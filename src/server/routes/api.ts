@@ -1020,6 +1020,13 @@ export function apiRouter(deps: ApiDeps): Router {
       '/rips/:id/retry',
       ripAction((req) => toPublicJob(ripper.retry(ripId(req)))),
     );
+    router.post(
+      '/rips/eject',
+      ripAction(async () => {
+        await ripper.ejectDisc();
+        return { ok: true };
+      }),
+    );
     router.delete(
       '/rips/:id',
       ripAction((req) => {

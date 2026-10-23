@@ -17,6 +17,7 @@ test('inserting a disc: progress, confirm the name, ready to watch', async ({ pa
 
   await page.getByRole('link', { name: 'Discs' }).click();
   await expect(page.getByRole('heading', { name: 'Discs', level: 1 })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Eject disc' })).toBeVisible();
 
   // A different disc each run: a second copy of the same movie is (rightly) refused.
   const letters = Array.from({ length: 6 }, () =>

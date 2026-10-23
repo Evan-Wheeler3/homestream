@@ -101,6 +101,23 @@ export async function finishCommand(sql: Sql, id: string, error: unknown) {
 export const RIP_ACTIONS = ['choose', 'name', 'episodes', 'kind', 'retry', 'dismiss'] as const;
 export type RipAction = (typeof RIP_ACTIONS)[number];
 
+/** Queues an action for the Mac's disc drive itself (not one disc's rip), like Eject. */
+export async function queueDriveAction(sql: Sql, action: 'eject', userId: string) {
+  const status = await readMacStatus(sql);
+  if (!status.mac?.online) {
+    throw badRequest('The Mac is offline. Switch it on (and wake it up) to eject the disc.');
+  }
+  await sql.run(
+    `INSERT INTO mac_commands (id, job_id, action, payload, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+    randomId(),
+    '',
+    action,
+    '{}',
+    userId,
+    nowIso(),
+  );
+}
+
 /** Queues a Discs-page action for the Mac and returns the job as last reported. */
 export async function queueRipAction(
   sql: Sql,

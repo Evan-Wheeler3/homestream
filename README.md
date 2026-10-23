@@ -433,6 +433,8 @@ same-length titles (copy protection: pick the right one), when it looks like a T
 episode-length titles — Wheelhouse only files movies), when the name is uncertain (several films share
 a title, or the label is cryptic), or when something fails (with **Retry**). Nothing is deleted unless the
 compressed movie checks out, and a finished movie in the Movies folder is never touched by **Dismiss**.
+**Eject disc** at the top of the page takes the disc out of the drive (from the cloud site too, while
+the Mac is online); during a rip, use **Stop** on that disc instead.
 
 **Set up (once, about 15 minutes):**
 

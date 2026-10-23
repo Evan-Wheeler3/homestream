@@ -741,18 +741,22 @@ export class Ripper {
     }
   }
 
-  private async eject(mount: string) {
+  /** Ejects whatever is in the drive; true if it worked. */
+  private async eject(mount?: string): Promise<boolean> {
     const { run } = this.deps;
     try {
       const result = await run('/usr/bin/drutil', ['eject']);
-      if (result.code === 0) return;
+      if (result.code === 0) return true;
     } catch {
       /* fall through */
     }
+    if (!mount) return false;
     try {
-      await run('/usr/sbin/diskutil', ['eject', mount]);
+      const result = await run('/usr/sbin/diskutil', ['eject', mount]);
+      return result.code === 0;
     } catch (error) {
       this.log.warn('Could not eject the disc:', describe(error));
+      return false;
     }
   }
 
@@ -1194,6 +1198,17 @@ export class Ripper {
   /** Where names are looked up: TMDB when set up for the cloud, else Jellyfin. */
   private get searcher(): TitleSearch | null {
     return this.deps.titleSearch ?? this.deps.jellyfin;
+  }
+
+  /** The Eject button on the Discs page. */
+  async ejectDisc() {
+    if (this.discBusy || this.discAbort) {
+      throw new UserError('A disc is being read or ripped. Use Stop on it to eject it.');
+    }
+    if (!(await this.eject(this.discMounts()[0]?.mount))) {
+      throw new UserError('The drive didn’t eject. Press the button on the drive instead.');
+    }
+    this.log.info('Disc ejected from the Discs page.');
   }
 
   listJobs() {

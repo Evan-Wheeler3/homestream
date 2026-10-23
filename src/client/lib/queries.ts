@@ -461,6 +461,10 @@ export function useRipActions() {
     testNotification: useMutation({
       mutationFn: () => api('/rips/test-notification', { method: 'POST' }),
     }),
+    eject: useMutation({
+      mutationFn: () => api('/rips/eject', { method: 'POST' }),
+      onSettled: settle,
+    }),
   };
 }
 

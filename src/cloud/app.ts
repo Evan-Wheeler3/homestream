@@ -97,6 +97,7 @@ import {
   ingestMovie,
   libraryIndex,
   listIngested,
+  queueDriveAction,
   queueRipAction,
   readMacStatus,
   receiveMacStatus,
@@ -1069,6 +1070,11 @@ export function createApp() {
     const job = await queueRipAction(c.get('sql'), id, action, payload, user(c).id);
     return c.json(action === 'dismiss' ? { ok: true } : job);
   };
+  app.post('/rips/eject', async (c) => {
+    requireAdmin(user(c), 'manage disc rips');
+    await queueDriveAction(c.get('sql'), 'eject', user(c).id);
+    return c.json({ ok: true });
+  });
   app.post('/rips/:id/choose', ripAction('choose'));
   app.post('/rips/:id/name', ripAction('name'));
   app.post('/rips/:id/episodes', ripAction('episodes'));
