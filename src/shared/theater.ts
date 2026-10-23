@@ -14,16 +14,83 @@ export const SEAT_COUNT = ROWS * SEATS_PER_ROW;
 export const COUNTDOWN_MS = 3_500;
 const MAX_POSITION = 24 * 3600;
 
+/** The concession stand's menu. `bites`: how many bites (or sips) until it's gone. */
 export const SNACKS = [
-  { id: 'popcorn', label: 'Popcorn', emoji: '🍿' },
-  { id: 'soda', label: 'Soda', emoji: '🥤' },
-  { id: 'candy', label: 'Candy', emoji: '🍬' },
-  { id: 'nachos', label: 'Nachos', emoji: '🧀' },
-  { id: 'hotdog', label: 'Hot dog', emoji: '🌭' },
-  { id: 'pretzel', label: 'Pretzel', emoji: '🥨' },
-  { id: 'icecream', label: 'Ice cream', emoji: '🍦' },
+  { id: 'popcorn', label: 'Popcorn', emoji: '🍿', price: 7, kind: 'food', bites: 12 },
+  { id: 'soda', label: 'Soda', emoji: '🥤', price: 5, kind: 'drink', bites: 8 },
+  { id: 'candy', label: 'Candy', emoji: '🍬', price: 4, kind: 'food', bites: 6 },
+  { id: 'nachos', label: 'Nachos', emoji: '🧀', price: 6, kind: 'food', bites: 8 },
+  { id: 'hotdog', label: 'Hot dog', emoji: '🌭', price: 5, kind: 'food', bites: 5 },
+  { id: 'pretzel', label: 'Pretzel', emoji: '🥨', price: 4, kind: 'food', bites: 5 },
+  { id: 'icecream', label: 'Ice cream', emoji: '🍦', price: 4, kind: 'food', bites: 6 },
+  { id: 'water', label: 'Water', emoji: '💧', price: 3, kind: 'drink', bites: 6 },
 ] as const;
 export type SnackId = (typeof SNACKS)[number]['id'];
+/** Wheelhouse Bucks you arrive with (pretend money, topped up each visit). */
+export const WALLET = 30;
+
+/** Something in your hand: how much is left, 1 (full) to 0 (empty). */
+export interface HeldItem {
+  id: SnackId;
+  level: number;
+}
+/** Left hand, right hand. Seated, they're in your seat's cupholders. */
+export type Hands = [HeldItem | null, HeldItem | null];
+
+/** The playable arcade machines. */
+export const ARCADE_GAMES = [
+  { id: 'snake', title: 'Snack Snake' },
+  { id: 'breakout', title: 'Brick Breaker' },
+  { id: 'catch', title: 'Popcorn Catch' },
+] as const;
+export type ArcadeGameId = (typeof ARCADE_GAMES)[number]['id'];
+export interface HighScore {
+  name: string;
+  score: number;
+}
+export type Scores = Record<ArcadeGameId, HighScore[]>;
+export const emptyScores = (): Scores => ({ snake: [], breakout: [], catch: [] });
+const TOP_SCORES = 10;
+
+/** A small seeded random number generator (the same sequence for the same seed). */
+function seeded(seed: string) {
+  let h = 1779033703 ^ seed.length;
+  for (let i = 0; i < seed.length; i++) {
+    h = Math.imul(h ^ seed.charCodeAt(i), 3432918353);
+    h = (h << 13) | (h >>> 19);
+  }
+  return () => {
+    h = Math.imul(h ^ (h >>> 16), 2246822507);
+    h = Math.imul(h ^ (h >>> 13), 3266489909);
+    h ^= h >>> 16;
+    return (h >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * Today's lineup: which movie each theater shows (index 0 is Theater 1). The
+ * newest arrival gets Theater 1; the rest are a shuffle that changes each day
+ * and is the same for everyone.
+ */
+export function dailyLineup(
+  movies: { id: string; dateAdded: string | null }[],
+  day: string,
+): (string | null)[] {
+  const newest = [...movies].sort(
+    (a, b) => (b.dateAdded ?? '').localeCompare(a.dateAdded ?? '') || a.id.localeCompare(b.id),
+  )[0];
+  const rest = movies
+    .filter((m) => m !== newest)
+    .map((m) => m.id)
+    .sort();
+  const random = seeded(day);
+  for (let i = rest.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [rest[i], rest[j]] = [rest[j]!, rest[i]!];
+  }
+  const ids = newest ? [newest.id, ...rest] : rest;
+  return Array.from({ length: THEATER_COUNT }, (_, i) => ids[i] ?? null);
+}
 
 export const REACTIONS = ['😂', '😱', '😍', '👏', '😭', '🔥', '🍿', '👀'] as const;
 
@@ -41,7 +108,8 @@ export interface TheaterPlayer {
   x: number;
   z: number;
   yaw: number;
-  snack: SnackId | null;
+  /** What they're carrying (in their seat's cupholders while seated). */
+  hands: Hands;
   /** The theater their ticket is for. */
   ticket: number | null;
   /** Their seat in that theater, while sitting. */
@@ -77,7 +145,8 @@ export interface TheaterUser {
 
 export type ClientMessage =
   | { t: 'move'; x: number; z: number; yaw: number }
-  | { t: 'snack'; snack: SnackId | null }
+  /** What you're carrying now; `bite` says which hand you just ate or drank from. */
+  | { t: 'hands'; hands: Hands; bite?: 0 | 1 }
   | {
       t: 'ticket';
       movieId: string;
@@ -86,7 +155,10 @@ export type ClientMessage =
       runtimeMinutes: number | null;
       shared: boolean;
       startSeconds: number;
+      /** The theater showing it today, when it's in the lineup. */
+      theater?: number;
     }
+  | { t: 'score'; game: ArcadeGameId; score: number }
   | { t: 'join'; theater: number }
   | { t: 'returnTicket' }
   | { t: 'sit'; seat: number }
@@ -98,13 +170,23 @@ export type ClientMessage =
   | { t: 'ping'; c: number };
 
 export type ServerMessage =
-  | { t: 'welcome'; you: string; players: TheaterPlayer[]; showings: Showing[]; now: number }
+  | {
+      t: 'welcome';
+      you: string;
+      players: TheaterPlayer[];
+      showings: Showing[];
+      scores: Scores;
+      now: number;
+    }
   | { t: 'player'; player: TheaterPlayer }
   | { t: 'move'; id: string; x: number; z: number; yaw: number }
   | { t: 'gone'; id: string }
   | { t: 'showing'; showing: Showing }
   | { t: 'closed'; theater: number }
   | { t: 'react'; id: string; emoji: string }
+  | { t: 'bite'; id: string; hand: 0 | 1 }
+  | { t: 'scores'; game: ArcadeGameId; top: HighScore[] }
+  | { t: 'notice'; message: string }
   | { t: 'chat'; id: string; name: string; text: string }
   | { t: 'pong'; c: number; s: number }
   | { t: 'error'; message: string };
@@ -121,6 +203,25 @@ export function countdownLeft(showing: Showing, now: number): number {
 }
 
 const DEFAULT_COLOR = '#e8a33d';
+
+function hash(s: string) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return h;
+}
+
+function parseHands(raw: unknown): Hands | null {
+  if (!Array.isArray(raw) || raw.length !== 2) return null;
+  const hands = raw.map((h: unknown) => {
+    if (h === null) return null;
+    if (!h || typeof h !== 'object') return undefined;
+    const { id, level } = h as Record<string, unknown>;
+    const snack = SNACKS.find((s) => s.id === id)?.id;
+    const l = finite(level, 0, 1);
+    return snack && l !== null ? { id: snack, level: l } : undefined;
+  });
+  return hands.includes(undefined) ? null : (hands as Hands);
+}
 const finite = (n: unknown, min: number, max: number): number | null =>
   typeof n === 'number' && Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : null;
 const text = (s: unknown, max: number): string =>
@@ -135,10 +236,13 @@ type Send = (to: string | null, message: ServerMessage, except?: string) => void
 export class TheaterState {
   readonly players = new Map<string, TheaterPlayer>();
   readonly showings = new Map<number, Showing>();
+  scores: Scores = emptyScores();
 
   constructor(
     private readonly send: Send,
     private readonly now: () => number = Date.now,
+    /** Called when the high scores change (the server keeps them). */
+    private readonly onScores?: (scores: Scores) => void,
   ) {}
 
   join(id: string, user: TheaterUser) {
@@ -152,7 +256,7 @@ export class TheaterState {
       x: SPAWN.x,
       z: SPAWN.z,
       yaw: SPAWN.yaw,
-      snack: null,
+      hands: [null, null],
       ticket: null,
       seat: null,
     };
@@ -162,6 +266,7 @@ export class TheaterState {
       you: id,
       players: [...this.players.values()],
       showings: [...this.showings.values()],
+      scores: this.scores,
       now: this.now(),
     });
     this.send(null, { t: 'player', player }, id);
@@ -189,11 +294,25 @@ export class TheaterState {
         this.send(null, { t: 'move', id, x, z, yaw }, id);
         return;
       }
-      case 'snack': {
-        const snack = m.snack === null ? null : SNACKS.find((s) => s.id === m.snack)?.id;
-        if (snack === undefined) return;
-        player.snack = snack;
+      case 'hands': {
+        const hands = parseHands(m.hands);
+        if (!hands) return;
+        player.hands = hands;
         this.send(null, { t: 'player', player });
+        if (m.bite === 0 || m.bite === 1) this.send(null, { t: 'bite', id, hand: m.bite }, id);
+        return;
+      }
+      case 'score': {
+        const game = ARCADE_GAMES.find((g) => g.id === m.game)?.id;
+        const score = finite(m.score, 0, 1_000_000);
+        if (!game || score === null || score < 1) return;
+        const top = [...this.scores[game], { name: player.name, score: Math.floor(score) }]
+          .sort((a, b) => b.score - a.score)
+          .slice(0, TOP_SCORES);
+        if (JSON.stringify(top) === JSON.stringify(this.scores[game])) return;
+        this.scores = { ...this.scores, [game]: top };
+        this.onScores?.(this.scores);
+        this.send(null, { t: 'scores', game, top });
         return;
       }
       case 'ticket':
@@ -257,6 +376,13 @@ export class TheaterState {
     const movieId = text(m.movieId, 120);
     if (!movieId) return;
     const shared = m.shared === true;
+    const wanted =
+      typeof m.theater === 'number' &&
+      Number.isInteger(m.theater) &&
+      m.theater >= 1 &&
+      m.theater <= THEATER_COUNT
+        ? m.theater
+        : null;
     this.release(player);
     // A shared showing of the same movie: everyone ends up in the same theater.
     const same = shared
@@ -266,8 +392,18 @@ export class TheaterState {
       : undefined;
     let theater = same?.theater;
     if (theater === undefined) {
-      for (let n = 1; n <= THEATER_COUNT && theater === undefined; n++) {
+      // The theater showing it today if it's free; otherwise the next free one
+      // (a movie that isn't in the lineup always tries the same theater first).
+      const start = wanted ?? (hash(movieId) % THEATER_COUNT) + 1;
+      for (let k = 0; k < THEATER_COUNT && theater === undefined; k++) {
+        const n = ((start - 1 + k) % THEATER_COUNT) + 1;
         if (!this.showings.has(n)) theater = n;
+      }
+      if (wanted !== null && theater !== undefined && theater !== wanted) {
+        this.send(player.id, {
+          t: 'notice',
+          message: `Theater ${wanted} is busy with another showing, so yours is in Theater ${theater}.`,
+        });
       }
     }
     if (theater === undefined) {

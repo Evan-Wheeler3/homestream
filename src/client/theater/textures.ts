@@ -12,24 +12,6 @@ const pixel = (texture: THREE.Texture) => {
   return texture;
 };
 
-/** A soft bevel on every block: lighter top-left edge, darker bottom-right. */
-export function blockTexture(): THREE.Texture {
-  const c = document.createElement('canvas');
-  c.width = c.height = 16;
-  const g = c.getContext('2d')!;
-  g.fillStyle = '#ffffff';
-  g.fillRect(0, 0, 16, 16);
-  g.fillStyle = 'rgba(255,255,255,0.9)';
-  g.fillRect(0, 0, 16, 1);
-  g.fillRect(0, 0, 1, 16);
-  g.fillStyle = 'rgba(0,0,0,0.22)';
-  g.fillRect(0, 15, 16, 1);
-  g.fillRect(15, 0, 1, 16);
-  g.fillStyle = 'rgba(0,0,0,0.05)';
-  for (let i = 0; i < 10; i++) g.fillRect((i * 7) % 14, (i * 5) % 14, 1, 1);
-  return pixel(new THREE.CanvasTexture(c));
-}
-
 export interface SignStyle {
   width?: number;
   height?: number;
@@ -82,6 +64,45 @@ export function drawSign(c: HTMLCanvasElement, lines: string[], style: SignStyle
     g.fillStyle = big ? (style.color ?? '#ffd23f') : '#f4e9ff';
     g.fillText(line, w / 2, y);
     g.shadowBlur = 0;
+  });
+}
+
+/** A lit board: a heading and lines of text (the Now Showing board, the menu). */
+export function drawBoard(
+  c: HTMLCanvasElement,
+  heading: string,
+  lines: [string, string][],
+  colors: { heading: string; accent: string },
+) {
+  const w = (c.width = 320);
+  const h = (c.height = 128);
+  const g = c.getContext('2d')!;
+  g.imageSmoothingEnabled = false;
+  g.fillStyle = '#0d0614';
+  g.fillRect(0, 0, w, h);
+  g.strokeStyle = colors.accent;
+  g.lineWidth = 3;
+  g.strokeRect(2, 2, w - 4, h - 4);
+  g.textBaseline = 'middle';
+  g.textAlign = 'center';
+  g.font = 'bold 18px "Courier New", ui-monospace, monospace';
+  g.shadowColor = colors.heading;
+  g.shadowBlur = 6;
+  g.fillStyle = colors.heading;
+  g.fillText(heading, w / 2, 16);
+  g.shadowBlur = 0;
+  const half = Math.ceil(lines.length / 2);
+  lines.forEach(([left, right], i) => {
+    const col = i < half ? 0 : 1;
+    const row = i % half;
+    const x = 10 + col * 155;
+    const y = 38 + row * 22;
+    g.font = 'bold 11px "Courier New", ui-monospace, monospace';
+    g.textAlign = 'left';
+    g.fillStyle = colors.accent;
+    g.fillText(left, x, y, 22);
+    g.fillStyle = '#f4e9ff';
+    g.fillText(right.toUpperCase(), x + 22, y, 128);
   });
 }
 

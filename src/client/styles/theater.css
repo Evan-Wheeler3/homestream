@@ -3,13 +3,25 @@
 .theater {
   position: fixed;
   inset: 0;
+  height: 100dvh;
   z-index: var(--z-player);
   background: #070512;
   color: #f4e9ff;
   overflow: hidden;
+  overscroll-behavior: none;
   user-select: none;
   -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
   touch-action: none;
+}
+.theater button {
+  touch-action: manipulation;
+}
+/* Lists in dialogs still scroll with a finger. */
+.theater dialog,
+.theater .dialog__body {
+  touch-action: pan-y;
 }
 .theater--message {
   display: grid;
@@ -397,28 +409,200 @@
   font-size: var(--text-xs);
 }
 
-/* Phones: a thumbstick */
-.joystick {
+/* Phones: a floating thumbstick on the left, look anywhere else, buttons on the right */
+.touch {
   position: absolute;
-  left: calc(var(--s-5) + env(safe-area-inset-left));
-  bottom: calc(var(--safe-bottom) + 110px);
-  width: 112px;
-  height: 112px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.08);
-  border: 2px solid rgba(255, 210, 63, 0.5);
+  inset: 0;
   touch-action: none;
 }
-.joystick__knob {
+.touch__hint {
+  position: absolute;
+  left: calc(var(--s-5) + env(safe-area-inset-left));
+  bottom: calc(var(--safe-bottom) + 130px);
+  padding: var(--s-1) var(--s-3);
+  border-radius: var(--r-pill);
+  border: 1px dashed rgba(255, 210, 63, 0.5);
+  color: rgba(255, 210, 63, 0.85);
+  font-size: var(--text-xs);
+  pointer-events: none;
+}
+.touch__stick {
+  position: absolute;
+  width: 112px;
+  height: 112px;
+  margin: -56px 0 0 -56px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  border: 2px solid rgba(255, 210, 63, 0.55);
+  pointer-events: none;
+}
+.touch__knob {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 48px;
-  height: 48px;
-  margin: -24px 0 0 -24px;
+  width: 50px;
+  height: 50px;
+  margin: -25px 0 0 -25px;
   border-radius: 50%;
-  background: rgba(255, 210, 63, 0.75);
+  background: rgba(255, 210, 63, 0.8);
   box-shadow: 0 0 14px rgba(255, 210, 63, 0.6);
+}
+.touch__buttons {
+  position: absolute;
+  right: calc(var(--s-4) + env(safe-area-inset-right));
+  bottom: calc(var(--safe-bottom) + 96px);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--s-3);
+}
+.touch__row {
+  display: flex;
+  gap: var(--s-3);
+}
+.touch__use {
+  max-width: 46vw;
+  min-height: 56px;
+  padding: var(--s-2) var(--s-4);
+  border-radius: var(--r-pill);
+  border: 2px solid #ffd23f;
+  background: rgba(10, 4, 18, 0.85);
+  color: #ffd23f;
+  font-family: 'Courier New', ui-monospace, monospace;
+  font-weight: 800;
+  font-size: var(--text-md);
+  box-shadow: 0 0 18px rgba(255, 210, 63, 0.4);
+}
+.touch__round {
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  border: 2px solid rgba(46, 230, 214, 0.7);
+  background: rgba(10, 4, 18, 0.7);
+  color: #fff;
+  font-size: 24px;
+}
+.touch__round[aria-pressed='true'] {
+  background: rgba(46, 230, 214, 0.35);
+}
+
+/* Your hands */
+.hands {
+  display: flex;
+  gap: var(--s-2);
+}
+.hands__slot {
+  position: relative;
+  display: inline-flex;
+}
+.hands__slot--empty {
+  width: 0;
+}
+.hands__use {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto;
+  align-items: center;
+  column-gap: var(--s-2);
+  min-width: 132px;
+  padding: 6px 10px;
+  border-radius: var(--r-md);
+  border: 1px solid rgba(255, 210, 63, 0.5);
+  background: rgba(10, 4, 18, 0.82);
+  color: #f4e9ff;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+.hands__use:disabled {
+  opacity: 0.6;
+}
+.hands__emoji {
+  grid-row: span 2;
+  font-size: 26px;
+}
+.hands__bar {
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.15);
+  overflow: hidden;
+}
+.hands__bar span {
+  display: block;
+  height: 100%;
+  background: #ffd23f;
+}
+.hands__verb kbd {
+  padding: 0 4px;
+  border-radius: 3px;
+  background: #ffd23f;
+  color: #1a0820;
+  font-size: var(--text-2xs);
+}
+.hands__toss {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 0;
+  background: #ff3fa4;
+  color: #fff;
+  font-size: 11px;
+  cursor: pointer;
+}
+.theater__wallet {
+  font-family: 'Courier New', ui-monospace, monospace;
+  font-weight: 800;
+  font-size: var(--text-sm);
+  padding: var(--s-1) var(--s-3);
+  border-radius: var(--r-pill);
+  background: rgba(10, 4, 18, 0.72);
+  border: 1px solid rgba(61, 255, 106, 0.5);
+  color: #3dff6a;
+  white-space: nowrap;
+}
+
+/* Landscape phones: a slimmer top bar, the rest out of the way. */
+@media (max-height: 520px) {
+  .theater__top {
+    top: calc(var(--safe-top) + var(--s-2));
+    left: calc(var(--s-2) + env(safe-area-inset-left));
+    right: calc(var(--s-2) + env(safe-area-inset-right));
+  }
+  .theater__place,
+  .theater__solo {
+    display: none;
+  }
+  .ticket {
+    top: calc(var(--safe-top) + 52px);
+    left: calc(var(--s-2) + env(safe-area-inset-left));
+    padding: var(--s-2) var(--s-3);
+    min-width: 0;
+  }
+  .ticket__admit,
+  .ticket__kind {
+    display: none;
+  }
+  .ticket__theater {
+    font-size: var(--text-md);
+  }
+  .theater__bottom {
+    bottom: calc(var(--safe-bottom) + var(--s-2));
+    width: min(560px, 60vw);
+  }
+  .theater__social {
+    display: none;
+  }
+  .touch__buttons {
+    bottom: calc(var(--safe-bottom) + var(--s-4));
+  }
+  .touch__hint {
+    bottom: calc(var(--safe-bottom) + 40px);
+  }
+  .seatbar {
+    padding: 4px var(--s-2);
+  }
 }
 
 /* Dialogs */
@@ -575,4 +759,174 @@
 }
 .theater-help .icon {
   vertical-align: -3px;
+}
+
+/* Box office: today's lineup */
+.boxoffice__lineup {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: var(--s-2);
+  margin: var(--s-2) 0 var(--s-4);
+  padding: 0;
+  list-style: none;
+}
+.lineup__card {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  padding: var(--s-1);
+  border: var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.lineup__card:hover,
+.lineup__card:focus-visible {
+  border-color: var(--accent);
+}
+.lineup__card img,
+.lineup__card .boxoffice__noposter {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  image-rendering: pixelated;
+}
+.lineup__theater {
+  font-family: 'Courier New', ui-monospace, monospace;
+  font-weight: 800;
+  font-size: var(--text-2xs);
+  color: var(--accent);
+}
+.lineup__title {
+  font-size: var(--text-xs);
+  line-height: 1.2;
+}
+.boxoffice__where {
+  margin: 0;
+  font-weight: var(--weight-semibold);
+}
+.snacks__item:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.snacks__price {
+  font-family: 'Courier New', ui-monospace, monospace;
+  font-weight: 800;
+  color: var(--success);
+}
+.snacks__hint {
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+/* The arcade */
+.arcade {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(140px, 1fr);
+  gap: var(--s-4);
+}
+.arcade__screen {
+  position: relative;
+  border: 6px solid #2a1838;
+  border-radius: 10px;
+  background: #0b0614;
+  box-shadow:
+    0 0 0 2px #ff3fa4,
+    0 0 24px rgba(255, 63, 164, 0.35);
+}
+.arcade__canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  image-rendering: pixelated;
+  touch-action: none;
+}
+.arcade__overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: var(--s-2);
+  background: rgba(11, 6, 20, 0.7);
+  text-align: center;
+}
+.arcade__over {
+  margin: 0;
+  font-family: 'Courier New', ui-monospace, monospace;
+  font-weight: 800;
+  font-size: var(--text-xl);
+  color: #ff3fa4;
+}
+.arcade__keys {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: #f4e9ff;
+}
+.arcade__score {
+  margin: 0 0 var(--s-3);
+  font-family: 'Courier New', ui-monospace, monospace;
+}
+.arcade__top {
+  margin: var(--s-2) 0 0;
+  padding-left: var(--s-5);
+  font-family: 'Courier New', ui-monospace, monospace;
+}
+.arcade__top li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s-2);
+}
+.arcade__pad {
+  display: flex;
+  justify-content: center;
+  gap: var(--s-3);
+  margin-top: var(--s-3);
+}
+.arcade__pad button {
+  width: 64px;
+  height: 56px;
+  border-radius: var(--r-md);
+  border: 2px solid var(--accent);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 22px;
+  touch-action: none;
+}
+@media (max-width: 640px), (max-height: 520px) {
+  .arcade {
+    grid-template-columns: 1fr;
+  }
+  .arcade__side {
+    display: none;
+  }
+}
+
+/* Narrow phones held upright: a compact top bar. */
+.theater__status-short {
+  display: none;
+}
+@media (max-width: 520px) {
+  .theater__top {
+    gap: 6px;
+    left: calc(var(--s-2) + env(safe-area-inset-left));
+    right: calc(var(--s-2) + env(safe-area-inset-right));
+  }
+  .theater__place,
+  .theater__solo {
+    display: none;
+  }
+  .theater__status-long {
+    display: none;
+  }
+  .theater__status-short {
+    display: inline;
+  }
+  .theater__status,
+  .theater__wallet {
+    padding: var(--s-1) var(--s-2);
+  }
 }

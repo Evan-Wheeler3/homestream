@@ -7,9 +7,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import {
   countdownLeft,
+  dailyLineup,
+  emptyScores,
   positionAt,
   REACTIONS,
   SNACKS,
+  WALLET,
+  type ArcadeGameId,
+  type Hands,
+  type Scores,
   type ServerMessage,
   type Showing,
   type SnackId,
@@ -20,17 +26,20 @@ import { useToast } from '../components/Toasts';
 import { Button, IconButton, Spinner, StatusView } from '../components/ui';
 import { api, errorMessage } from '../lib/api';
 import { useSession } from '../lib/queries';
+import { isMuted, play, setMuted as setSoundMuted, unlockAudio } from './audio';
 import { drawCard, drawLeader } from './countdown';
 import { TheaterEngine, type Prompt } from './engine';
-import { galleryPlan, placeAt, placeName, THEATERS, type Place } from './layout';
+import { placeAt, placeName, THEATERS, type Place } from './layout';
 import { TheaterLink, type LinkStatus } from './link';
 import {
+  ArcadeDialog,
   BoxOffice,
+  Concessions,
+  HandsBar,
   HelpDialog,
-  Joystick,
   PeopleList,
   SeatControls,
-  SnackCounter,
+  TouchControls,
   type TicketChoice,
 } from './parts';
 import { ScreenPlayer } from './screen';
@@ -81,18 +90,19 @@ export default function TheaterPage() {
   );
 }
 
-const ARCADE_LINES = [
-  'GAME OVER. Insert coin 🕹️',
-  'NEW HIGH SCORE! 👾 (Nobody else has played.)',
-  'You lost to a pixelated ghost 👻',
+const CLAW_LINES = [
+  'So close! The claw dropped it. 🧸',
+  'You won a pink plush bunny! 🐰 (It stays in the machine for the next person.)',
+  'The claw grabbed… nothing. Classic claw. 🦾',
 ];
 const SIDE = (theater: number) => (THEATERS[theater - 1]!.side === -1 ? 'left' : 'right');
-const HELP_KEY = 'wh-theater-help-v1';
+const HELP_KEY = 'wh-theater-help-v2';
 type Dialogs =
   | { kind: 'boxoffice'; movieId: string | null }
   | { kind: 'concessions' }
   | { kind: 'people' }
   | { kind: 'help' }
+  | { kind: 'arcade'; game: ArcadeGameId }
   | null;
 
 function Cinema({ me, cloud, movies }: { me: SessionUser; cloud: boolean; movies: Movie[] }) {
@@ -164,8 +174,22 @@ function Cinema({ me, cloud, movies }: { me: SessionUser; cloud: boolean; movies
   const [volume, setVolume] = useState(1);
   const [muted, setMuted] = useState(false);
   const [travelOpen, setTravelOpen] = useState(false);
+  const [hands, setHands] = useState<Hands>([null, null]);
+  const handsRef = useRef<Hands>([null, null]);
+  const [wallet, setWallet] = useState(WALLET);
+  const [scores, setScores] = useState<Scores>(emptyScores);
+  const [sprint, setSprint] = useState(false);
+  const [soundOff, setSoundOff] = useState(isMuted);
   const touch = useMemo(() => window.matchMedia?.('(pointer: coarse)').matches ?? false, []);
-  const gallery = useMemo(() => galleryPlan(movies.length), [movies.length]);
+  // Today's lineup: the same for everyone, a new one each day.
+  const lineup = useMemo(
+    () =>
+      dailyLineup(
+        movies.map((m) => ({ id: m.id, dateAdded: m.dateAdded })),
+        new Date().toISOString().slice(0, 10),
+      ),
+    [movies],
+  );
 
   const meId = snap.meId;
   const mine = snap.players.find((p) => p.id === meId);
@@ -190,7 +214,17 @@ function Cinema({ me, cloud, movies }: { me: SessionUser; cloud: boolean; movies
       runtimeMinutes: choice.movie.runtimeMinutes,
       shared: choice.shared,
       startSeconds: choice.startSeconds,
+      theater: choice.theater,
     });
+    play('ticket');
+  }, []);
+
+  /** What you're carrying: shown in front of you, and sent to everyone else. */
+  const updateHands = useCallback((next: Hands, bite?: 0 | 1) => {
+    handsRef.current = next;
+    setHands(next);
+    engineRef.current?.setHands(next);
+    linkRef.current?.send({ t: 'hands', hands: next, bite });
   }, []);
 
   // ---------------------------------------------------------------------------
@@ -206,7 +240,13 @@ function Cinema({ me, cloud, movies }: { me: SessionUser; cloud: boolean; movies
           ps.clear();
           for (const p of m.players) ps.set(p.id, p);
           showingsRef.current = new Map(m.showings.map((s) => [s.theater, s]));
+          setScores(m.scores);
+          engine?.setScores(m.scores);
           const self = ps.get(m.you);
+          if (handsRef.current.some(Boolean)) {
+            linkRef.current?.send({ t: 'hands', hands: handsRef.current });
+            if (self) self.hands = handsRef.current;
+          }
           if (self && engine) {
             self.x = engine.x;
             self.z = engine.z;
@@ -248,6 +288,19 @@ function Cinema({ me, cloud, movies }: { me: SessionUser; cloud: boolean; movies
           }
           break;
         }
+        case 'bite':
+          engine?.bite(m.id, m.hand);
+          return;
+        case 'scores':
+          setScores((s) => {
+            const next = { ...s, [m.game]: m.top };
+            engine?.setScores(next);
+            return next;
+          });
+          return;
+        case 'notice':
+          toast.show(m.message);
+          return;
         case 'move': {
           const p = ps.get(m.id);
           if (p) Object.assign(p, { x: m.x, z: m.z, yaw: m.yaw });
@@ -291,6 +344,9 @@ function Cinema({ me, cloud, movies }: { me: SessionUser; cloud: boolean; movies
         default:
           return;
       }
+      // Your own hands are yours to say (the server's copy can lag a bite behind).
+      const self = ps.get(meIdRef.current ?? '');
+      if (self) self.hands = handsRef.current;
       engine?.setPlayers([...ps.values()]);
       engine?.setShowings([...showingsRef.current.values()]);
       publish();
@@ -315,6 +371,8 @@ function Cinema({ me, cloud, movies }: { me: SessionUser; cloud: boolean; movies
     linkRef.current?.send({ t: 'stand' });
   }, []);
 
+  const stickTo = useCallback((x: number, y: number) => engineRef.current?.setStick(x, y), []);
+
   const returnTicket = () => {
     intentRef.current = null;
     engineRef.current?.standUp();
@@ -327,10 +385,48 @@ function Cinema({ me, cloud, movies }: { me: SessionUser; cloud: boolean; movies
     engine.goTo({ theater: mine.ticket, seat: engine.freeSeat(mine.ticket) });
   };
 
+  /** A bite or a sip from one hand. */
+  const eat = useCallback(
+    (hand: 0 | 1) => {
+      const h = handsRef.current[hand];
+      if (!h) return;
+      if (h.level <= 0) {
+        toast.show('All gone! Toss it in a bin (or tap ✕).');
+        return;
+      }
+      const snack = SNACKS.find((s) => s.id === h.id)!;
+      const level = Math.max(0, Math.round((h.level - 1 / snack.bites) * 1000) / 1000);
+      const next: Hands = [...handsRef.current] as Hands;
+      next[hand] = { id: h.id, level };
+      play(snack.kind === 'drink' ? 'slurp' : 'crunch');
+      engineRef.current?.biteAnimation(hand);
+      updateHands(next, hand);
+      if (level <= 0) toast.show(`That was the last of the ${snack.label.toLowerCase()}.`);
+    },
+    [toast, updateHands],
+  );
+
+  const toss = useCallback(
+    (hand?: 0 | 1) => {
+      const next: Hands = [...handsRef.current] as Hands;
+      if (hand === undefined) {
+        // At a bin: the empties go first; if nothing's empty, everything goes.
+        const empties = next.map((h, i) => (h && h.level <= 0 ? i : -1)).filter((i) => i >= 0);
+        for (const i of empties.length ? empties : [0, 1]) next[i] = null;
+      } else {
+        next[hand] = null;
+      }
+      play('toss');
+      updateHands(next);
+    },
+    [updateHands],
+  );
+
   const interact = useCallback(
     (p: Prompt | null = promptRef.current) => {
       const engine = engineRef.current;
       const link = linkRef.current;
+      unlockAudio();
       if (!p || !engine || !link || dialogRef.current) return;
       const ticket = ticketRef.current;
       switch (p.kind) {
@@ -344,16 +440,24 @@ function Cinema({ me, cloud, movies }: { me: SessionUser; cloud: boolean; movies
           setDialog({ kind: 'concessions' });
           break;
         case 'arcade':
-          toast.show(ARCADE_LINES[Math.floor(Math.random() * ARCADE_LINES.length)]!);
+          if (p.game) setDialog({ kind: 'arcade', game: p.game });
+          break;
+        case 'claw':
+          play('coin');
+          toast.show(CLAW_LINES[Math.floor(Math.random() * CLAW_LINES.length)]!);
           break;
         case 'restroom':
           toast.show('Occupied! 🚻 Try again after the movie.');
           break;
-        case 'taker':
+        case 'trash':
+          toss();
+          toast.show('Thanks for tidying up! 🗑️');
+          break;
+        case 'usher':
           toast.show(
             ticket
               ? `“Theater ${ticket}, down the hall on the ${SIDE(ticket)}. Enjoy the show!”`
-              : '“Tickets are at the box office, just over there on the left.”',
+              : '“Tickets are at the box office, on the left. Every theater has its own movie today.”',
           );
           break;
         case 'seat':
@@ -367,7 +471,7 @@ function Cinema({ me, cloud, movies }: { me: SessionUser; cloud: boolean; movies
           break;
       }
     },
-    [stand, toast],
+    [stand, toast, toss],
   );
 
   // ---------------------------------------------------------------------------
@@ -392,8 +496,10 @@ function Cinema({ me, cloud, movies }: { me: SessionUser; cloud: boolean; movies
         onBlocked: (n) =>
           toast.show(`Theater ${n} needs a ticket. Get one at the box office in the lobby.`),
         onInteract: () => interact(),
+        onEat: (hand) => eat(hand),
       },
       movies.map((m) => ({ id: m.id, title: m.title, year: m.year, poster: m.images.poster })),
+      lineup,
       () => meIdRef.current,
     );
     engineRef.current = engine;
@@ -423,7 +529,27 @@ function Cinema({ me, cloud, movies }: { me: SessionUser; cloud: boolean; movies
     };
     // Built once per visit (the search parameter only matters on arrival).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cloud, movies, onMessage, toast, interact]);
+  }, [cloud, movies, onMessage, toast, interact, eat, lineup]);
+
+  // Sounds need a first tap or key press.
+  useEffect(() => {
+    const unlock = () => unlockAudio();
+    window.addEventListener('pointerdown', unlock, { once: true });
+    window.addEventListener('keydown', unlock, { once: true });
+    return () => {
+      window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('keydown', unlock);
+    };
+  }, []);
+  // On a phone, pinching shouldn't zoom the page out from under the theater.
+  useEffect(() => {
+    const stop = (e: Event) => e.preventDefault();
+    document.addEventListener('gesturestart', stop);
+    return () => document.removeEventListener('gesturestart', stop);
+  }, []);
+  useEffect(() => {
+    engineRef.current?.setSprint(sprint);
+  }, [sprint]);
 
   useEffect(() => {
     if (engineRef.current) engineRef.current.inputEnabled = !dialog && !chatOpen && !travelOpen;
@@ -470,6 +596,7 @@ function Cinema({ me, cloud, movies }: { me: SessionUser; cloud: boolean; movies
     void player.load(positionAt(showing, link.now()));
     const card = document.createElement('canvas');
     let mode: 'poster' | 'leader' | 'card' | 'video' = 'poster';
+    let lastBeep = -1;
     const show = (next: typeof mode) => {
       if (mode === next) return;
       mode = next;
@@ -480,6 +607,12 @@ function Cinema({ me, cloud, movies }: { me: SessionUser; cloud: boolean; movies
       if (!s) return;
       const t = link.now();
       const left = countdownLeft(s, t);
+      const second = left > 0 ? Math.ceil(left / 1000) : 0;
+      if (second !== lastBeep) {
+        if (second > 0 && second <= 3) play('beep');
+        else if (second === 0 && lastBeep > 0) play('go');
+        lastBeep = second;
+      }
       if (left > 0) {
         drawLeader(card, left, s.title);
         show('leader');
@@ -550,7 +683,7 @@ function Cinema({ me, cloud, movies }: { me: SessionUser; cloud: boolean; movies
     myShowing && seated && (myShowing.shared || myShowing.hostId === meId),
   );
   const duration = current?.duration || (myShowing?.runtimeMinutes ?? 0) * 60;
-  const where = (p: TheaterPlayer) => placeName(placeAt(p.x, p.z, gallery));
+  const where = (p: TheaterPlayer) => placeName(placeAt(p.x, p.z));
   const statusLabel =
     status === 'together'
       ? `${players.length} here`
@@ -581,8 +714,22 @@ function Cinema({ me, cloud, movies }: { me: SessionUser; cloud: boolean; movies
             status === 'solo' && !cloud ? 'Watching together needs the cloud edition.' : undefined
           }
         >
-          👥 {statusLabel}
+          👥 <span className="theater__status-long">{statusLabel}</span>
+          <span className="theater__status-short">
+            {status === 'together' ? players.length : 1}
+          </span>
         </button>
+        <span className="theater__wallet" title="Wheelhouse Bucks">
+          💵 ${wallet}
+        </span>
+        <IconButton
+          icon={soundOff ? 'mute' : 'volume'}
+          label={soundOff ? 'Sound effects on' : 'Sound effects off'}
+          onClick={() => {
+            setSoundMuted(!soundOff);
+            setSoundOff(!soundOff);
+          }}
+        />
         <IconButton icon="pin" label="Go to…" onClick={() => setTravelOpen((o) => !o)} />
         <IconButton icon="info" label="How it works" onClick={() => setDialog({ kind: 'help' })} />
       </header>
@@ -594,6 +741,7 @@ function Cinema({ me, cloud, movies }: { me: SessionUser; cloud: boolean; movies
               ['lobby', 'Lobby'],
               ['boxoffice', 'Box office'],
               ['concessions', 'Concessions'],
+              ['arcade', 'Arcade'],
               ['gallery', 'The Collection'],
             ] as const
           ).map(([to, label]) => (
@@ -645,7 +793,7 @@ function Cinema({ me, cloud, movies }: { me: SessionUser; cloud: boolean; movies
 
       {countdown > 0 && (
         // Drawn on the screen itself; this is for screen readers.
-        <div className="visually-hidden" aria-live="assertive">
+        <div className="visually-hidden theater__count" aria-live="assertive">
           {Math.min(3, Math.ceil(countdown / 1000))}
         </div>
       )}
@@ -687,11 +835,12 @@ function Cinema({ me, cloud, movies }: { me: SessionUser; cloud: boolean; movies
       )}
 
       <div className="theater__bottom">
-        {prompt && !dialog && !seated && (
+        {prompt && !dialog && !seated && !touch && (
           <button type="button" className="theater__prompt" onClick={() => interact(prompt)}>
-            {!touch && <kbd>E</kbd>} {prompt.label}
+            <kbd>E</kbd> {prompt.label}
           </button>
         )}
+        <HandsBar hands={hands} keys={!touch} onUse={eat} onToss={(h) => toss(h)} />
         {seated && myShowing && (
           <SeatControls
             showing={myShowing}
@@ -760,20 +909,27 @@ function Cinema({ me, cloud, movies }: { me: SessionUser; cloud: boolean; movies
               💬
             </button>
           )}
-          {mine?.snack && (
-            <span className="theater__snack" title="Your snack">
-              {SNACKS.find((s) => s.id === mine.snack)?.emoji}
-            </span>
-          )}
         </div>
       </div>
 
-      {touch && !seated && <Joystick onChange={(x, y) => engineRef.current?.setJoystick(x, y)} />}
+      {touch && (
+        <TouchControls
+          seated={seated}
+          useLabel={dialog ? null : (prompt?.label ?? null)}
+          sprint={sprint}
+          onStick={stickTo}
+          onLook={(dx, dy) => engineRef.current?.look(dx, dy, true)}
+          onUse={() => interact()}
+          onJump={() => engineRef.current?.jump()}
+          onSprint={setSprint}
+        />
+      )}
 
       <BoxOffice
         key={dialog?.kind === 'boxoffice' ? `bo-${dialog.movieId}` : 'bo'}
         open={dialog?.kind === 'boxoffice'}
         movies={movies}
+        lineup={lineup}
         preselect={dialog?.kind === 'boxoffice' ? dialog.movieId : null}
         showings={snap.showings}
         othersHere={others.length > 0}
@@ -787,16 +943,32 @@ function Cinema({ me, cloud, movies }: { me: SessionUser; cloud: boolean; movies
           linkRef.current?.send({ t: 'join', theater });
         }}
       />
-      <SnackCounter
+      <Concessions
         open={dialog?.kind === 'concessions'}
-        current={mine?.snack ?? null}
+        wallet={wallet}
+        hands={hands}
         onClose={closeDialog}
-        onPick={(snack: SnackId | null) => {
-          linkRef.current?.send({ t: 'snack', snack });
-          const s = SNACKS.find((x) => x.id === snack);
-          if (s) toast.show(`${s.emoji} ${s.label}, on the house. Enjoy!`);
-          setDialog(null);
+        onBuy={(snack: SnackId) => {
+          const s = SNACKS.find((x) => x.id === snack)!;
+          const free = handsRef.current.findIndex((h) => !h);
+          if (free < 0) return toast.show('Your hands are full.', 'error');
+          if (wallet < s.price) return toast.show('Not enough Wheelhouse Bucks.', 'error');
+          setWallet((w) => w - s.price);
+          const next: Hands = [...handsRef.current] as Hands;
+          next[free] = { id: s.id, level: 1 };
+          updateHands(next);
+          play('register');
+          toast.show(`${s.emoji} ${s.label}: $${s.price}. Enjoy!`);
+          if (next.every(Boolean)) setDialog(null);
         }}
+      />
+      <ArcadeDialog
+        key={dialog?.kind === 'arcade' ? dialog.game : 'arcade'}
+        game={dialog?.kind === 'arcade' ? dialog.game : null}
+        top={dialog?.kind === 'arcade' ? scores[dialog.game] : []}
+        touch={touch}
+        onClose={closeDialog}
+        onScore={(game, score) => linkRef.current?.send({ t: 'score', game, score })}
       />
       <PeopleList
         open={dialog?.kind === 'people'}

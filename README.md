@@ -144,29 +144,41 @@ instead.
 
 ## What it does
 
-- **Wheelhouse Cinemas (the voxel theater)**: an 80s-style blocky movie theater you walk around in
-  (Home → _Go to the movies_, **Theater** in the menu, or _In the theater_ on any movie). There's a lobby
-  with a neon marquee, a box office, a concession stand (popcorn, soda, candy and more, all free), an
-  arcade corner, a hallway of eight auditoriums with stadium seating, and **The Collection**: a gallery
-  with a pixel-art poster for every movie in the library, A to Z. Get a ticket at the box office or from
-  any poster, walk to your theater (the door won't let you in without a ticket, or tap _Find me a seat_),
-  and **sit down to start the movie**: a "3, 2, 1" film leader plays on the screen, the house lights dim
-  and the movie plays on the big screen. Seated, you get play/pause, seeking, volume, subtitles,
-  **Full screen** (the movie fills your device) and _Open in the player_.
+- **Wheelhouse Cinemas (the voxel theater)**: a Minecraft-style block cinema you walk around in
+  (Home → _Go to the movies_, **Theater** in the menu, or _In the theater_ on any movie). It's built
+  from half-metre pixel-textured blocks: a lobby with a neon marquee and patterned carpet, a box office
+  with a **Now Showing** board, a concession stand with a lit menu, popcorn machine, soda fountain and
+  hot dog roller, an arcade corner, a claw machine, standees, a hallway of eight auditoriums with
+  stadium seating (aisle stairs, step lights, curtains, a projector beam, EXIT signs), and **The
+  Collection**: a zig-zag gallery with a pixel-art poster for every movie, A to Z.
+  - **Each theater shows its own movie today** (a new lineup every day, the same for everyone; the
+    newest arrival gets Theater 1). The door signs and lit posters by each door say what's on. Buy a
+    ticket at the box office (today's lineup first, or anything from the collection) or from any
+    poster, and the ticket sends you to that movie's theater. The door only lets you in with a ticket;
+    _Find me a seat_ takes you straight to one.
+  - **Sit down to start the movie**: the curtains open, a "3, 2, 1" film leader plays (with beeps),
+    the house lights dim and the movie plays on the big screen. Seated: play/pause, seeking, volume,
+    subtitles, **Full screen** and _Open in the player_.
+  - **Concessions**: arrive with $30 in Wheelhouse Bucks and buy popcorn, soda, candy, nachos, hot
+    dogs, pretzels, ice cream or water. They're in your hands (and everyone sees them in yours); sit
+    down and they go in your seat's cupholders. Eat and drink (1 and 2, or the buttons by your hands)
+    with a crunch or a slurp until they're gone, then toss them in a bin.
+  - **The arcade is real**: Snack Snake, Brick Breaker and Popcorn Catch, with high scores shared by
+    everyone (kept on Cloudflare) and shown on the machines.
   - **Watch together** (cloud edition): everyone in the building sees each other as blocky people in
-    their profile colour, with their emoji or photo as a face. Pick _Watch together_ at the box office
-    and others can join the same showing from the box office; everyone streams their own copy, kept
-    within a fraction of a second of each other, and anyone seated can pause or seek for all.
-    _Private screening_ gives you a theater of your own that pauses when you stand up. Emoji reactions
-    and short messages float over people's heads.
+    their profile colour, with their emoji or photo as a face, carrying their snacks. Pick _Watch
+    together_ and others can join the same showing; everyone streams their own copy, kept within a
+    fraction of a second of each other, and anyone seated can pause or seek for all. _Private
+    screening_ pauses when you stand up. Emoji reactions and messages float over people's heads.
   - **New movies appear by themselves**: the theater is built from the library each time it opens, so
-    a newly ripped movie is in the box office, on the _New arrivals_ wall in the lobby and in The
-    Collection straight away. Nothing extra happens at rip time; posters are turned into pixel art in
-    the browser.
-  - Controls: on a computer, W/S or ↑/↓ walk, ←/→ turn, A/D step sideways, drag to look, E or Enter
-    to use things. On a phone, the thumbstick walks (up/down) and turns (left/right); drag elsewhere to
-    look. On a TV remote, the arrows walk and turn and OK uses things. On the home (Jellyfin) server it
-    works the same but it's just you.
+    a newly ripped movie joins the lineup rotation, the _New arrivals_ wall and The Collection straight
+    away. Nothing extra happens at rip time.
+  - **Controls**: on a computer, W/S or ↑/↓ walk, ←/→ turn, A/D step sideways, Shift runs, Space jumps,
+    drag to look, E or Enter uses things. On a phone, put your left thumb down anywhere on the left to
+    get a thumbstick (up to walk, left/right to turn, all the way to run), drag on the right to look,
+    and use the big buttons for Use, Jump and Run; it works upright or sideways. On a TV remote the
+    arrows walk and turn and OK uses things. Sound effects can be muted. On the home (Jellyfin) server
+    it works the same but it's just you.
 - **Home**: a featured film with backdrop (rotates; source configurable), Continue Watching, Recently Added,
   Personal Favorites, your collections, a “Spin the wheel” invitation, and genre/decade shelves. Sections can be hidden and
   reordered, and any collection can be pinned as its own row. Empty rows never appear.

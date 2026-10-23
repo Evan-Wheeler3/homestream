@@ -1,7 +1,8 @@
 // Blocky people: everyone in the building (in their profile colour, with their
 // emoji or photo as a pixel face), and the staff behind the counters.
 import * as THREE from 'three';
-import { SNACKS } from '../../shared/theater';
+import type { Hands } from '../../shared/theater';
+import { snackModel } from './models';
 import { canvasTexture, emojiCanvas } from './textures';
 
 export interface AvatarLook {
@@ -74,7 +75,10 @@ export class Avatar {
   private readonly legs: THREE.Mesh[] = [];
   private readonly arms: THREE.Mesh[] = [];
   private readonly face: THREE.MeshLambertMaterial;
-  private snackSprite: THREE.Sprite | null = null;
+  private readonly held: (THREE.Mesh | null)[] = [null, null];
+  private handsKey = '';
+  /** Raised-arm animation after a bite (per hand: seconds left). */
+  private readonly biting = [0, 0];
   private readonly floating: { sprite: THREE.Sprite; born: number; life: number }[] = [];
   private walk = 0;
   private seated = false;
@@ -135,14 +139,30 @@ export class Avatar {
     }
   }
 
-  setSnack(id: string | null) {
-    if (this.snackSprite) this.body.remove(this.snackSprite);
-    this.snackSprite = null;
-    const snack = SNACKS.find((s) => s.id === id);
-    if (!snack) return;
-    this.snackSprite = emojiSprite(snack.emoji, 0.36);
-    this.snackSprite.position.set(0.48, 0.95, -0.25);
-    this.body.add(this.snackSprite);
+  /** What they're carrying, in their hands (hidden while seated: it's in the cupholders). */
+  setHands(hands: Hands) {
+    const key = JSON.stringify(hands.map((h) => h && [h.id, Math.round(h.level * 10)]));
+    if (key === this.handsKey) return;
+    this.handsKey = key;
+    hands.forEach((h, i) => {
+      const arm = this.arms[i]!;
+      const old = this.held[i];
+      if (old) {
+        arm.remove(old);
+        old.geometry.dispose();
+      }
+      this.held[i] = null;
+      if (!h) return;
+      const item = snackModel(h.id, h.level);
+      item.position.set(0, -0.36, -0.12);
+      arm.add(item);
+      this.held[i] = item;
+    });
+  }
+
+  /** Lifts a hand to eat or drink. */
+  bite(hand: 0 | 1) {
+    this.biting[hand] = 0.7;
   }
 
   setSeated(seated: boolean) {
@@ -184,7 +204,12 @@ export class Avatar {
     this.legs.forEach((leg, i) => {
       if (!this.seated) leg.parent!.rotation.x = i ? swing : -swing;
     });
-    this.arms.forEach((arm, i) => (arm.parent!.rotation.x = i ? -swing : swing));
+    this.arms.forEach((arm, i) => {
+      const lift = this.biting[i]! > 0 ? Math.sin((this.biting[i]! / 0.7) * Math.PI) * 2.2 : 0;
+      this.biting[i] = Math.max(0, this.biting[i]! - dt);
+      arm.parent!.rotation.x = (i ? -swing : swing) - lift;
+    });
+    for (const item of this.held) if (item) item.visible = !this.seated;
     const now = performance.now();
     for (let i = this.floating.length - 1; i >= 0; i--) {
       const f = this.floating[i]!;
@@ -205,6 +230,8 @@ export class Avatar {
         o.geometry?.dispose();
         const mats = Array.isArray(o.material) ? o.material : [o.material];
         for (const m of mats) {
+          // The block atlas is shared by the whole building.
+          if (m.userData.shared) continue;
           (m as THREE.MeshBasicMaterial).map?.dispose();
           m.dispose();
         }

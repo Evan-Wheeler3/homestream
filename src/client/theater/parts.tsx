@@ -1,13 +1,26 @@
-// The theater's on-screen pieces: the box office, the snack counter, the
-// controls while you're seated, who's here, and the thumbstick for phones.
-import { useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+// The theater's on-screen pieces: the box office, the concession stand, your
+// snacks, the controls while you're seated, who's here, the arcade, and the
+// touch controls for phones.
 import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
+import {
+  ARCADE_GAMES,
   positionAt,
   SNACKS,
+  type ArcadeGameId,
+  type Hands,
+  type HighScore,
   type Showing,
   type SnackId,
   type TheaterPlayer,
 } from '../../shared/theater';
+import { ARCADE_H, ARCADE_W, createGame, type ArcadeGame, type ArcadeInput } from './arcade';
+import { play } from './audio';
 import type { Movie } from '../../shared/types';
 import { Icon } from '../components/Icon';
 import { Button, Dialog, IconButton, Segmented } from '../components/ui';
@@ -18,11 +31,14 @@ export interface TicketChoice {
   movie: Movie;
   shared: boolean;
   startSeconds: number;
+  /** The theater showing it today, if it's in the lineup. */
+  theater?: number;
 }
 
 export function BoxOffice({
   open,
   movies,
+  lineup,
   preselect,
   showings,
   othersHere,
@@ -32,6 +48,8 @@ export function BoxOffice({
 }: {
   open: boolean;
   movies: Movie[];
+  /** Today's movie in each theater (index 0 is Theater 1). */
+  lineup: (string | null)[];
   preselect: string | null;
   showings: Showing[];
   othersHere: boolean;
@@ -55,13 +73,17 @@ export function BoxOffice({
   const movie = movies.find((m) => m.id === (picked ?? preselect));
   const joinable = showings.filter((s) => s.shared && s.status !== 'ended');
   const resume = movie && movie.user.positionSeconds > 60 ? movie.user.positionSeconds : 0;
+  const lineupIndex = movie ? lineup.indexOf(movie.id) : -1;
+  const today = lineup
+    .map((id, i) => ({ theater: i + 1, movie: movies.find((m) => m.id === id) }))
+    .filter((x): x is { theater: number; movie: Movie } => Boolean(x.movie));
 
   return (
     <Dialog
       open={open}
       onClose={onClose}
       title="Box office"
-      description="Every movie in the library is showing. Pick one and get a ticket."
+      description="Pick a movie from today’s lineup, or anything from the collection."
       size="lg"
       footer={
         movie ? (
@@ -77,6 +99,7 @@ export function BoxOffice({
                   movie,
                   shared: shared === 'together',
                   startSeconds: from === 'resume' ? resume : 0,
+                  theater: lineupIndex >= 0 ? lineupIndex + 1 : undefined,
                 })
               }
             >
@@ -96,6 +119,11 @@ export function BoxOffice({
               {movie.title} {movie.year && <span>({movie.year})</span>}
             </h3>
             {movie.runtimeMinutes && <p className="muted">{movie.runtimeMinutes} min</p>}
+            <p className="boxoffice__where">
+              {lineupIndex >= 0
+                ? `🎟️ Showing today in Theater ${lineupIndex + 1}`
+                : '🎟️ A special screening: we’ll find it a free theater'}
+            </p>
             <p className="boxoffice__label">Showing</p>
             <Segmented
               label="Showing"
@@ -129,6 +157,26 @@ export function BoxOffice({
         </div>
       ) : (
         <>
+          {today.length > 0 && (
+            <section className="boxoffice__section">
+              <h3 className="boxoffice__label">Today’s lineup</h3>
+              <ul className="boxoffice__lineup">
+                {today.map(({ theater, movie: m }) => (
+                  <li key={theater}>
+                    <button type="button" className="lineup__card" onClick={() => setPicked(m.id)}>
+                      {m.images.poster ? (
+                        <img src={sizedImage(m.images.poster, 160)} alt="" loading="lazy" />
+                      ) : (
+                        <span className="boxoffice__noposter" />
+                      )}
+                      <span className="lineup__theater">Theater {theater}</span>
+                      <span className="lineup__title">{m.title}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
           {joinable.length > 0 && (
             <section className="boxoffice__section">
               <h3 className="boxoffice__label">Now showing together</h3>
@@ -147,6 +195,7 @@ export function BoxOffice({
               </ul>
             </section>
           )}
+          <h3 className="boxoffice__label">Everything in the collection</h3>
           <input
             className="input boxoffice__search"
             type="search"
@@ -179,23 +228,29 @@ export function BoxOffice({
   );
 }
 
-export function SnackCounter({
+/** The concession stand's menu: buy with your Wheelhouse Bucks; snacks go in your hands. */
+export function Concessions({
   open,
-  current,
+  wallet,
+  hands,
   onClose,
-  onPick,
+  onBuy,
 }: {
   open: boolean;
-  current: SnackId | null;
+  wallet: number;
+  hands: Hands;
   onClose(): void;
-  onPick(snack: SnackId | null): void;
+  onBuy(snack: SnackId): void;
 }) {
+  const free = hands.filter((h) => !h).length;
   return (
     <Dialog
       open={open}
       onClose={onClose}
       title="Concessions"
-      description="Everything’s on the house."
+      description={`You have $${wallet} in Wheelhouse Bucks · ${
+        free === 0 ? 'your hands are full' : free === 1 ? 'one hand free' : 'both hands free'
+      }`}
     >
       <ul className="snacks">
         {SNACKS.map((s) => (
@@ -203,23 +258,78 @@ export function SnackCounter({
             <button
               type="button"
               className="snacks__item"
-              aria-pressed={current === s.id}
-              onClick={() => onPick(s.id)}
+              disabled={!free || wallet < s.price}
+              onClick={() => onBuy(s.id)}
             >
               <span className="snacks__emoji" aria-hidden="true">
                 {s.emoji}
               </span>
               {s.label}
+              <span className="snacks__price">${s.price}</span>
             </button>
           </li>
         ))}
       </ul>
-      {current && (
-        <Button variant="ghost" onClick={() => onPick(null)}>
-          I’m done with my snack
-        </Button>
-      )}
+      <p className="muted snacks__hint">
+        Snacks go in your hands. Sit down and they go in your seat’s cupholders. Eat or drink with
+        the buttons by your hands (or 1 and 2), and toss the empties in a bin.
+      </p>
     </Dialog>
+  );
+}
+
+/** Your two hands, and what's in them. */
+export function HandsBar({
+  hands,
+  keys,
+  onUse,
+  onToss,
+}: {
+  hands: Hands;
+  keys: boolean;
+  onUse(hand: 0 | 1): void;
+  onToss(hand: 0 | 1): void;
+}) {
+  if (!hands.some(Boolean)) return null;
+  return (
+    <div className="hands" role="group" aria-label="Your snacks">
+      {hands.map((h, i) => {
+        const hand = i as 0 | 1;
+        if (!h)
+          return <span key={i} className="hands__slot hands__slot--empty" aria-hidden="true" />;
+        const snack = SNACKS.find((s) => s.id === h.id)!;
+        const verb = h.level <= 0 ? 'Empty' : snack.kind === 'drink' ? 'Drink' : 'Eat';
+        return (
+          <span key={i} className="hands__slot">
+            <button
+              type="button"
+              className="hands__use"
+              disabled={h.level <= 0}
+              aria-label={`${verb} (${snack.label})`}
+              onClick={() => onUse(hand)}
+            >
+              <span className="hands__emoji" aria-hidden="true">
+                {snack.emoji}
+              </span>
+              <span className="hands__bar" aria-hidden="true">
+                <span style={{ width: `${Math.round(h.level * 100)}%` }} />
+              </span>
+              <span className="hands__verb">
+                {keys && <kbd>{hand + 1}</kbd>} {verb}
+              </span>
+            </button>
+            <button
+              type="button"
+              className="hands__toss"
+              aria-label={`Throw away the ${snack.label.toLowerCase()}`}
+              onClick={() => onToss(hand)}
+            >
+              ✕
+            </button>
+          </span>
+        );
+      })}
+    </div>
   );
 }
 
@@ -389,49 +499,350 @@ export function PeopleList({
   );
 }
 
-/** A thumbstick for touch screens: drag from the circle to walk. */
-export function Joystick({ onChange }: { onChange(x: number, y: number): void }) {
-  const base = useRef<HTMLDivElement>(null);
-  const [knob, setKnob] = useState({ x: 0, y: 0 });
-  const active = useRef<number | null>(null);
-  const move = (e: ReactPointerEvent) => {
-    const el = base.current;
-    if (!el || active.current !== e.pointerId) return;
-    const r = el.getBoundingClientRect();
-    let x = (e.clientX - (r.left + r.width / 2)) / (r.width / 2);
-    let y = (e.clientY - (r.top + r.height / 2)) / (r.height / 2);
-    const len = Math.hypot(x, y);
-    if (len > 1) {
-      x /= len;
-      y /= len;
+/**
+ * Touch controls: put your left thumb down anywhere on the left of the screen
+ * and a thumbstick appears there (up and down walk, left and right turn; push
+ * it all the way to run). Drag anywhere else to look around. Buttons on the
+ * right: use, jump and run.
+ */
+export function TouchControls({
+  seated,
+  useLabel,
+  sprint,
+  onStick,
+  onLook,
+  onUse,
+  onJump,
+  onSprint,
+}: {
+  seated: boolean;
+  useLabel: string | null;
+  sprint: boolean;
+  onStick(x: number, y: number): void;
+  onLook(dx: number, dy: number): void;
+  onUse(): void;
+  onJump(): void;
+  onSprint(on: boolean): void;
+}) {
+  const layer = useRef<HTMLDivElement>(null);
+  const stick = useRef<{ id: number; x: number; y: number } | null>(null);
+  const looks = useRef(new Map<number, { x: number; y: number }>());
+  const [knob, setKnob] = useState<{ x: number; y: number; dx: number; dy: number } | null>(null);
+  const RADIUS = 56;
+
+  const down = (e: ReactPointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const width = layer.current?.clientWidth ?? window.innerWidth;
+    if (!seated && !stick.current && e.clientX < width * 0.45) {
+      stick.current = { id: e.pointerId, x: e.clientX, y: e.clientY };
+      setKnob({ x: e.clientX, y: e.clientY, dx: 0, dy: 0 });
+    } else {
+      looks.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     }
-    setKnob({ x, y });
-    onChange(x, -y);
   };
-  const end = () => {
-    active.current = null;
-    setKnob({ x: 0, y: 0 });
-    onChange(0, 0);
+  const move = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const s = stick.current;
+    if (s && s.id === e.pointerId) {
+      let dx = (e.clientX - s.x) / RADIUS;
+      let dy = (e.clientY - s.y) / RADIUS;
+      const len = Math.hypot(dx, dy);
+      if (len > 1) {
+        dx /= len;
+        dy /= len;
+      }
+      setKnob({ x: s.x, y: s.y, dx, dy });
+      // A little dead zone so walking straight doesn't drift into a turn.
+      onStick(Math.abs(dx) < 0.18 ? 0 : dx, Math.abs(dy) < 0.12 ? 0 : -dy);
+      return;
+    }
+    const last = looks.current.get(e.pointerId);
+    if (last) {
+      onLook(e.clientX - last.x, e.clientY - last.y);
+      looks.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    }
   };
+  const up = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (stick.current?.id === e.pointerId) {
+      stick.current = null;
+      setKnob(null);
+      onStick(0, 0);
+    }
+    looks.current.delete(e.pointerId);
+  };
+
+  // Seated: no walking, so let go of the stick.
+  useEffect(() => {
+    if (seated && stick.current) {
+      stick.current = null;
+      onStick(0, 0);
+    }
+  }, [seated, onStick]);
+
   return (
-    <div
-      ref={base}
-      className="joystick"
-      aria-hidden="true"
-      onPointerDown={(e) => {
-        active.current = e.pointerId;
-        e.currentTarget.setPointerCapture(e.pointerId);
-        move(e);
-      }}
-      onPointerMove={move}
-      onPointerUp={end}
-      onPointerCancel={end}
-    >
-      <span
-        className="joystick__knob"
-        style={{ transform: `translate(${knob.x * 34}px, ${knob.y * 34}px)` }}
-      />
-    </div>
+    <>
+      <div
+        ref={layer}
+        className="touch"
+        aria-hidden="true"
+        onPointerDown={down}
+        onPointerMove={move}
+        onPointerUp={up}
+        onPointerCancel={up}
+      >
+        {!knob && !seated && <span className="touch__hint">Drag here to walk</span>}
+        {knob && (
+          <span className="touch__stick" style={{ left: knob.x, top: knob.y }}>
+            <span
+              className="touch__knob"
+              style={{ transform: `translate(${knob.dx * RADIUS}px, ${knob.dy * RADIUS}px)` }}
+            />
+          </span>
+        )}
+      </div>
+      <div className="touch__buttons">
+        {useLabel && (
+          <button type="button" className="touch__use" onClick={onUse}>
+            {useLabel}
+          </button>
+        )}
+        {!seated && (
+          <span className="touch__row">
+            <button
+              type="button"
+              className="touch__round"
+              aria-pressed={sprint}
+              aria-label={sprint ? 'Stop running' : 'Run'}
+              onClick={() => onSprint(!sprint)}
+            >
+              🏃
+            </button>
+            <button type="button" className="touch__round" aria-label="Jump" onClick={onJump}>
+              ⤒
+            </button>
+          </span>
+        )}
+      </div>
+    </>
+  );
+}
+
+const ARCADE_PERSONAL = 'wh-arcade-best';
+
+/** Your own best score on this device for each game (for when you play alone). */
+export function personalBest(game: ArcadeGameId): number {
+  try {
+    return Number(
+      (JSON.parse(localStorage.getItem(ARCADE_PERSONAL) ?? '{}') as Record<string, number>)[game] ??
+        0,
+    );
+  } catch {
+    return 0;
+  }
+}
+
+function savePersonalBest(game: ArcadeGameId, score: number) {
+  try {
+    const all = JSON.parse(localStorage.getItem(ARCADE_PERSONAL) ?? '{}') as Record<string, number>;
+    if (score > (all[game] ?? 0))
+      localStorage.setItem(ARCADE_PERSONAL, JSON.stringify({ ...all, [game]: score }));
+  } catch {
+    // Not remembered: fine.
+  }
+}
+
+/** A playable arcade machine. */
+export function ArcadeDialog({
+  game,
+  top,
+  touch,
+  onClose,
+  onScore,
+}: {
+  game: ArcadeGameId | null;
+  top: HighScore[];
+  touch: boolean;
+  onClose(): void;
+  onScore(game: ArcadeGameId, score: number): void;
+}) {
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const instance = useRef<ArcadeGame | null>(null);
+  const input = useRef<ArcadeInput>({
+    left: false,
+    right: false,
+    up: false,
+    down: false,
+    pointerX: null,
+  });
+  const [phase, setPhase] = useState<'ready' | 'playing' | 'over'>('ready');
+  const [score, setScore] = useState(0);
+  const [best, setBest] = useState(() => (game ? personalBest(game) : 0));
+  const title = ARCADE_GAMES.find((g) => g.id === game)?.title ?? '';
+
+  const start = () => {
+    if (!game) return;
+    instance.current = createGame(game, (sound) => play(sound));
+    input.current = { left: false, right: false, up: false, down: false, pointerX: null };
+    setScore(0);
+    setPhase('playing');
+    play('coin');
+  };
+
+  // (The page gives each game its own copy of this dialog, so it starts fresh.)
+  useEffect(() => {
+    if (!game) return;
+    const g = canvas.current?.getContext('2d');
+    if (g) {
+      g.fillStyle = '#0b0614';
+      g.fillRect(0, 0, ARCADE_W, ARCADE_H);
+    }
+  }, [game]);
+
+  // The game loop.
+  useEffect(() => {
+    if (phase !== 'playing' || !game) return;
+    let raf = 0;
+    let last = performance.now();
+    const frame = (now: number) => {
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      const g = instance.current;
+      const ctx = canvas.current?.getContext('2d');
+      if (g && ctx) {
+        g.update(dt, input.current);
+        g.draw(ctx);
+        setScore(g.score);
+        if (g.over) {
+          setPhase('over');
+          savePersonalBest(game, g.score);
+          setBest((b) => Math.max(b, g.score));
+          if (g.score > 0) onScore(game, g.score);
+          return;
+        }
+      }
+      raf = requestAnimationFrame(frame);
+    };
+    raf = requestAnimationFrame(frame);
+    return () => cancelAnimationFrame(raf);
+  }, [phase, game, onScore]);
+
+  // Keys: arrows or W A S D; Space or Enter to start.
+  useEffect(() => {
+    if (!game) return;
+    const map: Record<string, keyof Omit<ArcadeInput, 'pointerX'>> = {
+      ArrowLeft: 'left',
+      a: 'left',
+      ArrowRight: 'right',
+      d: 'right',
+      ArrowUp: 'up',
+      w: 'up',
+      ArrowDown: 'down',
+      s: 'down',
+    };
+    const onDown = (e: KeyboardEvent) => {
+      const k = map[e.key.length === 1 ? e.key.toLowerCase() : e.key];
+      if (k) {
+        e.preventDefault();
+        input.current[k] = true;
+      } else if ((e.key === ' ' || e.key === 'Enter') && phase !== 'playing') {
+        e.preventDefault();
+        start();
+      }
+    };
+    const onUp = (e: KeyboardEvent) => {
+      const k = map[e.key.length === 1 ? e.key.toLowerCase() : e.key];
+      if (k) input.current[k] = false;
+    };
+    window.addEventListener('keydown', onDown);
+    window.addEventListener('keyup', onUp);
+    return () => {
+      window.removeEventListener('keydown', onDown);
+      window.removeEventListener('keyup', onUp);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [game, phase]);
+
+  const pointer = (e: ReactPointerEvent<HTMLCanvasElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    input.current.pointerX = ((e.clientX - r.left) / r.width) * ARCADE_W;
+  };
+  const hold = (k: keyof Omit<ArcadeInput, 'pointerX'>) => ({
+    onPointerDown: (e: ReactPointerEvent) => {
+      e.preventDefault();
+      input.current[k] = true;
+    },
+    onPointerUp: () => (input.current[k] = false),
+    onPointerLeave: () => (input.current[k] = false),
+    onPointerCancel: () => (input.current[k] = false),
+  });
+
+  return (
+    <Dialog open={game !== null} onClose={onClose} title={title} size="lg">
+      <div className="arcade">
+        <div className="arcade__screen">
+          <canvas
+            ref={canvas}
+            width={ARCADE_W}
+            height={ARCADE_H}
+            className="arcade__canvas"
+            aria-label={`${title} game screen`}
+            onPointerDown={(e) => {
+              e.currentTarget.setPointerCapture(e.pointerId);
+              pointer(e);
+            }}
+            onPointerMove={(e) => {
+              if (e.buttons || e.pointerType === 'touch') pointer(e);
+            }}
+            onPointerUp={() => (input.current.pointerX = null)}
+          />
+          {phase !== 'playing' && (
+            <div className="arcade__overlay">
+              {phase === 'over' && <p className="arcade__over">GAME OVER · {score}</p>}
+              <Button variant="primary" onClick={start}>
+                {phase === 'over' ? 'Play again' : 'Insert coin'}
+              </Button>
+              <p className="arcade__keys">
+                {touch
+                  ? 'Use the buttons below, or drag on the screen.'
+                  : 'Arrow keys or W A S D. Space to start.'}
+              </p>
+            </div>
+          )}
+        </div>
+        <div className="arcade__side">
+          <p className="arcade__score">
+            Score <strong>{score}</strong>
+            <br />
+            Your best <strong>{best}</strong>
+          </p>
+          <h3 className="boxoffice__label">High scores</h3>
+          <ol className="arcade__top">
+            {top.slice(0, 5).map((s, i) => (
+              <li key={i}>
+                <span>{s.name}</span> <strong>{s.score}</strong>
+              </li>
+            ))}
+            {!top.length && <li className="muted">Nobody yet. Be the first!</li>}
+          </ol>
+        </div>
+      </div>
+      {touch && (
+        <div className="arcade__pad" aria-label="Controls">
+          <button type="button" aria-label="Left" {...hold('left')}>
+            ◀
+          </button>
+          <button type="button" aria-label="Up" {...hold('up')}>
+            ▲
+          </button>
+          <button type="button" aria-label="Down" {...hold('down')}>
+            ▼
+          </button>
+          <button type="button" aria-label="Right" {...hold('right')}>
+            ▶
+          </button>
+        </div>
+      )}
+    </Dialog>
   );
 }
 
@@ -457,25 +868,27 @@ export function HelpDialog({
     >
       <ol className="theater-help">
         <li>
-          <Icon name="film" size={18} /> Get a ticket at the <strong>box office</strong> (left), or
-          walk to <strong>The Collection</strong> at the end of the hall and pick any poster.
+          <Icon name="film" size={18} /> Each theater shows its own movie today (see the{' '}
+          <strong>Now Showing</strong> board). Get a ticket at the <strong>box office</strong>, or
+          pick any poster in <strong>The Collection</strong> at the end of the hall.
         </li>
         <li>
-          🍿 Grab snacks at the <strong>concessions</strong> stand (right).
+          🍿 Buy snacks at the <strong>concessions</strong> stand. They go in your hands, then your
+          seat’s cupholders. Eat and drink with the buttons by your hands.
         </li>
         <li>
-          🎟️ Head down the hall to your theater and <strong>sit in a seat</strong>: the movie starts
-          after 3, 2, 1.
+          🎟️ Find your theater and <strong>sit in a seat</strong>: the curtains open, 3, 2, 1, and
+          the movie starts.
         </li>
         <li>
           👥 Choose <strong>Watch together</strong> and anyone else here can join the same showing,
-          in step.
+          in step. 🕹️ The arcade games are real, with high scores.
         </li>
       </ol>
       <p className="muted">
         {touch
-          ? 'Push the thumbstick up to walk and left or right to turn, drag anywhere else to look around, and tap the button that appears to use things.'
-          : 'Walk with W and S (or ↑ and ↓), turn with ← and →, step sideways with A and D, drag to look around, and press E (or Enter) to use things.'}
+          ? 'Put your left thumb down anywhere on the left of the screen to walk: push up to go, left or right to turn, all the way to run. Drag on the right to look around. Big buttons on the right use things and jump.'
+          : 'W/S or ↑/↓ walk, ←/→ turn, A/D step sideways, Shift runs, Space jumps, drag to look. E (or Enter) uses things; 1 and 2 eat and drink.'}
       </p>
     </Dialog>
   );

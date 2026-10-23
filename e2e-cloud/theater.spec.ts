@@ -39,14 +39,14 @@ test('theater: two people in the building, one shared showing, in step', async (
   await goTo(a.page, 'Box office');
   await a.page.getByRole('button', { name: /Buy a ticket/ }).click();
   const boxA = a.page.getByRole('dialog', { name: 'Box office' });
-  await boxA.getByRole('button', { name: /Pulp Fiction/ }).click();
+  await boxA.locator('.boxoffice__movie', { hasText: 'Pulp Fiction' }).click();
   await expect(boxA.getByRole('radio', { name: 'Watch together' })).toHaveAttribute(
     'aria-checked',
     'true',
   );
   await boxA.getByRole('button', { name: 'Get a ticket' }).click();
   await expect(a.page.getByRole('complementary', { name: 'Your ticket' })).toContainText(
-    'Theater 1',
+    /Theater \d/,
   );
 
   // B sees it at the box office and joins.
@@ -77,7 +77,7 @@ test('theater: two people in the building, one shared showing, in step', async (
   // A and B got different seats next to each other.
   await b.page.getByRole('button', { name: /2 here/ }).click();
   await expect(b.page.getByRole('dialog', { name: 'Who’s here' })).toContainText(
-    /seated in Theater 1[\s\S]*seated in Theater 1/,
+    /seated in Theater (\d)[\s\S]*seated in Theater \1/,
   );
   await b.page.keyboard.press('Escape');
 

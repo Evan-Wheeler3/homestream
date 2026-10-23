@@ -1,7 +1,13 @@
 // The theater building everyone shares: one Durable Object holds who is where
 // and what each theater is showing (src/shared/theater.ts), and passes every
 // change on to everyone connected over WebSockets.
-import { TheaterState, type ServerMessage, type TheaterUser } from '../shared/theater.js';
+import {
+  emptyScores,
+  TheaterState,
+  type Scores,
+  type ServerMessage,
+  type TheaterUser,
+} from '../shared/theater.js';
 
 /** Workers' WebSocket: the browser's, plus accept(). */
 type ServerSocket = WebSocket & { accept(): void };
@@ -10,13 +16,33 @@ declare const WebSocketPair: new () => { 0: WebSocket; 1: ServerSocket };
 /** The request header the Worker puts the signed-in person in (never from the browser). */
 export const THEATER_USER_HEADER = 'x-wheelhouse-theater-user';
 
+/** The little bit of Durable Object storage used: the arcade's high scores. */
+interface Storage {
+  get<T>(key: string): Promise<T | undefined>;
+  put(key: string, value: unknown): Promise<void>;
+}
+
 export class TheaterHouse {
   private readonly sockets = new Map<string, ServerSocket>();
-  private readonly state = new TheaterState((to, message, except) =>
-    this.deliver(to, message, except),
-  );
+  private readonly state: TheaterState;
+  private loaded: Promise<void> | null = null;
+
+  constructor(private readonly ctx: { storage: Storage }) {
+    this.state = new TheaterState(
+      (to, message, except) => this.deliver(to, message, except),
+      Date.now,
+      (scores) => void this.ctx.storage.put('scores', scores).catch(() => undefined),
+    );
+  }
 
   async fetch(request: Request): Promise<Response> {
+    this.loaded ??= this.ctx.storage
+      .get<Scores>('scores')
+      .then((saved) => {
+        if (saved) this.state.scores = { ...emptyScores(), ...saved };
+      })
+      .catch(() => undefined);
+    await this.loaded;
     if (request.headers.get('upgrade')?.toLowerCase() !== 'websocket') {
       return new Response('Expected a WebSocket', { status: 426 });
     }

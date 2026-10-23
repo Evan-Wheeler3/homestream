@@ -1,38 +1,38 @@
-// Builds the cinema from the floor plan (layout.ts): voxel walls and carpets,
-// the counters, eight auditoriums, and a gallery with a poster for every movie
-// in the library, sized to fit however many there are.
+// Builds the 3D cinema: the block grid (layout.ts) turned into textured chunks,
+// plus everything that isn't a whole block: seats with cupholders, curtains,
+// screens, signs, the machines behind the counters, standees and posters.
 import * as THREE from 'three';
-import { ROWS, SEAT_COUNT, THEATER_COUNT } from '../../shared/theater';
+import { ARCADE_GAMES, SEAT_COUNT, SNACKS, type ArcadeGameId } from '../../shared/theater';
 import { Avatar } from './avatars';
+import { BLOCKS, tile } from './blocks';
+import { meshChunk, VOXEL } from './grid';
 import {
-  ARCADE,
-  BOX_OFFICE,
-  CONCESSIONS,
-  dividerHalfLength,
-  GALLERY_X,
-  galleryPlan,
+  ARCADE_Z,
+  buildBuilding,
+  CHUNK,
+  CLAW,
+  GALLERY,
   HALL,
   LOBBY,
   POSTER_SIZE,
   posterSlot,
+  postersPerDivider,
   RESTROOMS,
-  rowU,
   SCREEN,
   seatPose,
-  SolidMap,
-  stadiumHeight,
+  STANDEES,
+  theaterTrash,
   THEATER_DEPTH,
-  THEATER_HALF_WIDTH,
-  THEATER_HEIGHT,
   THEATERS,
-  TICKET_TAKER,
   toWorld,
-  type GalleryPlan,
+  TRASH,
+  USHER,
+  type Building,
   type Place,
   type TheaterPlan,
 } from './layout';
-import { blockTexture, canvasTexture, drawSign, PosterAtlas, signTexture } from './textures';
-import { VoxelBatch } from './voxels';
+import { addSeat, BoxBuilder, geometryOf, materials, meshOf } from './models';
+import { canvasTexture, drawBoard, drawSign, PosterAtlas, signTexture } from './textures';
 
 export interface GalleryMovie {
   id: string;
@@ -41,125 +41,111 @@ export interface GalleryMovie {
   poster: string | null;
 }
 
-const C = {
-  carpetA: 0x4a1030,
-  carpetB: 0x2e0c3c,
-  carpetGold: 0xd9a441,
-  hallCarpet: 0x15224e,
-  hallStar: 0xe8c45a,
-  wall: 0x2b1640,
-  wallLow: 0x4a1f63,
-  ceiling: 0x120a1c,
-  red: 0xb3202c,
-  gold: 0xe8b84a,
-  pink: 0xff3fa4,
-  teal: 0x2ee6d6,
-  yellow: 0xffd23f,
-  orange: 0xff8a3d,
-  purple: 0x7b2cbf,
-  warm: 0xffd9a0,
-  seat: 0x9c1b2a,
-  seatDark: 0x3a0d18,
-  curtain: 0x8e1020,
-  theaterWall: 0x1d1028,
-  panel: 0x26143a,
-  tread: 0x2a1235,
-  black: 0x050308,
-  sidewalk: 0x4a4a55,
-  road: 0x1b1b24,
-  glass: 0x9fd8ff,
-  green: 0x2fbf4a,
-  wood: 0x6b3b1f,
-};
-
 export interface TheaterView {
   plan: TheaterPlan;
+  /** Everything inside the auditorium: hidden when it can't be seen. */
+  group: THREE.Group;
   screen: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
   beam: THREE.Mesh;
+  curtains: { left: THREE.Mesh; right: THREE.Mesh; open: number; target: number };
   doorSign: { canvas: HTMLCanvasElement; texture: THREE.CanvasTexture };
 }
 
 export interface Hotspot {
-  kind: 'boxoffice' | 'concessions' | 'arcade' | 'restroom' | 'taker';
+  kind: 'boxoffice' | 'concessions' | 'usher' | 'arcade' | 'claw' | 'restroom' | 'trash';
   x: number;
   z: number;
   radius: number;
   label: string;
+  game?: ArcadeGameId;
 }
 
 export interface World {
   root: THREE.Group;
-  solid: SolidMap;
-  gallery: GalleryPlan;
+  building: Building;
   atlas: PosterAtlas;
-  posters: THREE.Mesh;
-  /** The poster nearest the middle of your view, within a few metres. */
-  posterInView(x: number, z: number, yaw: number): string | undefined;
-  /** Draws only the parts of the building that can be seen from a place. */
-  showFrom(place: Place, z: number): void;
   theaters: TheaterView[];
   hotspots: Hotspot[];
-  /** Little animations: popping corn, blinking bulbs, arcade screens. */
-  animate(time: number): void;
+  arcadeScreens: { canvas: HTMLCanvasElement; texture: THREE.CanvasTexture }[];
+  /** The poster nearest the middle of your view, within a few metres. */
+  posterInView(x: number, z: number, yaw: number): string | undefined;
+  /** Draws only what can be seen from a place. */
+  showFrom(place: Place, z: number): void;
+  animate(time: number, dt: number): void;
   dispose(): void;
 }
 
-/** A box in a theater's own coordinates (u from the screen wall, v across). */
-function theaterBox(
-  batch: VoxelBatch,
-  t: TheaterPlan,
-  u0: number,
-  u1: number,
-  y0: number,
-  y1: number,
-  v0: number,
-  v1: number,
-  color: number,
-) {
-  const a = toWorld(t, u0, v0);
-  const b = toWorld(t, u1, v1);
-  batch.box(a.x, y0, a.z, b.x, y1, b.z, color);
-}
-
-function plane(
-  w: number,
-  h: number,
-  material: THREE.Material,
-  x: number,
-  y: number,
-  z: number,
-  yaw: number,
-) {
-  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), material);
-  mesh.position.set(x, y, z);
-  mesh.rotation.y = yaw;
-  return mesh;
-}
-
-// Plane faces +z by default; these turn it to face along an axis.
+// Planes face +z by default; these turn them.
 const FACE = { south: 0, north: Math.PI, east: Math.PI / 2, west: -Math.PI / 2 };
 
-export function buildWorld(movies: GalleryMovie[]): World {
+export function buildWorld(movies: GalleryMovie[], lineup: (string | null)[]): World {
   const root = new THREE.Group();
-  const block = blockTexture();
-  const solidMaterial = new THREE.MeshLambertMaterial({ map: block });
-  const glowMaterial = new THREE.MeshBasicMaterial();
-  const solid = new VoxelBatch(solidMaterial);
-  const glow = new VoxelBatch(glowMaterial, 0);
-  const smooth = new VoxelBatch(new THREE.MeshLambertMaterial(), 0.04);
-  const disposables: { dispose(): void }[] = [block, solidMaterial, glowMaterial];
-  const inArea = (name: string) => {
-    solid.area(name);
-    glow.area(name);
-    smooth.area(name);
-  };
+  const mats = materials();
+  const disposables: { dispose(): void }[] = [];
+  const titleOf = (id: string | null | undefined) => movies.find((m) => m.id === id)?.title ?? '';
   const sorted = [...movies].sort((a, b) =>
     a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }),
   );
-  const gallery = galleryPlan(sorted.length);
+  const building = buildBuilding(sorted.length);
+  const { grid, gallery } = building;
   const atlas = new PosterAtlas(sorted);
   disposables.push(atlas.texture);
-  const signMaterials: THREE.Material[] = [];
+
+  // ---------------------------------------------------------------------------
+  // The block grid, in 8 m chunks. Chunks inside an auditorium belong to it.
+  const theaterGroups = THEATERS.map(() => new THREE.Group());
+  theaterGroups.forEach((g) => root.add(g));
+  const theaterOfChunk = (cx: number, cz: number) => {
+    if (Math.abs(cx) < 4) return null;
+    return THEATERS.find((t) => Math.sign(cx) === t.side && Math.abs(cz - t.zc) < 8) ?? null;
+  };
+  const tileFor = (id: number, face: 'top' | 'side' | 'bottom') => tile(BLOCKS[id]![face]);
+  for (let ix = 0; ix < grid.nx; ix += CHUNK) {
+    for (let iz = 0; iz < grid.nz; iz += CHUNK) {
+      const cx = grid.bounds.x0 + (ix + CHUNK / 2) * VOXEL;
+      const cz = grid.bounds.z0 + (iz + CHUNK / 2) * VOXEL;
+      const t = theaterOfChunk(cx, cz);
+      const parts = meshChunk(grid, ix, ix + CHUNK, iz, iz + CHUNK, tileFor, t ? 0.85 : 1);
+      for (const kind of ['opaque', 'glow', 'glass'] as const) {
+        if (!parts[kind].indices.length) continue;
+        const geometry = geometryOf(parts[kind]);
+        disposables.push(geometry);
+        const mesh = new THREE.Mesh(geometry, mats[kind]);
+        mesh.matrixAutoUpdate = false;
+        (t ? theaterGroups[t.number - 1]! : root).add(mesh);
+      }
+    }
+  }
+
+  // Builders for the small things, per part of the building.
+  const lobby = { opaque: new BoxBuilder(), glow: new BoxBuilder(), glass: new BoxBuilder() };
+  const flush = (b: typeof lobby, parent: THREE.Object3D) => {
+    for (const kind of ['opaque', 'glow', 'glass'] as const) {
+      if (b[kind].empty) continue;
+      const mesh = meshOf(b[kind], kind);
+      disposables.push(mesh.geometry);
+      parent.add(mesh);
+    }
+  };
+
+  const plane = (
+    w: number,
+    h: number,
+    material: THREE.Material,
+    x: number,
+    y: number,
+    z: number,
+    yaw: number,
+    parent: THREE.Object3D = root,
+  ) => {
+    const geometry = new THREE.PlaneGeometry(w, h);
+    disposables.push(geometry);
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.position.set(x, y, z);
+    mesh.rotation.y = yaw;
+    parent.add(mesh);
+    return mesh;
+  };
   const sign = (
     lines: string[],
     w: number,
@@ -169,86 +155,56 @@ export function buildWorld(movies: GalleryMovie[]): World {
     z: number,
     yaw: number,
     style: Parameters<typeof signTexture>[1] = {},
+    parent: THREE.Object3D = root,
   ) => {
     const texture = signTexture(lines, style);
     const material = new THREE.MeshBasicMaterial({ map: texture });
-    signMaterials.push(material);
-    disposables.push(texture);
-    root.add(plane(w, h, material, x, y, z, yaw));
+    disposables.push(texture, material);
+    return plane(w, h, material, x, y, z, yaw, parent);
   };
-
-  // ---------------------------------------------------------------------------
-  // Outside: a night street seen through the front doors.
-  inArea('lobby');
-  solid.blocks(-22, -1, LOBBY.z1 + 1, 22, 0, 18, C.sidewalk);
-  solid.box(-22, -1.05, 18, 22, -0.05, 28, C.road);
-  for (let x = -20; x < 22; x += 4) glow.box(x, -0.04, 22.9, x + 2, -0.02, 23.1, C.yellow);
-  const car = (x: number, z: number, color: number) => {
-    solid.box(x, 0, z, x + 4, 0.9, z + 1.8, color);
-    solid.box(x + 0.8, 0.9, z + 0.1, x + 3, 1.6, z + 1.7, color);
-    glow.box(x + 0.9, 1, z + 0.08, x + 2.9, 1.5, z + 0.1, 0x3b5a8a);
-    for (const wx of [x + 0.6, x + 2.8]) {
-      solid.box(wx, 0, z - 0.05, wx + 0.7, 0.6, z + 0.15, C.black);
-      solid.box(wx, 0, z + 1.65, wx + 0.7, 0.6, z + 1.85, C.black);
-    }
+  /** A sign seen from both sides (hanging from the ceiling). */
+  const hanging = (
+    front: string[],
+    back: string[],
+    w: number,
+    h: number,
+    x: number,
+    y: number,
+    z: number,
+  ) => {
+    sign(front, w, h, x, y, z + 0.03, FACE.south, {
+      color: '#ffd23f',
+      glow: '#ffd23f',
+      border: '#ffd23f',
+    });
+    sign(back, w, h, x, y, z - 0.03, FACE.north, {
+      color: '#2ee6d6',
+      glow: '#2ee6d6',
+      border: '#2ee6d6',
+    });
+    lobby.opaque.box(
+      x - w / 2 + 0.2,
+      y + h / 2,
+      z - 0.02,
+      x - w / 2 + 0.25,
+      HALL.height,
+      z + 0.02,
+      'metal',
+    );
+    lobby.opaque.box(
+      x + w / 2 - 0.25,
+      y + h / 2,
+      z - 0.02,
+      x + w / 2 - 0.2,
+      HALL.height,
+      z + 0.02,
+      'metal',
+    );
   };
-  car(-15, 19, 0x2ee6d6);
-  car(8, 19.2, 0xff3fa4);
-  for (const x of [-12, 12]) {
-    solid.box(x - 0.1, 0, 16.5, x + 0.1, 5, 16.7, 0x333340);
-    glow.box(x - 0.4, 5, 16.3, x + 0.4, 5.3, 16.9, C.warm);
-  }
 
   // ---------------------------------------------------------------------------
   // The lobby
-  const carpet = (x: number, _y: number, z: number) => {
-    const d = (Math.abs(x) + Math.abs(z)) % 6;
-    if (d === 0) return C.carpetGold;
-    if ((x * 7 + z * 3) % 11 === 0) return C.teal;
-    return (x + z) % 2 === 0 ? C.carpetA : C.carpetB;
-  };
-  solid.blocks(LOBBY.x0, -1, LOBBY.z0 - 1, LOBBY.x1, 0, LOBBY.z1 + 1, carpet);
-  const wallColor = (_x: number, y: number) => (y < 1 ? C.wallLow : C.wall);
-  const H = LOBBY.height;
-  solid.blocks(LOBBY.x0 - 1, 0, LOBBY.z0 - 1, LOBBY.x0, H, LOBBY.z1 + 1, wallColor);
-  solid.blocks(LOBBY.x1, 0, LOBBY.z0 - 1, LOBBY.x1 + 1, H, LOBBY.z1 + 1, wallColor);
-  // Front wall, with glass doors in the middle.
-  solid.blocks(LOBBY.x0, 0, LOBBY.z1, -3, H, LOBBY.z1 + 1, wallColor);
-  solid.blocks(3, 0, LOBBY.z1, LOBBY.x1, H, LOBBY.z1 + 1, wallColor);
-  solid.blocks(-3, 3, LOBBY.z1, 3, H, LOBBY.z1 + 1, wallColor);
-  smooth.box(-3, 0, LOBBY.z1 + 0.4, -2.85, 3, LOBBY.z1 + 0.6, C.gold);
-  smooth.box(2.85, 0, LOBBY.z1 + 0.4, 3, 3, LOBBY.z1 + 0.6, C.gold);
-  smooth.box(-0.08, 0, LOBBY.z1 + 0.4, 0.08, 3, LOBBY.z1 + 0.6, C.gold);
-  const glass = new THREE.Mesh(
-    new THREE.BoxGeometry(6, 3, 0.1),
-    new THREE.MeshLambertMaterial({ color: C.glass, transparent: true, opacity: 0.18 }),
-  );
-  glass.position.set(0, 1.5, LOBBY.z1 + 0.5);
-  root.add(glass);
-  disposables.push(glass.geometry, glass.material as THREE.Material);
-  // Back wall, open to the hallway.
-  solid.blocks(LOBBY.x0, 0, LOBBY.z0 - 1, HALL.x0, H, LOBBY.z0, wallColor);
-  solid.blocks(HALL.x1, 0, LOBBY.z0 - 1, LOBBY.x1, H, LOBBY.z0, wallColor);
-  solid.blocks(HALL.x0, 3.5, LOBBY.z0 - 1, HALL.x1, H, LOBBY.z0, wallColor);
-  // Ceiling and its lights.
-  solid.box(LOBBY.x0 - 1, H, LOBBY.z0 - 1, LOBBY.x1 + 1, H + 0.4, LOBBY.z1 + 1, C.ceiling);
-  for (let x = LOBBY.x0 + 3; x < LOBBY.x1; x += 5) {
-    for (let z = LOBBY.z0 + 3; z < LOBBY.z1; z += 5)
-      glow.box(x, H - 0.05, z, x + 1.2, H, z + 1.2, C.warm);
-  }
-  // Neon stripes along the walls: pink low, teal high.
-  for (const [y, color] of [
-    [2.2, C.pink],
-    [5.2, C.teal],
-  ] as const) {
-    glow.box(LOBBY.x0, y, LOBBY.z0, LOBBY.x0 + 0.04, y + 0.12, LOBBY.z1, color);
-    glow.box(LOBBY.x1 - 0.04, y, LOBBY.z0, LOBBY.x1, y + 0.12, LOBBY.z1, color);
-    glow.box(LOBBY.x0, y, LOBBY.z1 - 0.04, -3, y + 0.12, LOBBY.z1, color);
-    glow.box(3, y, LOBBY.z1 - 0.04, LOBBY.x1, y + 0.12, LOBBY.z1, color);
-  }
-
-  // The marquee over the hallway, with chasing bulbs.
-  sign(['WHEELHOUSE', 'CINEMAS'], 11, 2.4, 0, 5.3, LOBBY.z0 + 0.02, FACE.south, {
+  sign(['WHEELHOUSE', 'CINEMAS'], 10, 2.2, 0, 5.3, LOBBY.z0 + 0.02, FACE.south, {
     width: 192,
     height: 42,
     color: '#ffd23f',
@@ -256,412 +212,414 @@ export function buildWorld(movies: GalleryMovie[]): World {
     background: '#1a0820',
     border: '#ff3fa4',
   });
-  const bulbsA = new VoxelBatch(new THREE.MeshBasicMaterial(), 0);
-  const bulbsB = new VoxelBatch(new THREE.MeshBasicMaterial(), 0);
+  const bulbsA = new BoxBuilder();
+  const bulbsB = new BoxBuilder();
   let n = 0;
-  for (let x = -5.6; x <= 5.6; x += 0.4) {
-    for (const y of [4, 6.6]) {
+  for (let x = -5.1; x <= 5.1; x += 0.34) {
+    for (const y of [4.12, 6.48]) {
       (n++ % 2 ? bulbsA : bulbsB).box(
-        x - 0.08,
-        y - 0.08,
-        LOBBY.z0 + 0.02,
-        x + 0.08,
-        y + 0.08,
-        LOBBY.z0 + 0.12,
-        C.yellow,
+        x - 0.07,
+        y - 0.07,
+        LOBBY.z0,
+        x + 0.07,
+        y + 0.07,
+        LOBBY.z0 + 0.1,
+        'neonYellow',
+        { fit: true },
       );
     }
   }
-  for (let y = 4.4; y <= 6.2; y += 0.4) {
-    for (const x of [-5.6, 5.6]) {
-      (n++ % 2 ? bulbsA : bulbsB).box(
-        x - 0.08,
-        y - 0.08,
-        LOBBY.z0 + 0.02,
-        x + 0.08,
-        y + 0.08,
-        LOBBY.z0 + 0.12,
-        C.yellow,
-      );
-    }
-  }
-  const bulbMeshA = bulbsA.build()[0]!;
-  const bulbMeshB = bulbsB.build()[0]!;
+  const bulbMeshA = meshOf(bulbsA, 'glow');
+  const bulbMeshB = meshOf(bulbsB, 'glow');
   root.add(bulbMeshA, bulbMeshB);
+  disposables.push(bulbMeshA.geometry, bulbMeshB.geometry);
 
-  // Box office: a red counter with gold trim, glass, and someone behind it.
-  const counter = (cx: number) => {
-    solid.box(cx - 3.5, 0, BOX_OFFICE.z - 2.3, cx + 3.5, 1.1, BOX_OFFICE.z - 1.3, C.red);
-    smooth.box(cx - 3.55, 1.1, BOX_OFFICE.z - 1.7, cx + 3.55, 1.2, BOX_OFFICE.z - 1.25, C.gold);
-    glow.box(cx - 3.5, 0.05, BOX_OFFICE.z - 1.32, cx + 3.5, 0.12, BOX_OFFICE.z - 1.28, C.pink);
-  };
-  counter(BOX_OFFICE.x);
-  for (const gx of [-1.2, 1.2]) {
-    const pane = new THREE.Mesh(
-      new THREE.BoxGeometry(2, 1.4, 0.05),
-      new THREE.MeshLambertMaterial({ color: C.glass, transparent: true, opacity: 0.22 }),
-    );
-    pane.position.set(BOX_OFFICE.x + gx, 1.9, BOX_OFFICE.z - 1.5);
-    root.add(pane);
-    disposables.push(pane.geometry, pane.material as THREE.Material);
-  }
-  smooth.box(
-    BOX_OFFICE.x - 0.3,
-    1.2,
-    BOX_OFFICE.z - 1.65,
-    BOX_OFFICE.x + 0.3,
-    1.45,
-    BOX_OFFICE.z - 1.35,
-    0x222233,
+  // Now Showing above the box office, the menu above concessions.
+  const nowShowing = document.createElement('canvas');
+  drawBoard(
+    nowShowing,
+    'NOW SHOWING',
+    lineup.map((id, i) => [String(i + 1), titleOf(id) || '—']),
+    { heading: '#2ee6d6', accent: '#2ee6d6' },
   );
-  glow.box(
-    BOX_OFFICE.x - 0.2,
-    1.3,
-    BOX_OFFICE.z - 1.34,
-    BOX_OFFICE.x + 0.2,
-    1.4,
-    BOX_OFFICE.z - 1.33,
-    C.teal,
+  const nowTexture = canvasTexture(nowShowing);
+  const nowMaterial = new THREE.MeshBasicMaterial({ map: nowTexture });
+  disposables.push(nowTexture, nowMaterial);
+  plane(6.6, 2.64, nowMaterial, -9.5, 5.05, LOBBY.z0 + 0.02, FACE.south);
+  const menu = document.createElement('canvas');
+  drawBoard(
+    menu,
+    'CONCESSIONS',
+    SNACKS.map((s) => [`$${s.price}`, s.label]),
+    { heading: '#ff8a3d', accent: '#ffd23f' },
   );
-  sign(
-    ['BOX OFFICE', 'TICKETS · ALL SHOWS'],
-    6,
-    1.5,
-    BOX_OFFICE.x,
-    4.1,
-    LOBBY.z0 + 0.02,
-    FACE.south,
-    {
-      color: '#2ee6d6',
-      glow: '#2ee6d6',
-      border: '#2ee6d6',
-    },
-  );
-
-  // Concessions: popcorn machine, soda fountain and a candy case.
-  counter(CONCESSIONS.x);
-  const cz = CONCESSIONS.z - 1.5;
-  const popcornGlass = new THREE.Mesh(
-    new THREE.BoxGeometry(1.3, 1.3, 0.8),
-    new THREE.MeshLambertMaterial({ color: 0xfff2c0, transparent: true, opacity: 0.25 }),
-  );
-  popcornGlass.position.set(CONCESSIONS.x - 2.3, 1.85, cz);
-  root.add(popcornGlass);
-  disposables.push(popcornGlass.geometry, popcornGlass.material as THREE.Material);
-  smooth.box(CONCESSIONS.x - 3, 2.5, cz - 0.45, CONCESSIONS.x - 1.6, 2.75, cz + 0.45, C.red);
-  for (let i = 0; i < 26; i++) {
-    const px = CONCESSIONS.x - 2.85 + ((i * 37) % 11) * 0.1;
-    const pz = cz - 0.3 + ((i * 17) % 6) * 0.1;
-    smooth.box(px, 1.2, pz, px + 0.12, 1.32 + ((i * 7) % 4) * 0.06, pz + 0.12, 0xfff1a8);
-  }
-  const kernels = new THREE.Group();
-  const kernelMaterial = new THREE.MeshLambertMaterial({ color: 0xfff6c8 });
-  const kernelGeometry = new THREE.BoxGeometry(0.08, 0.08, 0.08);
-  disposables.push(kernelMaterial, kernelGeometry);
-  for (let i = 0; i < 10; i++) {
-    const k = new THREE.Mesh(kernelGeometry, kernelMaterial);
-    k.userData.phase = i / 10;
-    kernels.add(k);
-  }
-  kernels.position.set(CONCESSIONS.x - 2.3, 1.3, cz);
-  root.add(kernels);
-  solid.box(CONCESSIONS.x - 1.1, 1.2, cz - 0.4, CONCESSIONS.x + 0.6, 2.1, cz + 0.4, 0x9aa0ad);
-  [C.red, C.orange, C.teal, C.purple].forEach((color, i) =>
-    glow.box(
-      CONCESSIONS.x - 0.95 + i * 0.4,
-      1.6,
-      cz + 0.4,
-      CONCESSIONS.x - 0.75 + i * 0.4,
-      1.9,
-      cz + 0.42,
-      color,
-    ),
-  );
-  smooth.box(CONCESSIONS.x + 1, 1.2, cz - 0.4, CONCESSIONS.x + 3.4, 1.9, cz + 0.4, 0x2a1838);
-  const candy = [C.pink, C.yellow, C.teal, C.orange, C.green, C.purple];
-  for (let i = 0; i < 18; i++) {
-    const x = CONCESSIONS.x + 1.15 + (i % 6) * 0.37;
-    const y = 1.3 + Math.floor(i / 6) * 0.2;
-    glow.box(x, y, cz + 0.2, x + 0.22, y + 0.14, cz + 0.38, candy[(i * 5) % candy.length]!);
-  }
-  sign(
-    ['CONCESSIONS', 'POPCORN · SODA · CANDY'],
-    6,
-    1.5,
-    CONCESSIONS.x,
-    4.1,
-    LOBBY.z0 + 0.02,
-    FACE.south,
-    {
-      color: '#ff8a3d',
-      glow: '#ff8a3d',
-      border: '#ff8a3d',
-    },
-  );
-
-  // The ticket taker's podium and velvet ropes into the hallway.
-  smooth.box(
-    TICKET_TAKER.x - 0.5,
-    0,
-    TICKET_TAKER.z - 0.5,
-    TICKET_TAKER.x + 0.5,
-    1.1,
-    TICKET_TAKER.z + 0.5,
-    C.gold,
-  );
-  for (const x of [HALL.x0 - 0.4, HALL.x1 + 0.4]) {
-    smooth.box(x - 0.08, 0, LOBBY.z0 + 0.6, x + 0.08, 1, LOBBY.z0 + 0.76, C.gold);
-  }
-  sign(['NOW SHOWING', 'TICKETS PLEASE'], 3.6, 1, 0, 4.2, LOBBY.z0 - 2, FACE.south, {
-    color: '#ff3fa4',
-    glow: '#ff3fa4',
+  const menuTexture = canvasTexture(menu);
+  const menuMaterial = new THREE.MeshBasicMaterial({ map: menuTexture });
+  disposables.push(menuTexture, menuMaterial);
+  plane(7.6, 3.04, menuMaterial, 10.5, 5.05, LOBBY.z0 + 0.02, FACE.south);
+  sign(['BOX OFFICE'], 3.6, 0.5, -9.5, 3.3, -6.48, FACE.south, {
+    width: 128,
+    height: 18,
+    color: '#2ee6d6',
+    glow: '#2ee6d6',
   });
-
-  // Arcade machines along the right wall.
-  const arcadeScreens: THREE.InstancedMesh[] = [];
-  const cabinet = [C.purple, C.teal, C.pink];
-  ARCADE.forEach((a, i) => {
-    solid.box(a.x - 0.5, 0, a.z - 0.55, a.x + 0.6, 2.2, a.z + 0.55, cabinet[i]!);
-    solid.box(a.x - 0.75, 0.9, a.z - 0.5, a.x - 0.5, 1.05, a.z + 0.5, C.black);
-    smooth.box(a.x - 0.7, 1.05, a.z - 0.2, a.x - 0.6, 1.2, a.z - 0.1, C.red);
-    const s = new VoxelBatch(new THREE.MeshBasicMaterial(), 0);
-    for (let px = 0; px < 5; px++) {
-      for (let py = 0; py < 4; py++) {
-        s.box(
-          a.x - 0.52,
-          1.25 + py * 0.15,
-          a.z - 0.4 + px * 0.16,
-          a.x - 0.51,
-          1.39 + py * 0.15,
-          a.z - 0.25 + px * 0.16,
-          0xffffff,
-        );
-      }
-    }
-    const screen = s.build()[0]!;
-    arcadeScreens.push(screen);
-    root.add(screen);
-    glow.box(a.x - 0.52, 1.95, a.z - 0.5, a.x - 0.5, 2.15, a.z + 0.5, C.yellow);
-  });
-  sign(['ARCADE'], 3, 0.8, LOBBY.x1 - 0.02, 3.2, 2.5, FACE.west, {
+  sign(['ARCADE'], 4.4, 0.9, LOBBY.x1 - 0.02, 3.4, 2.5, FACE.west, {
     color: '#ffd23f',
     glow: '#ff3fa4',
   });
-
-  // Restrooms on the left wall.
-  for (const r of RESTROOMS) {
-    solid.box(LOBBY.x0, 0, r.z - 0.65, LOBBY.x0 + 0.12, 2.4, r.z + 0.65, C.wood);
-    smooth.box(LOBBY.x0 + 0.12, 1.1, r.z + 0.4, LOBBY.x0 + 0.2, 1.2, r.z + 0.5, C.gold);
-    sign(['RESTROOM'], 1.6, 0.4, LOBBY.x0 + 0.03, 2.75, r.z, FACE.east, { color: '#2ee6d6' });
+  for (const z of RESTROOMS) {
+    sign(['RESTROOM'], 1.6, 0.4, LOBBY.x0 + 0.02, 2.85, z, FACE.east, {
+      width: 96,
+      height: 22,
+      color: '#2ee6d6',
+    });
   }
 
-  // Benches, plants and bins.
-  for (const x0 of [-8, 5]) {
-    solid.box(x0, 0.35, 2.5, x0 + 3, 0.55, 3.5, C.red);
-    solid.box(x0 + 0.1, 0, 2.6, x0 + 0.3, 0.35, 3.4, C.black);
-    solid.box(x0 + 2.7, 0, 2.6, x0 + 2.9, 0.35, 3.4, C.black);
-  }
-  for (const [x, z] of [
-    [LOBBY.x0 + 1, LOBBY.z1 - 1.5],
-    [LOBBY.x1 - 1.6, LOBBY.z1 - 1.5],
-  ] as const) {
-    solid.box(x, 0, z, x + 0.6, 0.6, z + 0.6, C.gold);
-    solid.box(x - 0.2, 0.6, z - 0.2, x + 0.8, 1.6, z + 0.8, C.green);
-    solid.box(x + 0.1, 1.6, z + 0.1, x + 0.5, 2.1, z + 0.5, 0x3fd85c);
-  }
-
-  // ---------------------------------------------------------------------------
-  // The hallway
-  inArea('hall');
-  solid.blocks(HALL.x0, -1, HALL.z0, HALL.x1, 0, LOBBY.z0 - 1, (x, _y, z) =>
-    (x * 5 + z * 3) % 7 === 0 ? C.hallStar : C.hallCarpet,
-  );
-  solid.box(HALL.x0 - 1, HALL.height, HALL.z0, HALL.x1 + 1, HALL.height + 0.4, LOBBY.z0, C.ceiling);
-  for (let z = LOBBY.z0 - 3; z > HALL.z0; z -= 4)
-    glow.box(-0.6, HALL.height - 0.05, z, 0.6, HALL.height, z + 1.2, C.warm);
-  for (const side of [-1, 1] as const) {
-    const x0 = side === -1 ? HALL.x0 - 1 : HALL.x1;
-    const doors = THEATERS.filter((t) => t.side === side).map((t) => t.door);
-    for (let z = HALL.z0; z < LOBBY.z0 - 1; z++) {
-      for (let y = 0; y < HALL.height; y++) {
-        const inDoor = doors.some((d) => z + 0.5 > d.z0 && z + 0.5 < d.z1 && y < 3);
-        if (inDoor) continue;
-        solid.box(x0, y, z, x0 + 1, y + 1, z + 1, y < 1 ? C.wallLow : C.wall);
-      }
-    }
-    glow.box(
-      side === -1 ? HALL.x0 : HALL.x1 - 0.04,
-      5.2,
-      HALL.z0,
-      side === -1 ? HALL.x0 + 0.04 : HALL.x1,
-      5.32,
-      LOBBY.z0 - 1,
-      side === -1 ? C.pink : C.teal,
+  // Behind the concessions counter: popcorn machine, soda fountain, hot dog roller.
+  const bc = { y: 1, z0: LOBBY.z0 + 0.1, z1: LOBBY.z0 + 0.9 };
+  lobby.opaque.box(6.5, bc.y, bc.z0, 8, bc.y + 0.15, bc.z1, 'metal');
+  lobby.glass.box(6.55, bc.y + 0.15, bc.z0 + 0.05, 7.95, bc.y + 1.2, bc.z1 - 0.05, 'glass');
+  lobby.opaque.box(6.5, bc.y + 1.2, bc.z0, 8, bc.y + 1.45, bc.z1, {
+    top: 'gold',
+    side: 'counterRed',
+  });
+  for (let i = 0; i < 24; i++) {
+    const px = 6.65 + ((i * 37) % 11) * 0.11;
+    const pz = bc.z0 + 0.12 + ((i * 17) % 5) * 0.11;
+    lobby.opaque.box(
+      px,
+      bc.y + 0.15,
+      pz,
+      px + 0.13,
+      bc.y + 0.25 + ((i * 7) % 4) * 0.05,
+      pz + 0.13,
+      'kernels',
+      { fit: true },
     );
   }
+  const kernels = new THREE.Group();
+  const kernelGeometry = new THREE.BoxGeometry(0.06, 0.06, 0.06);
+  const kernelMaterial = new THREE.MeshBasicMaterial({ color: 0xfff1b8 });
+  disposables.push(kernelGeometry, kernelMaterial);
+  for (let i = 0; i < 12; i++) {
+    const k = new THREE.Mesh(kernelGeometry, kernelMaterial);
+    k.userData.phase = i / 12;
+    kernels.add(k);
+  }
+  kernels.position.set(7.25, bc.y + 0.3, (bc.z0 + bc.z1) / 2);
+  root.add(kernels);
+  lobby.opaque.box(8.4, bc.y, bc.z0, 9.9, bc.y + 1.05, bc.z0 + 0.55, {
+    top: 'darkMetal',
+    side: 'metal',
+  });
+  ['#e8343f', '#ff8a3d', '#2ee6d6', '#7b2cbf'].forEach((c, i) => {
+    const col = new THREE.Color(c);
+    lobby.glow.box(
+      8.55 + i * 0.33,
+      bc.y + 0.55,
+      bc.z0 + 0.55,
+      8.75 + i * 0.33,
+      bc.y + 0.85,
+      bc.z0 + 0.58,
+      'white',
+      {
+        fit: true,
+        tint: [col.r, col.g, col.b],
+      },
+    );
+  });
+  lobby.opaque.box(10.3, bc.y, bc.z0, 11.8, bc.y + 0.25, bc.z1, 'metal');
+  for (let i = 0; i < 5; i++) {
+    lobby.opaque.box(
+      10.4,
+      bc.y + 0.25,
+      bc.z0 + 0.1 + i * 0.13,
+      11.7,
+      bc.y + 0.33,
+      bc.z0 + 0.18 + i * 0.13,
+      'sausage',
+      { fit: true },
+    );
+  }
+  // Registers, and candy in the glass case.
+  for (const [x, z] of [
+    [-9.5, -6.75],
+    [8, -6.75],
+  ] as const) {
+    lobby.opaque.box(x - 0.25, 1, z - 0.2, x + 0.25, 1.25, z + 0.2, 'darkMetal');
+    lobby.glow.box(x - 0.2, 1.25, z - 0.15, x + 0.2, 1.45, z - 0.12, 'neonTeal', { fit: true });
+  }
+  const candy = [
+    [1, 0.25, 0.64],
+    [1, 0.82, 0.25],
+    [0.18, 0.9, 0.84],
+    [1, 0.54, 0.24],
+    [0.48, 0.17, 0.75],
+  ] as const;
+  for (let i = 0; i < 20; i++) {
+    const x = 10.6 + (i % 10) * 0.19;
+    const y = 1.03 + Math.floor(i / 10) * 0.2;
+    lobby.opaque.box(x, y, -6.95, x + 0.15, y + 0.15, -6.6, 'white', {
+      fit: true,
+      tint: [...candy[i % candy.length]!],
+    });
+  }
+
+  // A rope queue in front of the box office.
+  for (let x = -12.5; x <= -6.5; x += 1.5) {
+    lobby.opaque.box(x - 0.05, 0, -3.65, x + 0.05, 0.95, -3.55, 'gold', { fit: true });
+    lobby.opaque.box(x - 0.08, 0, -3.68, x + 0.08, 0.05, -3.52, 'gold', { fit: true });
+    if (x < -6.6) lobby.opaque.box(x, 0.82, -3.62, x + 1.5, 0.88, -3.58, 'rope');
+  }
+
+  // Standees of the first two movies on today's lineup.
+  const posterQuads: {
+    movieId: string;
+    x: number;
+    y: number;
+    z: number;
+    yaw: number;
+    w: number;
+    h: number;
+  }[] = [];
+  STANDEES.forEach((s, i) => {
+    const id = lineup[i];
+    if (!id) return;
+    lobby.opaque.box(s.x - 0.05, 0, s.z - 0.05, s.x + 0.05, 0.6, s.z + 0.05, 'black', {
+      fit: true,
+    });
+    lobby.opaque.box(s.x - 0.35, 0, s.z - 0.25, s.x + 0.35, 0.05, s.z + 0.25, 'black', {
+      fit: true,
+    });
+    posterQuads.push({
+      movieId: id,
+      x: s.x,
+      y: 1.55,
+      z: s.z + 0.27,
+      yaw: FACE.south,
+      w: 1.2,
+      h: 1.8,
+    });
+    lobby.opaque.box(s.x - 0.64, 0.6, s.z + 0.2, s.x + 0.64, 2.5, s.z + 0.25, 'gold', {
+      fit: true,
+    });
+  });
+
+  // The claw machine's prizes, and its claw.
+  const plush = ['plushPink', 'plushBlue', 'plushYellow'] as const;
+  for (let i = 0; i < 9; i++) {
+    const x = CLAW.x0 + 0.25 + (i % 3) * 0.5;
+    const z = CLAW.z0 + 0.25 + Math.floor(i / 3) * 0.42;
+    lobby.opaque.box(x, 1, z, x + 0.3, 1.2 + (i % 2) * 0.1, z + 0.3, plush[i % 3]!, { fit: true });
+  }
+  lobby.opaque.box(13.95, 1.9, 7.7, 14.05, 2.5, 7.8, 'metal');
+  lobby.opaque.box(13.85, 1.75, 7.6, 14.15, 1.9, 7.9, 'metal');
+
+  // New arrivals on the front wall, by the doors.
+  movies.slice(0, 8).forEach((m, i) => {
+    const left = i < 4;
+    const k = i % 4;
+    const x = left ? -13.2 + k * 2.1 : 6.9 + k * 2.1;
+    posterQuads.push({
+      movieId: m.id,
+      x,
+      y: 3.6,
+      z: LOBBY.z1 - 0.03,
+      yaw: FACE.north,
+      w: 1.5,
+      h: 2.25,
+    });
+  });
+  if (movies.length) {
+    sign(['NEW ARRIVALS'], 3.4, 0.55, -10, 5.3, LOBBY.z1 - 0.03, FACE.north, {
+      color: '#ff3fa4',
+      glow: '#ff3fa4',
+    });
+    sign(['NEW ARRIVALS'], 3.4, 0.55, 10, 5.3, LOBBY.z1 - 0.03, FACE.north, {
+      color: '#2ee6d6',
+      glow: '#2ee6d6',
+    });
+  }
+
+  // Staff.
+  const staff = [
+    { x: -9.5, z: -8.4, emoji: '🎟️', color: '#2ee6d6' },
+    { x: 10, z: -8, emoji: '🍿', color: '#ff8a3d' },
+    { x: USHER.x + 0.1, z: USHER.z - 0.95, emoji: '😀', color: '#ff3fa4' },
+  ].map((s) => {
+    const a = new Avatar({ name: '', color: s.color, emoji: s.emoji, staff: true });
+    a.target.set(s.x, 0, s.z);
+    a.targetYaw = Math.PI;
+    a.update(0, 0);
+    root.add(a.group);
+    return a;
+  });
+
+  // Outside: parked cars, street lamps, the road's centre line.
+  const car = (x: number, z: number, color: [number, number, number]) => {
+    lobby.opaque.box(x, 0.25, z, x + 4, 1, z + 1.8, 'white', { tint: color });
+    lobby.opaque.box(x + 0.8, 1, z + 0.1, x + 3, 1.6, z + 1.7, 'white', { tint: color });
+    lobby.glass.box(x + 0.85, 1.05, z + 0.05, x + 2.95, 1.55, z + 1.75, 'glass');
+    for (const wx of [x + 0.5, x + 2.8]) {
+      lobby.opaque.box(wx, 0, z - 0.05, wx + 0.7, 0.6, z + 0.2, 'black');
+      lobby.opaque.box(wx, 0, z + 1.6, wx + 0.7, 0.6, z + 1.85, 'black');
+    }
+  };
+  car(-15, 16.5, [0.18, 0.9, 0.84]);
+  car(8, 16.7, [1, 0.25, 0.64]);
+  for (const x of [-12, 12]) {
+    lobby.opaque.box(x - 0.1, 0, 13, x + 0.1, 5, 13.2, 'darkMetal');
+    lobby.glow.box(x - 0.4, 5, 12.8, x + 0.4, 5.3, 13.4, 'lightPanel', { fit: true });
+  }
+  for (let x = -26; x < 26; x += 4)
+    lobby.glow.box(x, 0.01, 18.4, x + 2, 0.03, 18.6, 'neonYellow', { fit: true });
 
   // ---------------------------------------------------------------------------
-  // The auditoriums
+  // The hallway: signs over each door, a lit poster beside it, and direction signs.
+  hanging(
+    ['◀ 1 · 3 · 5 · 7     2 · 4 · 6 · 8 ▶'],
+    ['LOBBY AND EXIT'],
+    5.6,
+    0.7,
+    0,
+    4.6,
+    HALL.z1 - 1.5,
+  );
+  hanging(['◀ 1 · 3 · 5 · 7     2 · 4 · 6 · 8 ▶'], ['LOBBY AND EXIT'], 5.6, 0.7, 0, 4.6, -43);
+  sign(
+    ['THE COLLECTION', `${sorted.length} ${sorted.length === 1 ? 'MOVIE' : 'MOVIES'} · A TO Z`],
+    6,
+    1.4,
+    0,
+    5.4,
+    HALL.z0 + 0.02,
+    FACE.south,
+    { color: '#ffd23f', glow: '#ffd23f', border: '#ffd23f' },
+  );
+
   const theaters: TheaterView[] = [];
   const screenGeometry = new THREE.PlaneGeometry(1, 1);
   disposables.push(screenGeometry);
   for (const t of THEATERS) {
-    inArea(`theater-${t.number}`);
-    // The stepped floor.
-    for (let u = 0; u < THEATER_DEPTH; u++) {
-      for (let v = -THEATER_HALF_WIDTH; v < THEATER_HALF_WIDTH; v++) {
-        const h = stadiumHeight(u + 0.5);
-        const aisle = Math.abs(v + 0.5) > 5.2;
-        theaterBox(solid, t, u, u + 1, -1, h, v, v + 1, aisle ? 0x3a1830 : C.tread);
-      }
-    }
-    // Step lights on the aisle stairs.
-    for (let r = 0; r < ROWS; r++) {
-      const u = rowU(r) - 1;
-      for (const [v0, v1] of [
-        [-THEATER_HALF_WIDTH, -5.5],
-        [5.5, THEATER_HALF_WIDTH],
-      ] as const) {
-        theaterBox(
-          glow,
-          t,
-          u - 0.03,
-          u,
-          stadiumHeight(u - 0.5) + 0.02,
-          stadiumHeight(u - 0.5) + 0.08,
-          v0,
-          v1,
-          C.orange,
-        );
-      }
-    }
-    // Side and back walls, in acoustic panels.
-    const wallBlock = (u: number, y: number) =>
-      (Math.floor(u / 2) + Math.floor(y / 2)) % 2 ? C.panel : C.theaterWall;
-    for (let u = 0; u < THEATER_DEPTH + 1; u++) {
-      for (let y = 0; y < THEATER_HEIGHT; y++) {
-        theaterBox(
-          solid,
-          t,
-          u,
-          u + 1,
-          y,
-          y + 1,
-          -THEATER_HALF_WIDTH - 1,
-          -THEATER_HALF_WIDTH,
-          wallBlock(u, y),
-        );
-        theaterBox(
-          solid,
-          t,
-          u,
-          u + 1,
-          y,
-          y + 1,
-          THEATER_HALF_WIDTH,
-          THEATER_HALF_WIDTH + 1,
-          wallBlock(u, y),
-        );
-      }
-    }
-    for (let v = -THEATER_HALF_WIDTH; v < THEATER_HALF_WIDTH; v++) {
-      for (let y = 0; y < THEATER_HEIGHT; y++) {
-        theaterBox(
-          solid,
-          t,
-          THEATER_DEPTH,
-          THEATER_DEPTH + 1,
-          y,
-          y + 1,
-          v,
-          v + 1,
-          wallBlock(v + 8, y),
-        );
-      }
-    }
-    // The hall wall above the doorway rises to the auditorium's height.
-    theaterBox(
-      solid,
-      t,
-      -1,
-      0,
-      HALL.height,
-      THEATER_HEIGHT,
-      -THEATER_HALF_WIDTH - 1,
-      THEATER_HALF_WIDTH + 1,
-      C.theaterWall,
+    const group = theaterGroups[t.number - 1]!;
+    const inside = { opaque: new BoxBuilder(), glow: new BoxBuilder(), glass: new BoxBuilder() };
+    const tb = (
+      b: BoxBuilder,
+      u0: number,
+      u1: number,
+      y0: number,
+      y1: number,
+      v0: number,
+      v1: number,
+      faces: Parameters<BoxBuilder['box']>[6],
+      fit = false,
+    ) => {
+      const a = toWorld(t, u0, v0);
+      const c = toWorld(t, u1, v1);
+      b.box(a.x, y0, a.z, c.x, y1, c.z, faces, { fit });
+    };
+    const inward = t.side === -1 ? FACE.west : FACE.east;
+    const hallward = t.side === -1 ? FACE.east : FACE.west;
+    const doorZ = (t.door.z0 + t.door.z1) / 2;
+    const hallX = t.side === -1 ? HALL.x0 + 0.02 : HALL.x1 - 0.02;
+
+    // Over the door (hallway side): the theater number and what's on.
+    const doorCanvas = document.createElement('canvas');
+    drawSign(
+      doorCanvas,
+      [`THEATER ${t.number}`, titleOf(lineup[t.number - 1]).toUpperCase() || 'COMING SOON'],
+      {
+        width: 128,
+        height: 56,
+        border: '#ffd23f',
+      },
     );
-    theaterBox(
-      solid,
-      t,
-      -1,
-      THEATER_DEPTH + 1,
-      THEATER_HEIGHT,
-      THEATER_HEIGHT + 0.4,
-      -THEATER_HALF_WIDTH - 1,
-      THEATER_HALF_WIDTH + 1,
-      C.ceiling,
-    );
-    // A starry ceiling.
-    for (let i = 0; i < 46; i++) {
-      const u = 1 + ((i * 53) % 200) / 10;
-      const v = -7 + ((i * 29) % 140) / 10;
-      theaterBox(
-        glow,
-        t,
-        u,
-        u + 0.08,
-        THEATER_HEIGHT - 0.04,
-        THEATER_HEIGHT,
-        v,
-        v + 0.08,
-        i % 5 ? 0xfff3d0 : C.teal,
+    const doorTexture = canvasTexture(doorCanvas);
+    const doorMaterial = new THREE.MeshBasicMaterial({ map: doorTexture });
+    disposables.push(doorTexture, doorMaterial);
+    plane(2.6, 1.1, doorMaterial, hallX, 4.25, doorZ, hallward);
+    // Beside the door: today's poster in a light box.
+    const showing = lineup[t.number - 1];
+    if (showing) {
+      const pz = t.door.z0 - 1.5;
+      posterQuads.push({
+        movieId: showing,
+        x: hallX + (t.side === -1 ? 0.01 : -0.01),
+        y: 2.1,
+        z: pz,
+        yaw: hallward,
+        w: 1.2,
+        h: 1.8,
+      });
+      const fx = t.side === -1 ? HALL.x0 : HALL.x1 - 0.06;
+      lobby.glow.box(fx, 1.1, pz - 0.7, fx + 0.06, 1.18, pz + 0.7, 'lightPanel', { fit: true });
+      lobby.glow.box(fx, 3.02, pz - 0.7, fx + 0.06, 3.1, pz + 0.7, 'lightPanel', { fit: true });
+      lobby.glow.box(fx, 1.1, pz - 0.7, fx + 0.06, 3.1, pz - 0.62, 'lightPanel', { fit: true });
+      lobby.glow.box(fx, 1.1, pz + 0.62, fx + 0.06, 3.1, pz + 0.7, 'lightPanel', { fit: true });
+    }
+
+    // Seats, ten to a row, with armrests and cupholders.
+    for (let seat = 0; seat < SEAT_COUNT; seat++) {
+      const p = seatPose(t, seat);
+      const across = t.side === -1 ? 1 : -1;
+      addSeat(
+        inside.opaque,
+        (sx, sy, sz) => {
+          const w = toWorld(t, p.u + sz, p.v + sx * across);
+          return [w.x, p.y + sy, w.z];
+        },
+        p.col === 0,
       );
     }
-    // Wall lights.
-    for (let u = 4; u < THEATER_DEPTH; u += 4) {
-      for (const v of [-THEATER_HALF_WIDTH, THEATER_HALF_WIDTH - 0.06]) {
-        theaterBox(glow, t, u, u + 0.6, 5, 5.5, v, v + 0.06, C.warm);
-      }
-    }
-    // Screen frame, curtains and valance.
-    theaterBox(
-      solid,
-      t,
-      0,
+    // The valance over the screen, and the EXIT sign over the door.
+    tb(inside.opaque, 0.3, 0.9, SCREEN.top + 0.15, 8.4, -6.3, 6.3, 'velvet');
+    tb(inside.opaque, 0.88, 0.95, SCREEN.top + 0.12, SCREEN.top + 0.22, -6.3, 6.3, 'gold');
+    const exit = toWorld(t, 0.03, 6.5);
+    sign(
+      ['EXIT'],
+      0.9,
       0.3,
-      1.2,
-      7.3,
-      -SCREEN.width / 2 - 0.3,
-      SCREEN.width / 2 + 0.3,
-      C.black,
+      exit.x,
+      3.45,
+      exit.z,
+      inward,
+      { width: 48, height: 16, color: '#3dff6a', background: '#062a10' },
+      group,
     );
-    theaterBox(solid, t, 0, 0.7, 0, 8.2, -THEATER_HALF_WIDTH, -SCREEN.width / 2 - 0.3, C.curtain);
-    theaterBox(solid, t, 0, 0.7, 0, 8.2, SCREEN.width / 2 + 0.3, 5.5, C.curtain);
-    theaterBox(solid, t, 0, 0.8, 7.4, 8.4, -THEATER_HALF_WIDTH, 5.5, C.curtain);
-    theaterBox(smooth, t, 0.8, 0.85, 7.4, 7.5, -THEATER_HALF_WIDTH, 5.5, C.gold);
-    // The stage in front of the screen.
-    theaterBox(solid, t, 0, 1.4, 0, 0.5, -SCREEN.width / 2 - 0.3, SCREEN.width / 2 + 0.3, 0x3a1020);
-    const screenMaterial = new THREE.MeshBasicMaterial({ color: 0x9a9aa8 });
+    // A light in each aisle step.
+    for (let r = 0; r < 6; r++) {
+      for (const v of [-6.25, 6.25])
+        tb(
+          inside.glow,
+          6 + r * 2 - 0.02,
+          6 + r * 2,
+          r * 0.5 + 0.05,
+          r * 0.5 + 0.12,
+          v - 0.5,
+          v + 0.5,
+          'neonYellow',
+          true,
+        );
+    }
+    flush(inside, group);
+
+    // The screen, the projector's beam, and the curtains in front.
+    const screenMaterial = new THREE.MeshBasicMaterial({ color: 0x55556a });
     disposables.push(screenMaterial);
     const screen = new THREE.Mesh(screenGeometry, screenMaterial);
     const sc = toWorld(t, SCREEN.u, 0);
     screen.position.set(sc.x, (SCREEN.bottom + SCREEN.top) / 2, sc.z);
-    // Facing the seats (away from the hall).
-    screen.rotation.y = t.side === -1 ? FACE.west : FACE.east;
+    screen.rotation.y = inward;
     screen.scale.set(SCREEN.width, SCREEN.top - SCREEN.bottom, 1);
-    root.add(screen);
-    // Projector window and its beam (shown while a movie plays).
-    const pj = toWorld(t, THEATER_DEPTH - 0.02, 0);
-    glow.box(pj.x - 0.3, 6.9, pj.z - 0.3, pj.x + 0.3, 7.5, pj.z + 0.3, 0xcfe8ff);
-    const from = new THREE.Vector3(pj.x, 7.2, pj.z);
-    const to = new THREE.Vector3(sc.x, 4.25, sc.z);
-    const length = from.distanceTo(to);
-    const beamGeometry = new THREE.ConeGeometry(3.4, length, 24, 1, true);
+    group.add(screen);
+    const pj = toWorld(t, THEATER_DEPTH - 0.05, 0);
+    const from = new THREE.Vector3(pj.x, 7.25, pj.z);
+    const to = new THREE.Vector3(sc.x, (SCREEN.bottom + SCREEN.top) / 2, sc.z);
+    const beamGeometry = new THREE.ConeGeometry(3.6, from.distanceTo(to), 24, 1, true);
     const beamMaterial = new THREE.MeshBasicMaterial({
       color: 0xdfefff,
       transparent: true,
-      opacity: 0.018,
+      opacity: 0.02,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
       side: THREE.DoubleSide,
@@ -674,153 +632,36 @@ export function buildWorld(movies: GalleryMovie[]): World {
       to.clone().sub(from).normalize(),
     );
     beam.visible = false;
-    root.add(beam);
-    // Seats.
-    for (let seat = 0; seat < SEAT_COUNT; seat++) {
-      const p = seatPose(t, seat);
-      const u = rowU(p.row) + 0.15;
-      const v = -4.5 + p.col;
-      theaterBox(solid, t, u - 0.3, u + 0.3, p.y, p.y + 0.42, v - 0.38, v + 0.38, C.seat);
-      theaterBox(solid, t, u + 0.25, u + 0.42, p.y + 0.2, p.y + 1.05, v - 0.38, v + 0.38, C.seat);
-      theaterBox(
-        solid,
-        t,
-        u - 0.25,
-        u + 0.35,
-        p.y + 0.42,
-        p.y + 0.58,
-        v + 0.38,
-        v + 0.46,
-        C.seatDark,
-      );
-      if (p.col === 0)
-        theaterBox(
-          solid,
-          t,
-          u - 0.25,
-          u + 0.35,
-          p.y + 0.42,
-          p.y + 0.58,
-          v - 0.46,
-          v - 0.38,
-          C.seatDark,
-        );
-    }
-    // EXIT over the doorway, inside.
-    const ex = toWorld(t, 0.02, 6.5);
-    sign(['EXIT'], 0.9, 0.3, ex.x, 3.3, ex.z, t.side === -1 ? FACE.west : FACE.east, {
-      width: 48,
-      height: 16,
-      color: '#3dff6a',
-      background: '#062a10',
-    });
-    // The sign over the door in the hallway (updated as showings change).
-    const doorCanvas = document.createElement('canvas');
-    drawSign(doorCanvas, [`THEATER ${t.number}`, 'OPEN'], {
-      width: 128,
-      height: 56,
-      border: '#ffd23f',
-    });
-    const doorTexture = canvasTexture(doorCanvas);
-    const doorMaterial = new THREE.MeshBasicMaterial({ map: doorTexture });
-    disposables.push(doorTexture, doorMaterial);
-    const dz = (t.door.z0 + t.door.z1) / 2;
-    root.add(
-      plane(
-        2.6,
-        1.15,
-        doorMaterial,
-        t.side === -1 ? HALL.x0 + 0.02 : HALL.x1 - 0.02,
-        3.9,
-        dz,
-        t.side === -1 ? FACE.east : FACE.west,
-      ),
-    );
-    smooth.box(
-      t.door.wallX0 - 0.02,
-      3,
-      t.door.z0 - 0.1,
-      t.door.wallX1 + 0.02,
-      3.12,
-      t.door.z1 + 0.1,
-      C.gold,
-    );
+    group.add(beam);
+    const curtain = (edgeV: number, dir: 1 | -1) => {
+      // Built from its outer edge, so it opens by shrinking toward that edge.
+      const b = new BoxBuilder();
+      const half = SCREEN.width / 2 + 0.25;
+      b.box(-0.07, SCREEN.bottom - 0.15, 0, 0.07, SCREEN.top + 0.2, dir * half, 'velvet');
+      const mesh = meshOf(b);
+      disposables.push(mesh.geometry);
+      const p = toWorld(t, SCREEN.u + 0.12, edgeV);
+      mesh.position.set(p.x, 0, p.z);
+      group.add(mesh);
+      return mesh;
+    };
+    const left = curtain(-SCREEN.width / 2 - 0.25, 1);
+    const right = curtain(SCREEN.width / 2 + 0.25, -1);
     theaters.push({
       plan: t,
+      group,
       screen,
       beam,
+      curtains: { left, right, open: 0, target: 0 },
       doorSign: { canvas: doorCanvas, texture: doorTexture },
     });
   }
 
   // ---------------------------------------------------------------------------
-  // The Collection: every movie's poster, A to Z.
-  inArea('gallery');
-  const GH = 6;
-  solid.blocks(-GALLERY_X, -1, gallery.z1, GALLERY_X, 0, HALL.z0, (x, _y, z) =>
-    (x + z) % 2 === 0 ? C.carpetB : 0x23103a,
-  );
-  solid.blocks(-GALLERY_X - 1, 0, gallery.z1 - 1, -GALLERY_X, GH, HALL.z0, C.wall);
-  solid.blocks(GALLERY_X, 0, gallery.z1 - 1, GALLERY_X + 1, GH, HALL.z0, C.wall);
-  solid.blocks(-GALLERY_X, 0, gallery.z1 - 1, GALLERY_X, GH, gallery.z1, C.wall);
-  solid.box(-GALLERY_X - 1, GH, gallery.z1 - 1, GALLERY_X + 1, GH + 0.4, HALL.z0, C.ceiling);
-  sign(
-    ['THE COLLECTION', `${sorted.length} ${sorted.length === 1 ? 'MOVIE' : 'MOVIES'} · A TO Z`],
-    5,
-    1.2,
-    0,
-    5.6,
-    HALL.z0 + 0.6,
-    FACE.south,
-    { color: '#ffd23f', glow: '#ffd23f', border: '#ffd23f' },
-  );
-  gallery.dividers.forEach((z, i) => {
-    smooth.box(-dividerHalfLength, 0, z - 0.2, dividerHalfLength, 4.2, z + 0.2, 0x163a44);
-    smooth.box(-dividerHalfLength, 4.2, z - 0.22, dividerHalfLength, 4.3, z + 0.22, C.gold);
-    glow.box(
-      -dividerHalfLength + 0.5,
-      GH - 0.05,
-      z - 0.3,
-      dividerHalfLength - 0.5,
-      GH,
-      z + 0.3,
-      C.warm,
-    );
-    const first = sorted[i * 56];
-    const last = sorted[Math.min(sorted.length, (i + 1) * 56) - 1];
-    if (!first || !last) return;
-    const range = `${first.title.slice(0, 1).toUpperCase()}–${last.title.slice(0, 1).toUpperCase()}`;
-    for (const side of [-1, 1]) {
-      sign(
-        [range],
-        0.38,
-        0.9,
-        side * (dividerHalfLength + 0.01),
-        2.2,
-        z,
-        side === 1 ? FACE.east : FACE.west,
-        {
-          width: 24,
-          height: 56,
-          color: '#ffd23f',
-        },
-      );
-    }
-  });
-
-  // Poster quads: the gallery's, plus the newest arrivals in the lobby.
-  const quads: {
-    movieId: string;
-    x: number;
-    y: number;
-    z: number;
-    yaw: number;
-    w: number;
-    h: number;
-  }[] = [];
+  // The Collection: posters on every wall of the zig-zag, with a letter range at each turn.
   sorted.forEach((m, i) => {
     const s = posterSlot(gallery, i);
-    quads.push({
+    posterQuads.push({
       movieId: m.id,
       x: s.x,
       y: s.y,
@@ -828,30 +669,39 @@ export function buildWorld(movies: GalleryMovie[]): World {
       yaw: s.facing === 1 ? FACE.south : FACE.north,
       ...POSTER_SIZE,
     });
+    const fz = s.facing === 1 ? s.z - 0.04 : s.z + 0.04;
+    lobby.opaque.box(
+      s.x - 0.56,
+      s.y - 0.81,
+      fz - 0.015,
+      s.x + 0.56,
+      s.y + 0.81,
+      fz + 0.015,
+      'gold',
+      { fit: true },
+    );
   });
-  const newest = movies.slice(0, 8);
-  newest.forEach((m, i) => {
-    const left = i < 4;
-    const k = i % 4;
-    const x = left ? -12.2 + k * 2.1 : 5.9 + k * 2.1;
-    quads.push({ movieId: m.id, x, y: 3.4, z: LOBBY.z1 - 0.05, yaw: FACE.north, w: 1.5, h: 2.25 });
+  gallery.dividers.forEach((d, i) => {
+    const per = postersPerDivider();
+    const first = sorted[i * per];
+    const last = sorted[Math.min(sorted.length, (i + 1) * per) - 1];
+    if (!first || !last) return;
+    const range = `${first.title.slice(0, 1).toUpperCase()}–${last.title.slice(0, 1).toUpperCase()}`;
+    const endX = i % 2 === 0 ? d.x1 + 0.02 : d.x0 - 0.02;
+    sign([range], 0.46, 1.1, endX, 2.6, d.z - VOXEL / 2, i % 2 === 0 ? FACE.east : FACE.west, {
+      width: 24,
+      height: 56,
+      color: '#ffd23f',
+    });
   });
-  if (newest.length) {
-    sign(['NEW ARRIVALS'], 3.4, 0.55, -9, 5, LOBBY.z1 - 0.06, FACE.north, {
-      color: '#ff3fa4',
-      glow: '#ff3fa4',
-    });
-    sign(['NEW ARRIVALS'], 3.4, 0.55, 9, 5, LOBBY.z1 - 0.06, FACE.north, {
-      color: '#2ee6d6',
-      glow: '#2ee6d6',
-    });
-  }
+
+  // Poster quads: one mesh for all of them.
   const positions: number[] = [];
   const uvs: number[] = [];
   const indices: number[] = [];
-  const placed: typeof quads = [];
+  const placed: typeof posterQuads = [];
   const corner = new THREE.Vector3();
-  for (const q of quads) {
+  for (const q of posterQuads) {
     const uv = atlas.uv(q.movieId);
     if (!uv) continue;
     const base = positions.length / 3;
@@ -868,21 +718,6 @@ export function buildWorld(movies: GalleryMovie[]): World {
     uvs.push(uv[0], uv[1], uv[2], uv[1], uv[2], uv[3], uv[0], uv[3]);
     indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
     placed.push(q);
-    inArea(q.z > HALL.z0 ? 'lobby' : 'gallery');
-    // A gold frame behind it.
-    const back = new THREE.Vector3(0, 0, -0.03).applyMatrix4(rot);
-    const fw = (q.w + 0.12) / 2;
-    const fh = (q.h + 0.12) / 2;
-    const side = new THREE.Vector3(fw, 0, 0).applyMatrix4(rot);
-    smooth.box(
-      q.x + back.x - Math.abs(side.x) - 0.02,
-      q.y - fh,
-      q.z + back.z - Math.abs(side.z) - 0.02,
-      q.x + back.x + Math.abs(side.x) + 0.02,
-      q.y + fh,
-      q.z + back.z + Math.abs(side.z) + 0.02,
-      C.gold,
-    );
   }
   const posterGeometry = new THREE.BufferGeometry();
   posterGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
@@ -891,67 +726,64 @@ export function buildWorld(movies: GalleryMovie[]): World {
   posterGeometry.computeBoundingSphere();
   const posterMaterial = new THREE.MeshBasicMaterial({ map: atlas.texture });
   disposables.push(posterGeometry, posterMaterial);
-  const posters = new THREE.Mesh(posterGeometry, posterMaterial);
-  root.add(posters);
+  root.add(new THREE.Mesh(posterGeometry, posterMaterial));
 
-  const areaMeshes = new Map<string, THREE.Object3D[]>();
-  for (const batch of [solid, glow, smooth]) {
-    for (const mesh of batch.build()) {
-      root.add(mesh);
-      disposables.push(mesh.geometry);
-      const area = mesh.userData.area as string;
-      areaMeshes.set(area, [...(areaMeshes.get(area) ?? []), mesh]);
-    }
-  }
-  disposables.push(...signMaterials);
-
-  // Staff.
-  const staff = [
-    { x: BOX_OFFICE.x, z: LOBBY.z0 + 1.2, emoji: '🎟️', color: '#2ee6d6' },
-    { x: CONCESSIONS.x, z: LOBBY.z0 + 1.2, emoji: '🍿', color: '#ff8a3d' },
-    { x: TICKET_TAKER.x + 0.9, z: TICKET_TAKER.z - 0.5, emoji: '😀', color: '#ff3fa4' },
-  ].map((s) => {
-    const a = new Avatar({ name: '', color: s.color, emoji: s.emoji, staff: true });
-    a.target.set(s.x, 0, s.z);
-    a.targetYaw = Math.PI;
-    a.update(0, 0);
-    root.add(a.group);
-    return a;
+  // Arcade screens: drawn each frame by the arcade (attract mode).
+  const arcadeScreens = ARCADE_GAMES.map((_, i) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 96;
+    canvas.height = 80;
+    const texture = canvasTexture(canvas);
+    const material = new THREE.MeshBasicMaterial({ map: texture });
+    disposables.push(texture, material);
+    plane(0.84, 0.7, material, 13.98, 1.62, ARCADE_Z[i]!, FACE.west);
+    return { canvas, texture };
   });
 
+  flush(lobby, root);
+
   const hotspots: Hotspot[] = [
-    { kind: 'boxoffice', ...BOX_OFFICE, radius: 3.2, label: 'Buy a ticket' },
-    { kind: 'concessions', ...CONCESSIONS, radius: 3.2, label: 'Get snacks' },
-    {
-      kind: 'taker',
-      x: TICKET_TAKER.x,
-      z: TICKET_TAKER.z + 0.9,
-      radius: 1.6,
-      label: 'Talk to the usher',
-    },
-    ...ARCADE.map((a) => ({
+    { kind: 'boxoffice', x: -9.5, z: -5.1, radius: 3.4, label: 'Buy a ticket' },
+    { kind: 'concessions', x: 9.5, z: -5.1, radius: 3.4, label: 'Buy snacks' },
+    { kind: 'usher', x: USHER.x, z: USHER.z + 1.1, radius: 1.5, label: 'Talk to the usher' },
+    ...ARCADE_GAMES.map((g, i) => ({
       kind: 'arcade' as const,
-      x: a.x - 1.2,
-      z: a.z,
-      radius: 1.2,
-      label: 'Play the arcade',
+      x: 12.7,
+      z: ARCADE_Z[i]!,
+      radius: 1.3,
+      label: `Play ${g.title}`,
+      game: g.id,
     })),
-    ...RESTROOMS.map((r) => ({
+    {
+      kind: 'claw',
+      x: 12.2,
+      z: (CLAW.z0 + CLAW.z1) / 2,
+      radius: 1.4,
+      label: 'Try the claw machine',
+    },
+    ...RESTROOMS.map((z) => ({
       kind: 'restroom' as const,
       x: LOBBY.x0 + 1,
-      z: r.z,
+      z,
       radius: 1.2,
       label: 'Restroom',
     })),
+    ...[...TRASH, ...THEATERS.map(theaterTrash)].map((b) => ({
+      kind: 'trash' as const,
+      x: b.x,
+      z: b.z,
+      radius: 1.4,
+      label: 'Throw away your trash',
+    })),
   ];
 
-  const solidMap = new SolidMap(gallery);
   return {
     root,
-    solid: solidMap,
-    gallery,
+    building,
     atlas,
-    posters,
+    theaters,
+    hotspots,
+    arcadeScreens,
     posterInView(x, z, yaw) {
       const fx = -Math.sin(yaw);
       const fz = -Math.cos(yaw);
@@ -971,78 +803,52 @@ export function buildWorld(movies: GalleryMovie[]): World {
       return best?.id;
     },
     showFrom(place, z) {
-      // What can be seen from here (walls hide the rest). From the hallway only
-      // the nearest doorways show anything of the auditoriums behind them.
-      const near = (n: number) => {
-        const t = THEATERS[n - 1]!;
-        return Math.abs((t.door.z0 + t.door.z1) / 2 - z) < 14;
-      };
-      const visible = new Set<string>(
-        place.kind === 'theater'
-          ? [`theater-${place.number}`, 'hall']
-          : place.kind === 'gallery'
-            ? ['gallery', 'hall']
-            : place.kind === 'hall'
-              ? [
-                  'hall',
-                  ...(z > -40 ? ['lobby'] : []),
-                  ...(z < -50 ? ['gallery'] : []),
-                  ...THEATERS.filter((t) => near(t.number)).map((t) => `theater-${t.number}`),
-                ]
-              : ['lobby', 'hall'],
-      );
-      for (const [area, meshes] of areaMeshes) {
-        for (const m of meshes) m.visible = visible.has(area);
+      // From the hallway only the nearest doorways show anything of the rooms behind them.
+      for (const view of theaters) {
+        const t = view.plan;
+        view.group.visible =
+          (place.kind === 'theater' && place.number === t.number) ||
+          (place.kind === 'hall' && Math.abs((t.door.z0 + t.door.z1) / 2 - z) < 14);
       }
     },
-    theaters,
-    hotspots,
-    animate(time) {
+    animate(time, dt) {
       const on = Math.floor(time * 3) % 2 === 0;
       bulbMeshA.visible = on;
       bulbMeshB.visible = !on;
       kernels.children.forEach((k) => {
         const p = (time * 0.9 + (k.userData.phase as number)) % 1;
         k.position.set(
-          Math.sin(p * 40) * 0.4,
-          0.1 + Math.sin(p * Math.PI) * 0.9,
+          Math.sin(p * 40) * 0.5,
+          0.1 + Math.sin(p * Math.PI) * 0.75,
           Math.cos(p * 23) * 0.25,
         );
       });
-      arcadeScreens.forEach((s, i) => {
-        const color = new THREE.Color();
-        for (let j = 0; j < s.count; j++) {
-          const h =
-            (time * 0.15 + i * 0.3 + ((j * 7) % 20) / 40 + (Math.floor(time * 4 + j) % 3) * 0.05) %
-            1;
-          color.setHSL(h, 0.9, 0.55);
-          s.setColorAt(j, color);
-        }
-        if (s.instanceColor) s.instanceColor.needsUpdate = true;
-      });
+      for (const v of theaters) {
+        const c = v.curtains;
+        c.open += (c.target - c.open) * Math.min(1, dt * 1.2);
+        const s = 1 - c.open * 0.88;
+        c.left.scale.z = s;
+        c.right.scale.z = s;
+      }
       for (const a of staff) a.update(0.016, 0);
       atlas.flush();
     },
     dispose() {
       for (const d of disposables) d.dispose();
       for (const a of staff) a.dispose();
-      root.traverse((o) => {
-        if (o instanceof THREE.InstancedMesh) o.dispose();
-      });
     },
   };
 }
 
-/** Repaints a theater's hallway sign. */
-export function paintDoorSign(view: TheaterView, lines: string[], open: boolean) {
+export function paintDoorSign(view: TheaterView, lines: string[], busy: boolean) {
   drawSign(view.doorSign.canvas, lines, {
     width: 128,
     height: 56,
-    border: open ? '#ffd23f' : '#ff3fa4',
-    color: open ? '#ffd23f' : '#ff3fa4',
-    glow: open ? undefined : '#ff3fa4',
+    border: busy ? '#ff3fa4' : '#ffd23f',
+    color: busy ? '#ff3fa4' : '#ffd23f',
+    glow: busy ? '#ff3fa4' : undefined,
   });
   view.doorSign.texture.needsUpdate = true;
 }
 
-export const theaterCount = THEATER_COUNT;
+export const GALLERY_ENTRANCE_Z = GALLERY.z1;

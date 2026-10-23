@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   COUNTDOWN_MS,
   countdownLeft,
+  dailyLineup,
   positionAt,
   THEATER_COUNT,
   TheaterState,
@@ -36,7 +37,13 @@ function house() {
     last(id: string, t: ServerMessage['t']) {
       return (inbox.get(id) ?? []).filter((m) => m.t === t).at(-1);
     },
-    ticket(id: string, movieId = 'tmdb-680', shared = true, startSeconds = 0) {
+    ticket(
+      id: string,
+      movieId = 'tmdb-680',
+      shared = true,
+      startSeconds = 0,
+      theater: number | null = 1,
+    ) {
       state.handle(id, {
         t: 'ticket',
         movieId,
@@ -45,6 +52,7 @@ function house() {
         runtimeMinutes: 154,
         shared,
         startSeconds,
+        theater: theater ?? undefined,
       });
     },
   };
@@ -143,6 +151,7 @@ describe('the theater', () => {
     h.ticket('a', 'tmdb-680', false);
     h.ticket('b', 'tmdb-680', false);
     expect(h.state.players.get('b')!.ticket).toBe(2);
+    expect(h.last('b', 'notice')).toMatchObject({ message: expect.stringMatching(/Theater 2/) });
     h.state.handle('b', { t: 'join', theater: 1 });
     expect(h.last('b', 'error')).toMatchObject({ message: expect.stringMatching(/isn’t open/) });
   });
@@ -164,16 +173,83 @@ describe('the theater', () => {
     const h = house();
     h.join('a');
     h.state.handle('a', { t: 'move', x: Number.NaN, z: 0, yaw: 0 });
-    h.state.handle('a', { t: 'snack', snack: 'caviar' });
+    h.state.handle('a', { t: 'hands', hands: [{ id: 'caviar', level: 1 }, null] });
+    h.state.handle('a', { t: 'hands', hands: [null] });
     h.state.handle('a', { t: 'react', emoji: '💩' });
     h.state.handle('a', null);
     h.state.handle('nobody', { t: 'stand' });
     const p = h.state.players.get('a')!;
     expect(p.x).toBe(0);
-    expect(p.snack).toBeNull();
-    h.state.handle('a', { t: 'snack', snack: 'popcorn' });
-    expect(p.snack).toBe('popcorn');
+    expect(p.hands).toEqual([null, null]);
+    h.state.handle('a', { t: 'score', game: 'pinball', score: 50 });
+    expect(h.state.scores).toEqual({ snake: [], breakout: [], catch: [] });
     h.state.handle('a', { t: 'ping', c: 42 });
     expect(h.last('a', 'pong')).toEqual({ t: 'pong', c: 42, s: h.now() });
+  });
+
+  it('a ticket goes to the theater showing the movie, or the next free one', () => {
+    const h = house();
+    h.join('a');
+    h.ticket('a', 'movie-x', false, 0, 5);
+    expect(h.state.players.get('a')!.ticket).toBe(5);
+    // A movie that isn't in today's lineup doesn't always land in Theater 1.
+    h.join('b');
+    const landed = new Set<number>();
+    for (const id of ['m-1', 'm-2', 'm-3', 'm-4', 'm-5', 'm-6']) {
+      h.ticket('b', id, false, 0, null);
+      landed.add(h.state.players.get('b')!.ticket!);
+    }
+    expect(landed.size).toBeGreaterThan(2);
+  });
+
+  it('carries snacks, shows bites to others, and keeps the high scores', () => {
+    const saved: unknown[] = [];
+    let now = 0;
+    const inbox: { to: string | null; m: { t: string } }[] = [];
+    const state = new TheaterState(
+      (to, m) => inbox.push({ to, m }),
+      () => now++,
+      (scores) => saved.push(scores),
+    );
+    state.join('a', { userId: 'u', name: 'Evan', color: null, emoji: null, image: null });
+    state.handle('a', {
+      t: 'hands',
+      hands: [
+        { id: 'popcorn', level: 0.75 },
+        { id: 'soda', level: 1 },
+      ],
+      bite: 0,
+    });
+    expect(state.players.get('a')!.hands).toEqual([
+      { id: 'popcorn', level: 0.75 },
+      { id: 'soda', level: 1 },
+    ]);
+    expect(inbox.some(({ m }) => m.t === 'bite')).toBe(true);
+    state.handle('a', { t: 'score', game: 'snake', score: 120 });
+    state.handle('a', { t: 'score', game: 'snake', score: 300 });
+    expect(state.scores.snake.map((s) => s.score)).toEqual([300, 120]);
+    expect(saved).toHaveLength(2);
+    expect(inbox.at(-1)!.m).toMatchObject({ t: 'scores', game: 'snake' });
+  });
+});
+
+describe('today’s lineup', () => {
+  const movies = Array.from({ length: 20 }, (_, i) => ({
+    id: `m${i}`,
+    dateAdded: `2026-01-${String(i + 1).padStart(2, '0')}`,
+  }));
+
+  it('puts the newest arrival in Theater 1 and eight different movies in eight theaters', () => {
+    const today = dailyLineup(movies, '2026-10-23');
+    expect(today[0]).toBe('m19');
+    expect(new Set(today).size).toBe(8);
+    // The same for everyone on the same day, different on another day.
+    expect(dailyLineup([...movies].reverse(), '2026-10-23')).toEqual(today);
+    expect(dailyLineup(movies, '2026-10-24')).not.toEqual(today);
+  });
+
+  it('leaves theaters empty when the library is small', () => {
+    expect(dailyLineup(movies.slice(0, 3), 'd')).toHaveLength(8);
+    expect(dailyLineup(movies.slice(0, 3), 'd').filter(Boolean)).toHaveLength(3);
   });
 });
