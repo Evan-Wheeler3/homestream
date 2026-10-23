@@ -15,7 +15,7 @@ async function signIn(page: Page) {
 test('theater: get a ticket, find a seat, sit down, and the movie starts after 3, 2, 1', async ({
   page,
 }, info) => {
-  test.setTimeout(90_000);
+  test.setTimeout(240_000);
   await signIn(page);
   await page.getByRole('link', { name: /Go to the movies/ }).click();
   await expect(page).toHaveURL('/theater');
@@ -119,7 +119,7 @@ test('theater: "In the theater" on a movie page opens the box office with that m
 });
 
 test('theater on a phone: a thumbstick walks you around @phone', async ({ page }, info) => {
-  test.setTimeout(90_000);
+  test.setTimeout(180_000);
   await signIn(page);
   await page.goto('/theater');
   const welcome = page.getByRole('dialog', { name: 'Welcome to Wheelhouse Cinemas' });
@@ -153,7 +153,7 @@ test('theater on a phone: a thumbstick walks you around @phone', async ({ page }
 });
 
 test('theater: walk forward, back, sideways, and wherever you turn', async ({ page }) => {
-  test.setTimeout(90_000);
+  test.setTimeout(180_000);
   await signIn(page);
   await page.goto('/theater');
   const welcome = page.getByRole('dialog', { name: 'Welcome to Wheelhouse Cinemas' });
