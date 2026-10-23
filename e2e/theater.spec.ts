@@ -134,6 +134,26 @@ test('theater: snacks in your hands, a ticket for today’s movie, and the show 
   await hands.getByRole('button', { name: 'Pick up the soda' }).click();
   await expect(hands.getByRole('button', { name: 'Put the soda in the cupholder' })).toBeVisible();
 
+  // Skipping: the screen jumps once and plays on, with no stutter of jumps or speed changes.
+  await page.evaluate(() => {
+    const v = document.querySelector<HTMLVideoElement>('.theater__video')!;
+    const w = window as unknown as { __jumps: number; __rates: number };
+    w.__jumps = 0;
+    w.__rates = 0;
+    v.addEventListener('seeking', () => w.__jumps++);
+    v.addEventListener('ratechange', () => w.__rates++);
+  });
+  await controls.getByRole('button', { name: 'Back 10 seconds' }).click();
+  await page.waitForTimeout(5000);
+  const after = await page.evaluate(() => {
+    const v = document.querySelector<HTMLVideoElement>('.theater__video')!;
+    const w = window as unknown as { __jumps: number; __rates: number };
+    return { jumps: w.__jumps, rates: w.__rates, paused: v.paused };
+  });
+  expect(after.paused).toBe(false);
+  expect(after.jumps).toBeLessThanOrEqual(2);
+  expect(after.rates).toBeLessThanOrEqual(2);
+
   await controls.getByRole('button', { name: 'Pause' }).click();
   await expect(controls.getByRole('button', { name: 'Play', exact: true })).toBeVisible();
   await controls.getByRole('button', { name: 'Stand up' }).click();

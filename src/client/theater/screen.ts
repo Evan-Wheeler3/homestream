@@ -1,12 +1,12 @@
 // The movie on a theater screen. Everyone streams their own copy (as in the
-// normal player) and nudges it to stay in step with the showing: a small
-// speed-up or slow-down for small gaps, a jump for big ones.
+// normal player) and keeps it in step with the showing (see follow.ts).
 import type Hls from 'hls.js';
 import { countdownLeft, positionAt, type Showing } from '../../shared/theater';
 import type { PlaybackInfo, PlaybackReport } from '../../shared/types';
 import { api, ApiError, errorMessage } from '../lib/api';
 import { detectCapabilities } from '../lib/capabilities';
 import { recordError } from '../lib/diagnostics';
+import { Follower } from './follow';
 
 export interface ScreenHooks {
   onReady(video: HTMLVideoElement): void;
@@ -30,6 +30,7 @@ export class ScreenPlayer {
   private progressTimer = 0;
   private disposed = false;
   private wantPlaying = false;
+  private readonly follower = new Follower();
 
   constructor(
     readonly movieId: string,
@@ -151,19 +152,15 @@ export class ScreenPlayer {
     this.wantPlaying = playing;
     if (!playing) {
       if (!v.paused) v.pause();
-      if (Math.abs(v.currentTime - target) > 0.5) v.currentTime = target;
-      v.playbackRate = 1;
+      if (Math.abs(v.currentTime - target) > 0.5 && !v.seeking) v.currentTime = target;
+      this.setRate(1);
+      this.follower.reset();
       return;
     }
-    const drift = target - v.currentTime;
-    if (Math.abs(drift) > 2) {
-      v.currentTime = target;
-      v.playbackRate = 1;
-    } else if (Math.abs(drift) > 0.25) {
-      v.playbackRate = 1 + Math.max(-0.08, Math.min(0.08, drift * 0.12));
-    } else {
-      v.playbackRate = 1;
-    }
+    const ready = v.readyState >= 3 && !v.seeking;
+    const step = this.follower.step(target - v.currentTime, ready, now);
+    if (step.jumpAhead !== undefined) v.currentTime = target + step.jumpAhead;
+    this.setRate(step.rate);
     if (v.paused && !v.ended) {
       v.play().then(
         () => this.reportStart(),
@@ -179,6 +176,11 @@ export class ScreenPlayer {
         },
       );
     }
+  }
+
+  /** Changing the speed is audible, even to the same value on some browsers: only when it changes. */
+  private setRate(rate: number) {
+    if (this.video.playbackRate !== rate) this.video.playbackRate = rate;
   }
 
   private body(): PlaybackReport | null {
