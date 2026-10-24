@@ -465,7 +465,7 @@ function ConfirmName({ job, canSearch }: { job: RipJob; canSearch: boolean }) {
           ))}
         </ul>
       )}
-      {results.length === 0 && job.guess && (
+      {results.length === 0 && job.guess && job.status !== 'failed' && (
         <Button
           variant="primary"
           icon="check"
@@ -644,7 +644,9 @@ function RipCard({ job, canSearch }: { job: RipJob; canSearch: boolean }) {
       {(job.status === 'needs_choice' || job.status === 'needs_episodes') && (
         <KindSwitch job={job} />
       )}
-      {job.status === 'needs_name' && <ConfirmName job={job} canSearch={canSearch} />}
+      {(job.status === 'needs_name' || (job.status === 'failed' && job.kind !== 'tv')) && (
+        <ConfirmName job={job} canSearch={canSearch} />
+      )}
     </li>
   );
 }

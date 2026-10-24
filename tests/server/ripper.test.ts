@@ -412,6 +412,33 @@ describe('automatic disc ripping', () => {
     expect((await waitFor('done')).movieId).toBe('tmdb-3034');
   });
 
+  it('naming a failed rip carries on with the new name', async () => {
+    const published: (string | null)[] = [];
+    let cloudUp = false;
+    await boot({}, true, {
+      ripperOcr: null,
+      ripperCloud: {
+        publish: async (input) => {
+          published.push(input.tmdbId);
+          if (!cloudUp) throw new Error('Couldn’t tell which TMDB movie it is.');
+          return { id: 'tmdb-3034', url: 'https://wheelhouse.example/movie/tmdb-3034' };
+        },
+      },
+    });
+    hw.insert({ label: 'YOUNG_FRANKENSTEIN_WS', titles: [{ duration: FEATURE }] });
+    await server.ripper!.poll();
+    const job = await waitFor('failed');
+    cloudUp = true;
+    const res = await client.post(`/api/rips/${String(job.id)}/name`, {
+      title: 'Young Frankenstein',
+      year: 1974,
+      tmdbId: '3034',
+    });
+    expect(res.status).toBe(200);
+    expect((await waitFor('done')).movieId).toBe('tmdb-3034');
+    expect(published.at(-1)).toBe('3034');
+  });
+
   it('shows real progress while the title is saved, not 100% once the disc is opened', async () => {
     await boot();
     let midway: Record<string, unknown> | undefined;

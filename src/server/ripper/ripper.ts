@@ -1114,6 +1114,9 @@ export class Ripper {
     if (job.status === 'needs_name') {
       this.deps.jobs.update(id, { status: 'filing' });
       void this.finish(id);
+    } else if (job.status === 'failed' && job.kind !== 'tv') {
+      // Renaming a failed movie (say, the disc's name found nothing): carry on with it.
+      return this.retry(id);
     }
     return this.deps.jobs.get(id)!;
   }
