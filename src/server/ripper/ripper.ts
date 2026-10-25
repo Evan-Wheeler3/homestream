@@ -551,7 +551,11 @@ export class Ripper {
   async setKind(id: string, kind: RipKind) {
     const job = this.requireJob(id);
     // Already ripped as a movie, but it's really a TV disc: start over with the disc.
-    if (kind === 'tv' && job.kind === 'movie' && ['needs_name', 'done'].includes(job.status)) {
+    if (
+      kind === 'tv' &&
+      job.kind === 'movie' &&
+      ['needs_name', 'done', 'failed'].includes(job.status)
+    ) {
       fs.rmSync(this.jobDir(id), { recursive: true, force: true });
       this.deps.jobs.update(id, { kind: 'tv', status: 'dismissed', progress: null });
       this.log.info(`${job.discLabel} is a TV disc; it will be ripped as episodes next time.`);

@@ -39,7 +39,7 @@ function KindSwitch({ job }: { job: RipJob }) {
   const toast = useToast();
   const tv = job.kind === 'tv';
   // Already ripped as a movie: it gets ripped again, as episodes, when the disc goes back in.
-  const again = !tv && (job.status === 'needs_name' || job.status === 'done');
+  const again = !tv && ['needs_name', 'done', 'failed'].includes(job.status);
   return (
     <Button
       variant="ghost"
@@ -655,7 +655,7 @@ function RipCard({ job, canSearch }: { job: RipJob; canSearch: boolean }) {
       {job.status === 'needs_episodes' && <PickEpisodes job={job} canSearch={canSearch} />}
       {(job.status === 'needs_choice' ||
         job.status === 'needs_episodes' ||
-        (job.kind === 'movie' && (job.status === 'needs_name' || job.status === 'done'))) && (
+        (job.kind === 'movie' && ['needs_name', 'done', 'failed'].includes(job.status))) && (
         <KindSwitch job={job} />
       )}
       {(job.status === 'needs_name' || (job.status === 'failed' && job.kind !== 'tv')) && (
