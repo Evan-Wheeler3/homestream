@@ -249,6 +249,19 @@ export class RipJobStore {
   }
 
   /** A recent job for the same disc that did not fail (to avoid ripping a disc twice). */
+  /**
+   * The last disc with this label was ripped as a movie and then marked "It's a TV disc"
+   * (so this time it's ripped as episodes).
+   */
+  markedTv(label: string, exceptId: string): boolean {
+    const row = this.db
+      .prepare(
+        `SELECT kind, status FROM rip_jobs WHERE disc_label = ? AND id != ? ORDER BY created_at DESC LIMIT 1`,
+      )
+      .get(label, exceptId) as { kind: string; status: string } | undefined;
+    return row?.kind === 'tv' && row.status === 'dismissed';
+  }
+
   recentForLabel(label: string, sinceMs: number): JobRecord | null {
     const since = new Date(Date.now() - sinceMs).toISOString();
     const row = this.db

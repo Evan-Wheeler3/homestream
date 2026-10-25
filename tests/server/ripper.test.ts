@@ -693,6 +693,53 @@ describe('automatic disc ripping', () => {
     expect(sent.at(-1)!.click).toBe(`http://wheelhouse.local:8787/show/${String(done.movieId)}`);
   });
 
+  // A season disc whose long "play all" title doesn't add up to its episodes.
+  const lopsidedDisc = (label: string): Disc => ({
+    label,
+    titles: [
+      { duration: '2:15:00' },
+      { duration: '0:22:10' },
+      { duration: '0:22:31' },
+      { duration: '0:22:02' },
+      { duration: '0:22:49' },
+      { duration: '0:03:10' },
+    ],
+  });
+
+  it('a season label means TV, even with a long title on the disc', async () => {
+    await boot();
+    hw.insert(lopsidedDisc('THE_OFFICE_S2_D1'));
+    await server.ripper!.poll();
+    const job = await waitFor('needs_episodes');
+    expect(job).toMatchObject({ kind: 'tv', title: 'The Office', season: 2 });
+    expect((job.episodes as { titleIndex: number }[]).map((e) => e.titleIndex)).toEqual([
+      1, 2, 3, 4,
+    ]);
+  });
+
+  it('a disc ripped as a movie by mistake can be marked TV and ripped again as episodes', async () => {
+    await boot();
+    hw.insert(lopsidedDisc('OFFICE_MIX'));
+    await server.ripper!.poll();
+    const movie = await waitFor('needs_name');
+    expect(movie.kind).toBe('movie');
+    expect(hw.calls).toContain('drutil eject');
+
+    const res = await client.post(`/api/rips/${String(movie.id)}/kind`, { kind: 'tv' });
+    expect(res.status).toBe(200);
+    expect(await jobs()).toEqual([]);
+    expect(fs.readdirSync(rips)).toEqual([]);
+
+    // Back in the drive: this time it's episodes.
+    hw.insert(lopsidedDisc('OFFICE_MIX'));
+    await server.ripper!.poll();
+    const tv = await waitFor('needs_episodes');
+    expect(tv.kind).toBe('tv');
+    expect((tv.episodes as { titleIndex: number }[]).map((e) => e.titleIndex)).toEqual([
+      1, 2, 3, 4,
+    ]);
+  });
+
   it('with the cloud set up, a ripped TV season uploads its episodes', async () => {
     const uploads: { show: unknown; episodes: { file: string; episode: number }[] }[] = [];
     await boot({}, true, {

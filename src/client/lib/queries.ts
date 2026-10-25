@@ -273,6 +273,18 @@ export function useTogglePlayed(id: string) {
   });
 }
 
+/** Admins, cloud edition: take a movie out of the library (e.g. a disc that was named wrong). */
+export function useRemoveMovie(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api<{ title: string }>(`/movies/${id}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      qc.removeQueries({ queryKey: keys.movie(id) });
+      invalidateLibraryViews(qc);
+    },
+  });
+}
+
 export function useSavePersonal(id: string) {
   const qc = useQueryClient();
   return useMutation({

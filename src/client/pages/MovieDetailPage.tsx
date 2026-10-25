@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useParams } from 'react-router';
+import { Link, useNavigate, useParams } from 'react-router';
 import type { MovieDetail, Preferences } from '../../shared/types';
 import { PersonPhoto } from '../components/PersonPhoto';
 import { AddToCollectionDialog } from '../components/AddToCollectionDialog';
@@ -38,7 +38,9 @@ import {
 import { useDocumentTitle } from '../lib/hooks';
 import {
   useMovie,
+  useRemoveMovie,
   useSavePersonal,
+  useSession,
   useSimilar,
   useToggleFavorite,
   useToggleWatchlist,
@@ -188,6 +190,9 @@ export function MovieDetailPage({ prefs }: { prefs: Preferences }) {
   const favorite = useToggleFavorite(id);
   const watchlist = useToggleWatchlist(id);
   const played = useTogglePlayed(id);
+  const remove = useRemoveMovie(id);
+  const session = useSession().data;
+  const navigate = useNavigate();
   const toast = useToast();
   const [addOpen, setAddOpen] = useState(false);
   useDocumentTitle(movie.data?.title);
@@ -379,6 +384,30 @@ export function MovieDetailPage({ prefs }: { prefs: Preferences }) {
               size={22}
               onClick={() => setAddOpen(true)}
             />
+            {session?.source === 'cloud' && session.user.isAdmin && (
+              <IconButton
+                icon="trash"
+                label="Remove from library"
+                variant="outline"
+                size={22}
+                disabled={remove.isPending}
+                onClick={() => {
+                  if (
+                    !window.confirm(
+                      `Remove “${m.title}” from the library for everyone? Its video is deleted from the cloud. The copy on the Mac’s drive stays.`,
+                    )
+                  )
+                    return;
+                  remove.mutate(undefined, {
+                    onSuccess: () => {
+                      toast.show(`Removed “${m.title}” from the library.`);
+                      void navigate('/browse');
+                    },
+                    onError: (e) => toast.show(errorMessage(e), 'error'),
+                  });
+                }}
+              />
+            )}
           </div>
 
           <p className="detail__status faint">

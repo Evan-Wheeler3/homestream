@@ -541,6 +541,29 @@ describe('cloud: library and playback', () => {
   });
 });
 
+describe('cloud: removing a movie', () => {
+  it('takes it out of the library, lists and storage, for admins only', async () => {
+    const c = cloud();
+    await signedInAdmin(c);
+    await addMovie(c);
+    await addMovie(c, 'tmdb-11', 'Star Wars');
+    expect(
+      (await c.call('PUT', '/api/movies/tmdb-680/watchlist', { body: { on: true } })).status,
+    ).toBeLessThan(300);
+    const res = await c.call('DELETE', '/api/movies/tmdb-680');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ title: 'Pulp Fiction' });
+    expect((await c.call('GET', '/api/movies/tmdb-680')).status).toBe(404);
+    const list = (await (await c.call('GET', '/api/movies')).json()) as {
+      items: { id: string }[];
+    };
+    expect(list.items.map((m) => m.id)).toEqual(['tmdb-11']);
+    expect((await c.media.list({ prefix: 'movies/tmdb-680/' })).objects).toHaveLength(0);
+    expect((await c.media.list({ prefix: 'movies/tmdb-11/' })).objects.length).toBeGreaterThan(0);
+    expect((await c.call('DELETE', '/api/movies/tmdb-680')).status).toBe(404);
+  });
+});
+
 describe('cloud: the Mac', () => {
   it('needs the Mac token, and checks the video is really uploaded', async () => {
     const c = cloud();

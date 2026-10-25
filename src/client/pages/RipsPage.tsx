@@ -38,14 +38,26 @@ function KindSwitch({ job }: { job: RipJob }) {
   const { kind } = useRipActions();
   const toast = useToast();
   const tv = job.kind === 'tv';
+  // Already ripped as a movie: it gets ripped again, as episodes, when the disc goes back in.
+  const again = !tv && (job.status === 'needs_name' || job.status === 'done');
   return (
     <Button
       variant="ghost"
       icon={tv ? 'film' : 'tv'}
       busy={kind.isPending}
       onClick={async () => {
+        if (
+          again &&
+          !window.confirm(
+            job.status === 'done'
+              ? 'Rip this disc again as TV episodes? Put it back in the drive afterwards. The movie file already on the drive isn’t touched: remove it from the library yourself.'
+              : 'Rip this disc again as TV episodes? Put it back in the drive afterwards.',
+          )
+        )
+          return;
         try {
           await kind.mutateAsync({ id: job.id, kind: tv ? 'movie' : 'tv' });
+          if (again) toast.show('Put the disc back in to rip it as TV episodes.');
         } catch (error) {
           toast.show(errorMessage(error), 'error');
         }
@@ -641,7 +653,9 @@ function RipCard({ job, canSearch }: { job: RipJob; canSearch: boolean }) {
       )}
       {job.status === 'needs_choice' && <ChooseTitle job={job} />}
       {job.status === 'needs_episodes' && <PickEpisodes job={job} canSearch={canSearch} />}
-      {(job.status === 'needs_choice' || job.status === 'needs_episodes') && (
+      {(job.status === 'needs_choice' ||
+        job.status === 'needs_episodes' ||
+        (job.kind === 'movie' && (job.status === 'needs_name' || job.status === 'done'))) && (
         <KindSwitch job={job} />
       )}
       {(job.status === 'needs_name' || (job.status === 'failed' && job.kind !== 'tv')) && (

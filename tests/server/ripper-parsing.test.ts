@@ -137,6 +137,32 @@ describe('MakeMKV robot output', () => {
     expect(playAll.kind === 'tv' && playAll.episodes.map((t) => t.index)).toEqual([0, 1, 2, 3]);
   });
 
+  it('spots a season disc whose "play all" doesn’t add up exactly', () => {
+    const tv = (kind: ReturnType<typeof classifyDisc>) =>
+      kind.kind === 'tv' ? kind.episodes.map((t) => t.index) : kind.kind;
+    // A sitcom season disc: the "play all" adds a recap and menus (8 minutes more than
+    // the episodes), but plays the same video segments.
+    const eps = [1, 2, 3, 4, 5, 6].map((i) =>
+      title(i, 21 + (i % 3) * 0.4, `${i * 10},${i * 10 + 1}`),
+    );
+    const playAll = title(0, 140, eps.map((e) => e.segments).join(',') + ',99');
+    expect(tv(classifyDisc([playAll, ...eps, title(7, 4)]))).toEqual([1, 2, 3, 4, 5, 6]);
+    // The episodes aren't next to each other (a featurette in between) and there are no
+    // segment maps: the total still adds up to the long title, give or take a little.
+    const loose = [title(0, 131, ''), title(1, 22, ''), title(2, 6, ''), title(3, 22, '')].concat(
+      [4, 5, 6, 7].map((i) => title(i, 22, '')),
+    );
+    expect(tv(classifyDisc(loose))).toEqual([1, 3, 4, 5, 6, 7]);
+    // A label that says it's a season wins over a long bonus title.
+    const bonus = [title(0, 95), ...[1, 2, 3, 4].map((i) => title(i, 22))];
+    expect(tv(classifyDisc(bonus))).toBe('movie');
+    expect(tv(classifyDisc(bonus, { tvHint: true }))).toEqual([1, 2, 3, 4]);
+    // …but a movie with featurettes and no such label stays a movie.
+    expect(tv(classifyDisc([title(0, 118), title(1, 24), title(2, 21), title(3, 26)]))).toBe(
+      'movie',
+    );
+  });
+
   it('still picks the movie when a disc also has episode-length extras', () => {
     const extras = [1, 2, 3].map((i) => title(i, 25));
     expect(chooseMainTitle([title(0, 118), ...extras])).toMatchObject({

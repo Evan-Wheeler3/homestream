@@ -62,6 +62,8 @@ test('subtitles are off by default and can be turned on', async ({ page }) => {
   test.skip(!local, 'Needs the seeded movie with subtitles');
   await signIn(page);
   await page.goto('/movie/e2e-1');
+  // Admins can take a wrongly added movie out of the library.
+  await expect(page.getByRole('button', { name: 'Remove from library' })).toBeVisible();
   await page
     .getByRole('link', { name: /^(Play|Resume)/ })
     .first()

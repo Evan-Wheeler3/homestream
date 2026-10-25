@@ -242,16 +242,35 @@ export type DiscKind = { kind: 'movie' } | { kind: 'tv'; episodes: DiscTitle[] }
 
 const close = (a: number, b: number) => Math.abs(a - b) <= Math.max(10, b * 0.015);
 
+/** MakeMKV's segment map ("1,2,3" or "0-3,5") as a list of segment numbers. */
+function segmentList(map: string): number[] {
+  const out: number[] = [];
+  for (const part of map.split(',')) {
+    const [a, b] = part.split('-').map((n) => Number(n.trim()));
+    if (!Number.isInteger(a)) continue;
+    const end = Number.isInteger(b) && b! >= a! && b! - a! < 500 ? b! : a!;
+    for (let n = a!; n <= end; n++) out.push(n);
+  }
+  return out;
+}
+
 /**
  * Whether a disc holds TV episodes rather than a movie, and which titles are the
  * episodes. A season disc has several titles of about the same episode length,
  * often with a "play all" title that is just those episodes back to back. A disc
  * with a long title that isn't a "play all" is a movie (extras are often
- * episode-length too, so they don't count).
+ * episode-length too, so they don't count) — unless the label says it's a
+ * season (`tvHint`, e.g. "THE_OFFICE_S2_D1"), where a long title is a "play all"
+ * or a bonus.
  */
 export function classifyDisc(
   titles: DiscTitle[],
-  options: { minEpisodeMinutes?: number; maxEpisodeMinutes?: number; movieMinutes?: number } = {},
+  options: {
+    minEpisodeMinutes?: number;
+    maxEpisodeMinutes?: number;
+    movieMinutes?: number;
+    tvHint?: boolean;
+  } = {},
 ): DiscKind {
   const minEpisode = (options.minEpisodeMinutes ?? 15) * 60;
   const maxEpisode = (options.maxEpisodeMinutes ?? 70) * 60;
@@ -270,9 +289,19 @@ export function classifyDisc(
   const inRange = unique.filter(
     (t) => t.durationSeconds >= minEpisode && t.durationSeconds <= maxEpisode,
   );
-  /** Is `t` the other titles played back to back (a run of 2+ consecutive ones)? */
+  /** Is `t` other titles played back to back? */
   const isPlayAll = (t: DiscTitle) => {
     const others = inRange.filter((o) => o !== t && o.durationSeconds < t.durationSeconds);
+    // It plays the very same video as two or more of them.
+    if (t.segments) {
+      const mine = new Set(segmentList(t.segments));
+      const inside = others.filter((o) => {
+        const theirs = segmentList(o.segments);
+        return theirs.length > 0 && theirs.every((n) => mine.has(n));
+      });
+      if (inside.length >= 2) return true;
+    }
+    // A run of 2+ consecutive titles adds up to it.
     for (let start = 0; start < others.length; start++) {
       let sum = 0;
       for (let end = start; end < others.length; end++) {
@@ -281,10 +310,14 @@ export function classifyDisc(
         if (sum > t.durationSeconds) break;
       }
     }
-    return false;
+    // Or all of them together do, give or take the menus and credits in between.
+    const all = others.reduce((sum, o) => sum + o.durationSeconds, 0);
+    return others.length >= 2 && Math.abs(all - t.durationSeconds) <= t.durationSeconds * 0.04;
   };
 
-  if (unique.some((t) => t.durationSeconds >= movie && !isPlayAll(t))) return { kind: 'movie' };
+  if (!options.tvHint && unique.some((t) => t.durationSeconds >= movie && !isPlayAll(t))) {
+    return { kind: 'movie' };
+  }
 
   const candidates = inRange.filter((t) => !isPlayAll(t));
   if (candidates.length < 2) return { kind: 'movie' };

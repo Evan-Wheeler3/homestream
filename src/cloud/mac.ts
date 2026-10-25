@@ -285,6 +285,41 @@ export async function ingestMovie(env: CloudEnv, sql: Sql, id: string, body: unk
   return { id, fulfilled: fulfilled.map((r) => ({ userName: r.userName, title: r.title })) };
 }
 
+/**
+ * Takes a movie out of the library (e.g. a disc that was named wrong): its files
+ * and its place in lists and series. Watch history keeps its title.
+ */
+export async function removeMovie(env: CloudEnv, sql: Sql, id: string) {
+  const movie = await sql.get<{ title: string }>('SELECT title FROM movies WHERE id = ?', id);
+  if (!movie) throw notFound('That movie isn’t in the library.');
+  const series = await sql.all<{ id: string; movie_ids: string }>(
+    'SELECT id, movie_ids FROM franchises',
+  );
+  await sql.batch([
+    sql.stmt('DELETE FROM movies WHERE id = ?', id),
+    sql.stmt('DELETE FROM watchlist WHERE item_id = ?', id),
+    sql.stmt('DELETE FROM collection_items WHERE item_id = ?', id),
+    sql.stmt('DELETE FROM now_playing WHERE item_id = ?', id),
+    ...series
+      .filter((f) => (JSON.parse(f.movie_ids) as string[]).includes(id))
+      .map((f) =>
+        sql.stmt(
+          'UPDATE franchises SET movie_ids = ?, updated_at = ? WHERE id = ?',
+          JSON.stringify((JSON.parse(f.movie_ids) as string[]).filter((m) => m !== id)),
+          nowIso(),
+          f.id,
+        ),
+      ),
+  ]);
+  for (let cursor: string | undefined; ;) {
+    const list = await env.MEDIA.list({ prefix: `movies/${id}/`, cursor, limit: 1000 });
+    if (list.objects.length) await env.MEDIA.delete(list.objects.map((o) => o.key));
+    if (!list.truncated) break;
+    cursor = list.cursor;
+  }
+  return { title: movie.title };
+}
+
 export async function listIngested(sql: Sql) {
   return sql.all<{
     id: string;

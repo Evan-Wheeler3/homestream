@@ -119,6 +119,10 @@ function describe(error: unknown): string {
   return e instanceof Error ? e.message : String(error);
 }
 
+/** Titles about the length of an episode, for when someone says it's a TV disc. */
+const episodeLength = <T extends { durationSeconds: number }>(titles: T[]) =>
+  titles.filter((t) => t.durationSeconds >= 10 * 60 && t.durationSeconds <= 75 * 60);
+
 /**
  * Automatic disc ripping: insert a disc and it is ripped with MakeMKV, ejected,
  * compressed with HandBrake, named, filed into the Movies folder, added to
@@ -320,9 +324,15 @@ export class Ripper {
       if (chosenIndex === undefined) {
         const scan = await this.scan(job);
         job = scan.job;
-        const disc = classifyDisc(scan.titles);
-        if (disc.kind === 'tv') {
-          await this.askForEpisodes(job, disc.episodes);
+        // A label like THE_OFFICE_S2_D1, or "It's a TV disc" on an earlier try, means TV.
+        const marked = this.deps.jobs.markedTv(job.discLabel, job.id);
+        const tvHint = marked || guessTv(job.discName, job.discLabel).season !== null;
+        const disc = classifyDisc(scan.titles, { tvHint });
+        if (disc.kind === 'tv' || marked) {
+          await this.askForEpisodes(
+            job,
+            disc.kind === 'tv' ? disc.episodes : episodeLength(scan.titles),
+          );
           return;
         }
         await this.identify(job, job.guess ?? job.discLabel);
@@ -540,6 +550,13 @@ export class Ripper {
   /** Correct a wrong guess: treat a waiting disc as a movie or as TV episodes. */
   async setKind(id: string, kind: RipKind) {
     const job = this.requireJob(id);
+    // Already ripped as a movie, but it's really a TV disc: start over with the disc.
+    if (kind === 'tv' && job.kind === 'movie' && ['needs_name', 'done'].includes(job.status)) {
+      fs.rmSync(this.jobDir(id), { recursive: true, force: true });
+      this.deps.jobs.update(id, { kind: 'tv', status: 'dismissed', progress: null });
+      this.log.info(`${job.discLabel} is a TV disc; it will be ripped as episodes next time.`);
+      return this.deps.jobs.get(id)!;
+    }
     if (job.status !== 'needs_episodes' && job.status !== 'needs_choice') {
       throw new UserError('This disc can only be changed while it waits for you.');
     }
@@ -552,10 +569,7 @@ export class Ripper {
         outputFile: '',
       }));
       const disc = classifyDisc(titles);
-      const episodes =
-        disc.kind === 'tv'
-          ? disc.episodes
-          : titles.filter((t) => t.durationSeconds >= 10 * 60 && t.durationSeconds <= 75 * 60);
+      const episodes = disc.kind === 'tv' ? disc.episodes : episodeLength(titles);
       await this.askForEpisodes(job, episodes);
     } else {
       if (job.status === 'needs_choice') return job;

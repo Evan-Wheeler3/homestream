@@ -99,6 +99,7 @@ import {
   listIngested,
   queueDriveAction,
   queueRipAction,
+  removeMovie,
   readMacStatus,
   receiveMacStatus,
   type RipAction,
@@ -695,6 +696,11 @@ export function createApp() {
     if (!episode) throw notFound('This movie is not in the library.');
     return episode.runtimeMinutes;
   };
+
+  app.delete('/movies/:id', async (c) => {
+    requireAdmin(user(c), 'remove movies');
+    return c.json(await removeMovie(c.env, c.get('sql'), itemId(c)));
+  });
 
   app.put('/movies/:id/favorite', async (c) => {
     const id = itemId(c);
