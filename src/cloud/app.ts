@@ -699,7 +699,7 @@ export function createApp() {
 
   app.delete('/movies/:id', async (c) => {
     requireAdmin(user(c), 'remove movies');
-    return c.json(await removeMovie(c.env, c.get('sql'), itemId(c)));
+    return c.json(await removeMovie(c.env, c.get('sql'), itemId(c), user(c).id));
   });
 
   app.put('/movies/:id/favorite', async (c) => {

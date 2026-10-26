@@ -203,6 +203,9 @@ export async function runCommand(ripper: Ripper, c: Command) {
       return ripper.dismiss(c.jobId);
     case 'eject':
       return ripper.ejectDisc();
+    case 'removeMovie':
+      if (typeof p.path !== 'string' || !p.path) throw new Error('No file to remove.');
+      return ripper.removeMovieFolder(p.path);
     default:
       throw new Error(`Unknown action ${c.action}`);
   }

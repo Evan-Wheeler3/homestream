@@ -122,6 +122,12 @@ function UpdatesPanel() {
           <p className="status-ok">Up to date (checked {relativeTime(u.checkedAt)}).</p>
         )
       )}
+      {u.auto && !st.running && !st.restarting && (
+        <p className="faint">
+          New versions install by themselves within half an hour, whenever nothing is ripping,
+          compressing, uploading or playing.
+        </p>
+      )}
       <div className="button-row">
         {u.behind > 0 && !st.running && !st.restarting && (
           <Button

@@ -12,7 +12,7 @@ try {
 }
 
 const db = openDatabase(config.dataDir);
-const { app, provider, ripper, maintenance, macReporter } = createApp({ config, db });
+const { app, provider, ripper, maintenance, macReporter, autoUpdater } = createApp({ config, db });
 
 // WHEELHOUSE_MODE=ripper: this Mac only rips and uploads to the cloud; the old
 // website (and Jellyfin) aren't needed.
@@ -20,6 +20,10 @@ const ripOnly = process.env.WHEELHOUSE_MODE === 'ripper';
 
 function startBackground() {
   maintenance?.start();
+  if (autoUpdater) {
+    autoUpdater.start();
+    console.info('  Updates: installed automatically when nothing is ripping or playing');
+  }
   if (ripper) {
     ripper.start();
     const health = ripper.health();
@@ -68,6 +72,7 @@ server?.on('error', (error: NodeJS.ErrnoException) => {
 });
 
 function shutdown() {
+  autoUpdater?.stop();
   ripper?.stop();
   macReporter?.stop();
   maintenance?.stop();

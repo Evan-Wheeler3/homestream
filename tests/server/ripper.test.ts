@@ -706,6 +706,45 @@ describe('automatic disc ripping', () => {
     ],
   });
 
+  it('removing a movie in the cloud deletes only its own folder in the Movies folder', async () => {
+    await boot();
+    const ripper = server.ripper!;
+    const folder = path.join(movies, 'Office Uprising (2018) [tmdbid-1]');
+    fs.mkdirSync(folder, { recursive: true });
+    fs.writeFileSync(path.join(folder, 'Office Uprising (2018).mp4'), 'x');
+    fs.writeFileSync(path.join(folder, 'Office Uprising (2018).en.srt'), 'x');
+    const keep = path.join(movies, 'Young Frankenstein (1974)');
+    fs.mkdirSync(keep);
+    fs.writeFileSync(path.join(keep, 'Young Frankenstein (1974).mp4'), 'x');
+    fs.writeFileSync(path.join(movies, 'loose.mp4'), 'x');
+
+    // Never the Movies folder itself, nor anything outside it.
+    await expect(ripper.removeMovieFolder(path.join(movies, 'loose.mp4'))).rejects.toThrow(
+      /isn’t in its own folder/,
+    );
+    await expect(ripper.removeMovieFolder(path.join(rips, 'job', 'a.mp4'))).resolves.toMatch(
+      /Already gone/,
+    );
+    fs.mkdirSync(path.join(rips, 'job'), { recursive: true });
+    fs.writeFileSync(path.join(rips, 'job', 'a.mp4'), 'x');
+    await expect(ripper.removeMovieFolder(path.join(rips, 'job', 'a.mp4'))).rejects.toThrow(
+      /isn’t in its own folder/,
+    );
+    // Nor a folder that's a shortcut to somewhere else.
+    fs.symlinkSync(path.join(rips, 'job'), path.join(movies, 'Sneaky'));
+    await expect(ripper.removeMovieFolder(path.join(movies, 'Sneaky', 'a.mp4'))).rejects.toThrow(
+      /isn’t in its own folder/,
+    );
+    expect(fs.existsSync(path.join(rips, 'job', 'a.mp4'))).toBe(true);
+
+    expect(await ripper.removeMovieFolder(path.join(folder, 'Office Uprising (2018).mp4'))).toMatch(
+      /Deleted Office Uprising/,
+    );
+    expect(fs.existsSync(folder)).toBe(false);
+    expect(fs.existsSync(path.join(keep, 'Young Frankenstein (1974).mp4'))).toBe(true);
+    expect(fs.existsSync(path.join(movies, 'loose.mp4'))).toBe(true);
+  });
+
   it('a season label means TV, even with a long title on the disc', async () => {
     await boot();
     hw.insert(lopsidedDisc('THE_OFFICE_S2_D1'));

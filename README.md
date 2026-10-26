@@ -433,6 +433,10 @@ same-length titles (copy protection: pick the right one), when it looks like a T
 episode-length titles — Wheelhouse only files movies), when the name is uncertain (several films share
 a title, or the label is cryptic), or when something fails (with **Retry**). Nothing is deleted unless the
 compressed movie checks out, and a finished movie in the Movies folder is never touched by **Dismiss**.
+**Remove from library** (the trash icon on a movie's page in the cloud, administrators only) deletes the
+movie from the cloud and has the Mac delete that movie's own folder in the Movies folder (nothing else),
+for a disc that was named wrong.
+
 **Eject disc** at the top of the page takes the disc out of the drive (from the cloud site too, while
 the Mac is online); during a rip, use **Stop** on that disc instead.
 
@@ -493,7 +497,10 @@ backup, free space on each drive (with a warning, and a phone notification, when
 **Updating Wheelhouse:** if you installed it with `git clone`, open _Settings → Updates_ (administrators
 only): it lists what’s new and **Update now** downloads, installs, builds and restarts Wheelhouse by itself
 (when it runs as a service: launchd on a Mac, systemd on Linux; otherwise restart it yourself afterwards).
-By hand, it is the same thing:
+When it runs as a service, it also **updates itself**: every half hour it checks for a new version and
+installs it only while nothing is ripping, compressing or uploading and nobody is watching (no new disc is
+started meanwhile), then sends a phone notification. If an install fails, the previous version is put back
+and you're told once. Set `AUTO_UPDATE=0` to turn this off. By hand, it is the same thing:
 
 ```bash
 git pull
@@ -539,6 +546,7 @@ All settings live in `.env` (copy `.env.example`; `npm run setup` writes it for 
 | `BACKUP_DIR`          | `DATA_DIR/backups` | Where the automatic daily backups go (another drive is safer).                         |
 | `BACKUP_KEEP`         | `14`               | How many daily backups to keep.                                                        |
 | `LOW_SPACE_GB`        | `30`               | Warn when a drive has less free space than this.                                       |
+| `AUTO_UPDATE`         | `1`                | Install new versions by themselves when idle (when Wheelhouse runs as a service).      |
 
 Disc ripping settings (written by `npm run setup:ripper`; see `.env.example` for all of them): `RIPPER_ENABLED`,
 `MOVIES_DIR`, `RIPS_DIR`, `MAKEMKVCON`, `HANDBRAKE_CLI`, `HANDBRAKE_PRESET`, `HANDBRAKE_QUALITY`,

@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { runProcess, type Runner } from '../../src/server/ripper/process';
-import { isSupervised, Updater } from '../../src/server/updater';
+import { AutoUpdater, isSupervised, Updater } from '../../src/server/updater';
 
 // Real git repositories (an "origin" and an installed clone); npm is faked.
 
@@ -114,6 +114,58 @@ describe('in-app updates', () => {
     expect(s.supported).toBe(false);
     expect(s.reason).toMatch(/installed from a download/);
     expect(() => u.start()).toThrow(/git/);
+  });
+
+  it('updates by itself, but only while nothing is ripping or playing', async () => {
+    const { install, publish } = repos();
+    let restarted = 0;
+    let idle = false;
+    const holds: boolean[] = [];
+    const sent: string[] = [];
+    const u = new Updater({ root: install, run: runner(), restart: () => restarted++ });
+    const auto = new AutoUpdater({
+      updater: u,
+      idle: () => idle,
+      hold: (on) => holds.push(on),
+      everyMs: 60_000,
+      notify: async (title) => void sent.push(title),
+    });
+    expect(await auto.tick()).toBe('none');
+
+    publish('feature.txt', 'Season discs are TV');
+    // A disc is ripping (or someone's watching): wait.
+    expect(await auto.tick()).toBe('waiting');
+    expect(fs.existsSync(path.join(install, 'feature.txt'))).toBe(false);
+
+    idle = true;
+    expect(await auto.tick()).toBe('installed');
+    expect(holds).toEqual([true]);
+    expect(fs.readFileSync(path.join(install, 'feature.txt'), 'utf8')).toBe('Season discs are TV');
+    expect(sent).toEqual(['Wheelhouse updated']);
+    await new Promise((r) => setTimeout(r, 1700));
+    expect(restarted).toBe(1);
+  });
+
+  it('a version that fails to install is reported once, and the ripper carries on', async () => {
+    const { install, publish } = repos();
+    publish('x.txt', 'Broken build');
+    const holds: boolean[] = [];
+    const sent: string[] = [];
+    const auto = new AutoUpdater({
+      updater: new Updater({ root: install, run: runner(1) }),
+      idle: () => true,
+      hold: (on) => holds.push(on),
+      everyMs: 60_000,
+      notify: async (title) => void sent.push(title),
+    });
+    expect(await auto.tick()).toBe('failed');
+    // The half-installed version isn't left on disk to be started next time.
+    expect(fs.existsSync(path.join(install, 'x.txt'))).toBe(false);
+    expect(holds).toEqual([true, false]);
+    expect(sent).toEqual(['Wheelhouse couldn’t update itself']);
+    // Not again for the same version.
+    expect(await auto.tick()).toBe('skipped');
+    expect(sent).toHaveLength(1);
   });
 
   it('knows when a service manager will restart it', () => {

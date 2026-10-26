@@ -19,7 +19,7 @@ import { Maintenance } from './maintenance.js';
 import { MovieNights } from './nights.js';
 import { MovieRequests } from './requests.js';
 import { NowPlaying, StreamLimits } from './sharing.js';
-import { isSupervised, Updater } from './updater.js';
+import { AutoUpdater, isSupervised, Updater } from './updater.js';
 import { JellyfinProvider } from './providers/jellyfin.js';
 import { MockProvider } from './providers/mock.js';
 import type { MediaProvider } from './providers/types.js';
@@ -181,6 +181,23 @@ export function createApp({
       logger,
     });
 
+  const nowPlaying = new NowPlaying();
+  // Automatic updates: only when a service will restart Wheelhouse, and only while idle.
+  const autoUpdater =
+    config.autoUpdate && !injectedUpdater && isSupervised()
+      ? new AutoUpdater({
+          updater,
+          idle: () => (!ripper || ripper.isIdle()) && nowPlaying.list().length === 0,
+          hold: (on) => ripper?.holdForUpdate(on),
+          everyMs: 30 * 60_000,
+          notify: ntfy
+            ? (title, message) =>
+                notifier.send({ title, message, tags: ['arrows_counterclockwise'] })
+            : undefined,
+          logger,
+        })
+      : null;
+
   const app = express();
   app.disable('x-powered-by');
   app.set('trust proxy', config.trustProxy);
@@ -234,11 +251,12 @@ export function createApp({
       ntfy: ripperNotifier ?? ntfy,
       maintenance,
       updater,
+      autoUpdate: Boolean(autoUpdater),
       nights: new MovieNights(db),
       requests,
       requestNotifier,
       limits: new StreamLimits(db),
-      nowPlaying: new NowPlaying(),
+      nowPlaying,
     }),
   );
 
@@ -313,5 +331,5 @@ export function createApp({
     res.status(apiError.status).json(body);
   });
 
-  return { app, provider, library, sessions, ripper, maintenance, macReporter };
+  return { app, provider, library, sessions, ripper, maintenance, macReporter, autoUpdater };
 }

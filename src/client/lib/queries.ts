@@ -277,7 +277,8 @@ export function useTogglePlayed(id: string) {
 export function useRemoveMovie(id: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => api<{ title: string }>(`/movies/${id}`, { method: 'DELETE' }),
+    mutationFn: () =>
+      api<{ title: string; fromMac: boolean }>(`/movies/${id}`, { method: 'DELETE' }),
     onSuccess: () => {
       qc.removeQueries({ queryKey: keys.movie(id) });
       invalidateLibraryViews(qc);

@@ -126,6 +126,8 @@ export interface ApiDeps {
   ntfy?: Notifier | null;
   maintenance?: Maintenance | null;
   updater?: Updater | null;
+  /** New versions install by themselves. */
+  autoUpdate?: boolean;
   nights?: MovieNights;
   requests?: MovieRequests;
   /** Tells the administrator's phone about new requests. */
@@ -354,7 +356,10 @@ export function apiRouter(deps: ApiDeps): Router {
     route(async (req) => {
       requireAdmin(req, 'update Wheelhouse');
       if (!deps.updater) throw notFound();
-      return deps.updater.status(req.query.force === '1');
+      return {
+        ...(await deps.updater.status(req.query.force === '1')),
+        auto: Boolean(deps.autoUpdate),
+      };
     }),
   );
 

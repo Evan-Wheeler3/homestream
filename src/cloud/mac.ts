@@ -289,8 +289,11 @@ export async function ingestMovie(env: CloudEnv, sql: Sql, id: string, body: unk
  * Takes a movie out of the library (e.g. a disc that was named wrong): its files
  * and its place in lists and series. Watch history keeps its title.
  */
-export async function removeMovie(env: CloudEnv, sql: Sql, id: string) {
-  const movie = await sql.get<{ title: string }>('SELECT title FROM movies WHERE id = ?', id);
+export async function removeMovie(env: CloudEnv, sql: Sql, id: string, userId: string) {
+  const movie = await sql.get<{ title: string; source_path: string | null }>(
+    'SELECT title, source_path FROM movies WHERE id = ?',
+    id,
+  );
   if (!movie) throw notFound('That movie isn’t in the library.');
   const series = await sql.all<{ id: string; movie_ids: string }>(
     'SELECT id, movie_ids FROM franchises',
@@ -317,7 +320,19 @@ export async function removeMovie(env: CloudEnv, sql: Sql, id: string) {
     if (!list.truncated) break;
     cursor = list.cursor;
   }
-  return { title: movie.title };
+  // The Mac deletes its copy too (only that movie's folder in its Movies folder).
+  if (movie.source_path && userId) {
+    await sql.run(
+      `INSERT INTO mac_commands (id, job_id, action, payload, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+      randomId(),
+      '',
+      'removeMovie',
+      JSON.stringify({ path: movie.source_path }),
+      userId,
+      nowIso(),
+    );
+  }
+  return { title: movie.title, fromMac: Boolean(movie.source_path) };
 }
 
 export async function listIngested(sql: Sql) {

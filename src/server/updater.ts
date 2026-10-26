@@ -28,6 +28,9 @@ export class Updater {
   private readonly run: Runner;
   private readonly env: NodeJS.ProcessEnv;
   private checked: (Omit<UpdateStatus, 'state'> & { at: number }) | null = null;
+  private pending: Promise<void> = Promise.resolve();
+  /** The newest version on GitHub at the last check (a commit id). */
+  latest: string | null = null;
   private state: UpdateStatus['state'] = {
     running: false,
     step: null,
@@ -97,6 +100,7 @@ export class Updater {
       ).split('\n');
       await this.git(['fetch', '--quiet', 'origin', branch]);
       const behind = Number(await this.git(['rev-list', '--count', `HEAD..origin/${branch}`])) || 0;
+      this.latest = await this.git(['rev-parse', `origin/${branch}`]);
       const changes = behind
         ? (await this.git(['log', '--format=%s', '-n', '15', `HEAD..origin/${branch}`]))
             .split('\n')
@@ -138,8 +142,31 @@ export class Updater {
       finishedAt: null,
       restarting: false,
     };
-    void this.perform();
+    this.pending = this.perform();
     return this.state;
+  }
+
+  private async restore(sha: string): Promise<boolean> {
+    try {
+      this.state = { ...this.state, step: 'Putting the previous version back' };
+      await this.git(['reset', '--keep', sha]);
+      for (const args of [
+        ['install', '--no-audit', '--no-fund'],
+        ['run', 'build'],
+      ]) {
+        const result = await this.run('npm', args, { cwd: this.opts.root, env: this.env });
+        if (result.code !== 0) return false;
+      }
+      return true;
+    } catch (error) {
+      this.opts.logger?.warn('Could not put the previous version back:', error);
+      return false;
+    }
+  }
+
+  /** Resolves once the update that's running (if any) has finished or failed. */
+  finished(): Promise<void> {
+    return this.pending;
   }
 
   private async perform() {
@@ -148,7 +175,10 @@ export class Updater {
       ['Installing', 'npm', ['install', '--no-audit', '--no-fund']],
       ['Building', 'npm', ['run', 'build']],
     ];
+    let previous: string | null = null;
+    let downloaded = false;
     try {
+      previous = await this.git(['rev-parse', 'HEAD']);
       for (const [label, cmd, args] of steps) {
         this.state = { ...this.state, step: label };
         const result = await this.run(cmd, args, { cwd: this.opts.root, env: this.env });
@@ -156,6 +186,7 @@ export class Updater {
           const tail = result.output.trim().split('\n').slice(-3).join(' ');
           throw new Error(`${label} failed: ${tail}`);
         }
+        if (label === 'Downloading') downloaded = true;
       }
       this.checked = null;
       const restart = Boolean(this.opts.restart);
@@ -169,14 +200,104 @@ export class Updater {
       this.opts.logger?.info('Update installed.');
       if (restart) setTimeout(() => this.opts.restart?.(), 1500);
     } catch (error) {
+      let message = error instanceof Error ? error.message : String(error);
+      // Don't leave a half-installed version to be started next time: put the old one back.
+      if (downloaded && previous && (await this.restore(previous))) {
+        message += ' The previous version was put back.';
+      }
+      this.checked = null;
       this.state = {
         running: false,
         step: null,
-        error: error instanceof Error ? error.message : String(error),
+        error: message,
         finishedAt: new Date().toISOString(),
         restarting: false,
       };
       this.opts.logger?.warn('Update failed:', this.state.error);
+    }
+  }
+}
+
+export interface AutoUpdaterOptions {
+  updater: Updater;
+  /** Safe to restart now: nothing ripping, compressing or uploading, and nobody watching. */
+  idle: () => boolean;
+  /** Stop starting new work (true) while an update installs, or carry on (false). */
+  hold?: (on: boolean) => void;
+  everyMs: number;
+  notify?: (title: string, message: string) => Promise<unknown>;
+  logger?: Pick<Console, 'info' | 'warn'>;
+}
+
+/**
+ * Installs new versions by itself, but only when Wheelhouse is idle, so a rip,
+ * a compression, an upload or someone's movie is never cut off by a restart.
+ */
+export class AutoUpdater {
+  private timer: NodeJS.Timeout | null = null;
+  private busy = false;
+  /** A version that failed to install: not tried again until there's a newer one. */
+  private failed: string | null = null;
+
+  constructor(private readonly opts: AutoUpdaterOptions) {}
+
+  start() {
+    this.stop();
+    this.timer = setInterval(() => void this.tick(), this.opts.everyMs);
+    this.timer.unref?.();
+  }
+
+  stop() {
+    if (this.timer) clearInterval(this.timer);
+    this.timer = null;
+  }
+
+  /** One check: install the new version if there is one and now is a good time. */
+  async tick(): Promise<'none' | 'waiting' | 'installed' | 'failed' | 'skipped'> {
+    if (this.busy) return 'skipped';
+    this.busy = true;
+    const { updater, idle, hold, notify, logger } = this.opts;
+    try {
+      const status = await updater.status(true);
+      if (!status.supported || status.reason || status.behind === 0 || status.state.running) {
+        return 'none';
+      }
+      const target = updater.latest;
+      if (target && target === this.failed) return 'skipped';
+      if (!idle()) return 'waiting';
+      hold?.(true);
+      // Something may have started between the check and the hold.
+      if (!idle()) {
+        hold?.(false);
+        return 'waiting';
+      }
+      logger?.info(`Installing an update automatically: ${status.changes[0] ?? ''}`);
+      updater.start();
+      await updater.finished();
+      const after = (await updater.status()).state;
+      if (after.error) {
+        hold?.(false);
+        this.failed = target;
+        await notify?.(
+          'Wheelhouse couldn’t update itself',
+          `${after.error} Open Settings → Updates on the Mac to try again.`,
+        ).catch(() => undefined);
+        return 'failed';
+      }
+      await notify?.(
+        'Wheelhouse updated',
+        status.changes.slice(0, 3).join(' · ') || 'A new version is installed.',
+      ).catch(() => undefined);
+      return 'installed';
+    } catch (error) {
+      hold?.(false);
+      logger?.warn(
+        'Automatic update check failed:',
+        error instanceof Error ? error.message : error,
+      );
+      return 'failed';
+    } finally {
+      this.busy = false;
     }
   }
 }

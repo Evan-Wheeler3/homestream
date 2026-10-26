@@ -394,13 +394,17 @@ export function MovieDetailPage({ prefs }: { prefs: Preferences }) {
                 onClick={() => {
                   if (
                     !window.confirm(
-                      `Remove “${m.title}” from the library for everyone? Its video is deleted from the cloud. The copy on the Mac’s drive stays.`,
+                      `Remove “${m.title}” from the library for everyone? Its video is deleted from the cloud, and the Mac deletes its folder from the Movies folder. This can’t be undone.`,
                     )
                   )
                     return;
                   remove.mutate(undefined, {
-                    onSuccess: () => {
-                      toast.show(`Removed “${m.title}” from the library.`);
+                    onSuccess: (r) => {
+                      toast.show(
+                        r.fromMac
+                          ? `Removed “${m.title}”. The Mac deletes its copy next time it checks in.`
+                          : `Removed “${m.title}” from the library.`,
+                      );
                       void navigate('/browse');
                     },
                     onError: (e) => toast.show(errorMessage(e), 'error'),

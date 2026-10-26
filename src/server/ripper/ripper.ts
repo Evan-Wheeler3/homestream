@@ -138,6 +138,8 @@ export class Ripper {
   /** Stops the current read or rip when its job is dismissed. */
   private discAbort: { jobId: string; controller: AbortController } | null = null;
   private encoderBusy = false;
+  /** An update is installing: don't start anything new. */
+  private holding = false;
   private polling = false;
   private stopped = true;
   /** Set when Jellyfin has no Shows library for the TV folder (checked in the background). */
@@ -267,7 +269,7 @@ export class Ripper {
 
   /** Check for newly inserted discs. Public so tests can drive it. */
   async poll(): Promise<void> {
-    if (this.polling || this.stopped) return;
+    if (this.polling || this.stopped || this.holding) return;
     this.polling = true;
     try {
       const present = this.discMounts();
@@ -782,7 +784,7 @@ export class Ripper {
   // Stage 2: compress (one at a time, independent of the drive)
 
   private kickEncoder() {
-    if (this.encoderBusy || this.stopped) return;
+    if (this.encoderBusy || this.stopped || this.holding) return;
     const next = this.deps.jobs.withStatus('ripped')[0];
     if (!next) return;
     this.encoderBusy = true;
@@ -1219,6 +1221,48 @@ export class Ripper {
   /** Where names are looked up: TMDB when set up for the cloud, else Jellyfin. */
   private get searcher(): TitleSearch | null {
     return this.deps.titleSearch ?? this.deps.jellyfin;
+  }
+
+  /** Nothing is being read, ripped, compressed, filed or uploaded (or waiting to be). */
+  isIdle(): boolean {
+    if (this.discBusy || this.discAbort || this.encoderBusy) return false;
+    return (
+      this.deps.jobs.withStatus('scanning', 'ripping', 'ripped', 'encoding', 'filing', 'importing')
+        .length === 0
+    );
+  }
+
+  /** While an update installs: no new discs or compressions. */
+  holdForUpdate(on: boolean) {
+    this.holding = on;
+    if (!on) {
+      void this.poll();
+      this.kickEncoder();
+    }
+  }
+
+  /**
+   * "Remove from library" in the cloud: deletes that movie's folder from the Movies
+   * folder (and nothing else), then has Jellyfin drop it.
+   */
+  async removeMovieFolder(file: string): Promise<string> {
+    const movies = fs.realpathSync(this.config.moviesDir);
+    let folder: string;
+    try {
+      folder = fs.realpathSync(path.dirname(path.resolve(file)));
+    } catch {
+      return 'Already gone from the Movies folder.';
+    }
+    // Only a movie's own folder, directly inside the Movies folder.
+    if (path.dirname(folder) !== movies || folder === movies) {
+      throw new UserError(
+        `Not removed: ${file} isn’t in its own folder in ${this.config.moviesDir}.`,
+      );
+    }
+    fs.rmSync(folder, { recursive: true, force: true });
+    this.log.info(`Removed from the library: ${folder}`);
+    await this.deps.jellyfin?.refreshLibrary().catch(() => undefined);
+    return `Deleted ${path.basename(folder)}.`;
   }
 
   /** The Eject button on the Discs page. */

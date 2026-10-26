@@ -552,7 +552,18 @@ describe('cloud: removing a movie', () => {
     ).toBeLessThan(300);
     const res = await c.call('DELETE', '/api/movies/tmdb-680');
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ title: 'Pulp Fiction' });
+    expect(await res.json()).toEqual({ title: 'Pulp Fiction', fromMac: true });
+    // The Mac is asked to delete its copy: that file's folder only.
+    const health = { enabled: true, problems: [], warnings: [], watching: true, canSearch: true };
+    const told = (await (await c.mac('POST', '/status', { health, jobs: [] })).json()) as {
+      commands: { action: string; payload: { path: string } }[];
+    };
+    expect(told.commands).toMatchObject([
+      {
+        action: 'removeMovie',
+        payload: { path: '/Volumes/LaCie/Movies/Pulp Fiction/Pulp Fiction.mp4' },
+      },
+    ]);
     expect((await c.call('GET', '/api/movies/tmdb-680')).status).toBe(404);
     const list = (await (await c.call('GET', '/api/movies')).json()) as {
       items: { id: string }[];

@@ -19,6 +19,8 @@ export interface AppConfig {
   backupDir: string;
   keepBackups: number;
   lowSpaceGb: number;
+  /** Install new versions by themselves when idle (needs a service that restarts Wheelhouse). */
+  autoUpdate: boolean;
   /** Automatic disc ripping (off unless RIPPER_ENABLED is set). */
   ripper: RipperConfig;
 }
@@ -64,6 +66,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     backupDir: path.resolve(env.BACKUP_DIR || path.join(env.DATA_DIR ?? 'data', 'backups')),
     keepBackups: Math.max(1, Number(env.BACKUP_KEEP ?? 14) || 14),
     lowSpaceGb: Math.max(1, Number(env.LOW_SPACE_GB ?? 30) || 30),
+    autoUpdate: bool(env.AUTO_UPDATE, true),
     ripper: loadRipperConfig(env),
   };
 }

@@ -668,6 +668,8 @@ export interface UpdateStatus {
   /** Their descriptions, newest first. */
   changes: string[];
   checkedAt: string | null;
+  /** New versions install by themselves when nothing is ripping or playing. */
+  auto?: boolean;
   state: {
     running: boolean;
     step: string | null;
