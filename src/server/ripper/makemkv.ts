@@ -277,16 +277,14 @@ export function classifyDisc(
   const movie = (options.movieMinutes ?? 75) * 60;
   const byIndex = [...titles].sort((a, b) => a.index - b.index);
 
-  // Titles that play the same segments for exactly the same time are one title (e.g.
-  // another angle). On DVDs, episodes in different title sets can share a segment
-  // list like "1-4", and episodes often run within a second of each other.
-  const unique = byIndex.filter(
-    (t, i) =>
-      !t.segments ||
-      !byIndex
-        .slice(0, i)
-        .some((o) => o.segments === t.segments && o.durationSeconds === t.durationSeconds),
-  );
+  // Titles that play exactly the same segments are one title (e.g. another angle).
+  const seen = new Set<string>();
+  const unique = byIndex.filter((t) => {
+    if (!t.segments) return true;
+    if (seen.has(t.segments)) return false;
+    seen.add(t.segments);
+    return true;
+  });
 
   const inRange = unique.filter(
     (t) => t.durationSeconds >= minEpisode && t.durationSeconds <= maxEpisode,

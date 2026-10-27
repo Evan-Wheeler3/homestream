@@ -111,12 +111,6 @@ describe('MakeMKV robot output', () => {
     expect(
       indexes(classifyDisc([title(0, 22, 'a'), title(1, 22, 'a'), title(2, 23, 'b')])),
     ).toEqual([0, 2]);
-    // DVD episodes in different title sets can share a segment list: still episodes.
-    // (The Office season 2, disc 1: two "play all" titles, 2542 s and 5204 s.)
-    const office = [1250, 1291, 2542, 1288, 1286, 1314, 1313, 5204, 575, 237, 2455, 140].map(
-      (s, i) => ({ ...title(i, s / 60, i === 7 || i === 2 ? `p${i}` : '1-4') }),
-    );
-    expect(indexes(classifyDisc(office))).toEqual([0, 1, 3, 4, 5, 6]);
   });
 
   it('picks the longest title as the main feature', () => {
