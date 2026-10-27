@@ -22,6 +22,7 @@ export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     backupDir: '/nonexistent-backups',
     keepBackups: 14,
     lowSpaceGb: 30,
+    autoUpdate: false,
     ripper: loadRipperConfig({}),
     ...overrides,
   };
