@@ -700,25 +700,6 @@
   max-width: 44ch;
   font-size: var(--text-sm);
 }
-.boxoffice__section {
-  margin-bottom: var(--s-4);
-}
-.boxoffice__joins {
-  display: grid;
-  gap: var(--s-2);
-  margin: var(--s-2) 0 0;
-  padding: 0;
-  list-style: none;
-}
-.boxoffice__joins li {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--s-3);
-  padding: var(--s-2) var(--s-3);
-  border-radius: var(--r-sm);
-  background: var(--accent-soft);
-}
 @media (max-width: 560px) {
   .boxoffice__chosen {
     flex-direction: column;
@@ -783,50 +764,6 @@
 }
 .theater-help .icon {
   vertical-align: -3px;
-}
-
-/* Box office: today's lineup */
-.boxoffice__lineup {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
-  gap: var(--s-2);
-  margin: var(--s-2) 0 var(--s-4);
-  padding: 0;
-  list-style: none;
-}
-.lineup__card {
-  display: grid;
-  gap: 2px;
-  width: 100%;
-  padding: var(--s-1);
-  border: var(--border);
-  border-radius: var(--r-sm);
-  background: var(--surface-2);
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.lineup__card:hover,
-.lineup__card:focus-visible {
-  border-color: var(--accent);
-}
-.lineup__card img,
-.lineup__card .boxoffice__noposter {
-  width: 100%;
-  height: auto;
-  aspect-ratio: 2 / 3;
-  object-fit: cover;
-  image-rendering: pixelated;
-}
-.lineup__theater {
-  font-family: 'Courier New', ui-monospace, monospace;
-  font-weight: 800;
-  font-size: var(--text-2xs);
-  color: var(--accent);
-}
-.lineup__title {
-  font-size: var(--text-xs);
-  line-height: 1.2;
 }
 .boxoffice__where {
   margin: 0;

@@ -3,6 +3,8 @@ import { BLOCK } from '../../src/client/theater/blocks';
 import { meshChunk } from '../../src/client/theater/grid';
 import {
   buildBuilding,
+  CHUNK,
+  chunkOwner,
   galleryPlan,
   LOBBY,
   placeAt,
@@ -122,6 +124,33 @@ describe('the cinema building', () => {
     const next = planLayout(33);
     expect(next.wings).toHaveLength(full.wings.length + 1);
     expect(next.hallZ0).toBeLessThan(full.hallZ0);
+  });
+
+  it('from inside any theater, all four of its walls are drawn', () => {
+    // A wall is drawn with the chunk it's in: always, or with this theater, or with the
+    // one next door that's drawn along with it.
+    const ownerAt = (x: number, z: number) =>
+      chunkOwner(
+        layout,
+        grid,
+        Math.floor(grid.ix(x) / CHUNK) * CHUNK,
+        Math.floor(grid.iz(z) / CHUNK) * CHUNK,
+      );
+    for (const t of THEATERS) {
+      const shown = new Set([null, t.number, t.inner]);
+      const walls = [
+        ...[-THEATER_HALF_WIDTH - 0.25, THEATER_HALF_WIDTH + 0.25].flatMap((v) =>
+          [1, 6, 11, 16, 21].map((u) => toWorld(t, u, v)),
+        ),
+        ...[-0.25, 22.25].flatMap((u) => [-6, 0, 3].map((v) => toWorld(t, u, v))),
+      ];
+      for (const w of walls) {
+        expect(grid.at(w.x, 2, w.z), `theater ${t.number} wall`).not.toBe(BLOCK.air);
+        expect(shown.has(ownerAt(w.x, w.z)), `theater ${t.number} wall at ${w.x},${w.z}`).toBe(
+          true,
+        );
+      }
+    }
   });
 
   it('names the corridor you are in', () => {

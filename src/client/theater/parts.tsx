@@ -44,7 +44,6 @@ export function BoxOffice({
   othersHere,
   onClose,
   onBuy,
-  onJoin,
 }: {
   open: boolean;
   movies: Movie[];
@@ -55,7 +54,6 @@ export function BoxOffice({
   othersHere: boolean;
   onClose(): void;
   onBuy(choice: TicketChoice): void;
-  onJoin(theater: number): void;
 }) {
   const [q, setQ] = useState('');
   const [picked, setPicked] = useState<string | null>(preselect);
@@ -71,22 +69,19 @@ export function BoxOffice({
   const needle = q.trim().toLowerCase();
   const list = needle ? sorted.filter((m) => m.title.toLowerCase().includes(needle)) : sorted;
   const movie = movies.find((m) => m.id === (picked ?? preselect));
-  const joinable = showings.filter((s) => s.shared && s.status !== 'ended');
+  // Someone's already watching it together: a "Watch together" ticket joins them.
+  const together = movie
+    ? showings.find((s) => s.shared && s.status !== 'ended' && s.movieId === movie.id)
+    : undefined;
   const resume = movie && movie.user.positionSeconds > 60 ? movie.user.positionSeconds : 0;
   const lineupIndex = movie ? lineup.indexOf(movie.id) : -1;
-  // The newest arrivals (the highest-numbered theaters).
-  const today = lineup
-    .map((id, i) => ({ theater: i + 1, movie: movies.find((m) => m.id === id) }))
-    .filter((x): x is { theater: number; movie: Movie } => Boolean(x.movie))
-    .reverse()
-    .slice(0, 8);
 
   return (
     <Dialog
       open={open}
       onClose={onClose}
       title="Box office"
-      description="Every movie has its own theater. Pick one of the new arrivals, or anything in the collection."
+      description="Every movie has its own theater. Pick one to get a ticket."
       size="lg"
       footer={
         movie ? (
@@ -127,6 +122,12 @@ export function BoxOffice({
                 ? `🎟️ Showing in Theater ${lineupIndex + 1}`
                 : '🎟️ A special screening: we’ll find it a free theater'}
             </p>
+            {together && (
+              <p className="boxoffice__where">
+                👥 {together.hostName}’s showing is on in Theater {together.theater}: pick{' '}
+                <strong>Watch together</strong> to join it.
+              </p>
+            )}
             <p className="boxoffice__label">Showing</p>
             <Segmented
               label="Showing"
@@ -160,45 +161,6 @@ export function BoxOffice({
         </div>
       ) : (
         <>
-          {today.length > 0 && (
-            <section className="boxoffice__section">
-              <h3 className="boxoffice__label">New arrivals</h3>
-              <ul className="boxoffice__lineup">
-                {today.map(({ theater, movie: m }) => (
-                  <li key={theater}>
-                    <button type="button" className="lineup__card" onClick={() => setPicked(m.id)}>
-                      {m.images.poster ? (
-                        <img src={sizedImage(m.images.poster, 160)} alt="" loading="lazy" />
-                      ) : (
-                        <span className="boxoffice__noposter" />
-                      )}
-                      <span className="lineup__theater">Theater {theater}</span>
-                      <span className="lineup__title">{m.title}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-          {joinable.length > 0 && (
-            <section className="boxoffice__section">
-              <h3 className="boxoffice__label">Now showing together</h3>
-              <ul className="boxoffice__joins">
-                {joinable.map((s) => (
-                  <li key={s.theater}>
-                    <span>
-                      <strong>Theater {s.theater}</strong> · {s.title}
-                      <span className="muted"> · {s.hostName}’s showing</span>
-                    </span>
-                    <Button size="sm" variant="primary" onClick={() => onJoin(s.theater)}>
-                      Join
-                    </Button>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-          <h3 className="boxoffice__label">Everything in the collection</h3>
           <input
             className="input boxoffice__search"
             type="search"

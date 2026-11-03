@@ -118,10 +118,11 @@ test('theater: snacks in your hands, a ticket for a movie in its own theater, an
   await page.getByRole('button', { name: 'Box office' }).click();
   await page.getByRole('button', { name: /Buy a ticket/ }).click();
   const box = page.getByRole('dialog', { name: 'Box office' });
-  await expect(box.getByRole('heading', { name: 'New arrivals' })).toBeVisible();
-  const n = Number((await box.locator('.lineup__theater').nth(2).innerText()).replace(/\D/g, ''));
-  await box.locator('.lineup__card').nth(2).click();
-  await expect(box).toContainText(`Showing in Theater ${n}`);
+  // Just every movie, with a search.
+  await expect(box.getByRole('searchbox', { name: 'Search movies' })).toBeVisible();
+  await box.locator('.boxoffice__movie').nth(2).click();
+  const where = await box.locator('.boxoffice__where').first().innerText();
+  const n = Number(/Theater (\d+)/.exec(where)![1]);
   await box.getByRole('radio', { name: 'Private screening' }).click();
   const title = (await box.locator('.boxoffice__title').innerText()).replace(/\s*\(\d{4}\)$/, '');
   await box.getByRole('button', { name: 'Get a ticket' }).click();
@@ -432,9 +433,20 @@ test('theater: walk the whole way on foot, up the main hall, down a corridor to 
   await face(page, 0);
   await page.getByRole('button', { name: /Buy a ticket/ }).click();
   const box = page.getByRole('dialog', { name: 'Box office' });
-  const n = Number((await box.locator('.lineup__theater').first().innerText()).replace(/\D/g, ''));
+  const newest = await page.evaluate(() => {
+    const e = (
+      window as unknown as {
+        __theater: { engine: { lineup: string[]; movies: { id: string; title: string }[] } };
+      }
+    ).__theater.engine;
+    return e.movies.find((m) => m.id === e.lineup.at(-1))!.title;
+  });
+  await box.getByRole('searchbox', { name: 'Search movies' }).fill(newest);
+  await box.locator('.boxoffice__movie', { hasText: newest }).first().click();
+  const n = Number(
+    /Theater (\d+)/.exec(await box.locator('.boxoffice__where').first().innerText())![1],
+  );
   expect(n).toBe(layout.theaters.length);
-  await box.locator('.lineup__card').first().click();
   await box.getByRole('radio', { name: 'Private screening' }).click();
   await box.getByRole('button', { name: 'Get a ticket' }).click();
   await expect(page.getByRole('complementary', { name: 'Your ticket' })).toContainText(

@@ -57,8 +57,14 @@ test('theater: two people in the building, one shared showing, in step', async (
   await a.page.screenshot({ path: info.outputPath('theater-someone-else.png') });
   await b.page.getByRole('button', { name: /Buy a ticket/ }).click();
   const boxB = b.page.getByRole('dialog', { name: 'Box office' });
-  await expect(boxB.getByText('Now showing together')).toBeVisible();
-  await boxB.getByRole('button', { name: 'Join' }).click();
+  // The same movie, watching together: B joins A's showing.
+  await boxB.locator('.boxoffice__movie', { hasText: 'Pulp Fiction' }).click();
+  await expect(boxB).toContainText('showing is on in Theater');
+  await expect(boxB.getByRole('radio', { name: 'Watch together' })).toHaveAttribute(
+    'aria-checked',
+    'true',
+  );
+  await boxB.getByRole('button', { name: 'Get a ticket' }).click();
   await expect(b.page.getByRole('complementary', { name: 'Your ticket' })).toContainText(
     'Pulp Fiction',
   );

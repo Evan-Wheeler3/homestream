@@ -22,7 +22,7 @@ import {
   SCREEN,
   seatPose,
   STANDEES,
-  theaterAt,
+  chunkOwner,
   theaterTrash,
   THEATER_DEPTH,
   THEATER_HALF_WIDTH,
@@ -142,7 +142,7 @@ export function buildWorld(movies: GalleryMovie[], lineup: (string | null)[]): W
     for (let iz = 0; iz < grid.nz; iz += CHUNK) {
       const x = grid.bounds.x0 + (ix + CHUNK / 2) * VOXEL;
       const z = grid.bounds.z0 + (iz + CHUNK / 2) * VOXEL;
-      chunks.push({ ix, iz, x, z, owner: theaterAt(layout, x, z)?.number ?? null, meshes: null });
+      chunks.push({ ix, iz, x, z, owner: chunkOwner(layout, grid, ix, iz), meshes: null });
     }
   }
   const meshChunkAt = (c: Chunk) => {
@@ -956,11 +956,13 @@ export function buildWorld(movies: GalleryMovie[], lineup: (string | null)[]): W
     },
     showFrom(place, x, z) {
       // From a corridor only the nearest doorways show anything of the rooms behind them.
+      // Inside a theater: it, and the one next door whose blocks include the wall between them.
+      const room = place.kind === 'theater' ? layout.theaters[place.number - 1] : undefined;
       for (const [n, g] of groups) {
         const t = layout.theaters[n - 1]!;
         const door = toWorld(t, -0.5, THEATER_HALF_WIDTH - 1);
         g.visible =
-          (place.kind === 'theater' && place.number === n) ||
+          (room !== undefined && (room.number === n || room.inner === n)) ||
           (place.kind === 'hall' && Math.hypot(door.x - x, door.z - z) < 16);
       }
     },

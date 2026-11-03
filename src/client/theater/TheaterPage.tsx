@@ -960,13 +960,6 @@ function Cinema({ me, cloud, movies }: { me: SessionUser; cloud: boolean; movies
         othersHere={others.length > 0}
         onClose={closeDialog}
         onBuy={(choice) => buy(choice)}
-        onJoin={(theater) => {
-          const s = showingsRef.current.get(theater);
-          const movie = movies.find((m) => m.id === s?.movieId);
-          if (movie)
-            intentRef.current = { choice: { movie, shared: true, startSeconds: 0 }, seat: null };
-          linkRef.current?.send({ t: 'join', theater });
-        }}
       />
       <Concessions
         open={dialog?.kind === 'concessions'}

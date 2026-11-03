@@ -93,6 +93,11 @@ export interface TheaterPlan {
   perp: Vec;
   /** +1 when +v is on your right as you face the screen. */
   across: 1 | -1;
+  /**
+   * The theater next door, toward the main hall (null for the first along a corridor).
+   * The wall between them is drawn as part of that one, so it's drawn when you're in this one too.
+   */
+  inner: number | null;
   /** Inside the auditorium (its walls are outside this). */
   x0: number;
   x1: number;
@@ -160,7 +165,15 @@ function theaterPlan(number: number, wing: number, arm: -1 | 1, pos: number, nor
   };
   const dir = { x: 0, z: north ? -1 : 1 };
   const perp = { x: -arm, z: 0 };
-  const plan = { number, wing, arm, origin, dir, perp } as TheaterPlan;
+  const plan = {
+    number,
+    wing,
+    arm,
+    origin,
+    dir,
+    perp,
+    inner: pos > 0 ? number - 2 : null,
+  } as TheaterPlan;
   plan.across = perp.x * dir.z - perp.z * dir.x > 0 ? 1 : -1;
   Object.assign(
     plan,
@@ -696,6 +709,16 @@ export function buildBuilding(movieCount: number): Building {
 
 /** The bin inside each auditorium (by the screen, across from the door). */
 export const theaterTrash = (t: TheaterPlan) => toWorld(t, 2.25, -THEATER_HALF_WIDTH + 0.25);
+
+/**
+ * The theater a chunk of blocks belongs to (drawn only when you can see into it),
+ * or null for chunks that are always drawn. `ix`, `iz`: the chunk's first cell.
+ */
+export function chunkOwner(layout: Layout, grid: VoxelGrid, ix: number, iz: number): number | null {
+  const x = grid.bounds.x0 + (ix + CHUNK / 2) * VOXEL;
+  const z = grid.bounds.z0 + (iz + CHUNK / 2) * VOXEL;
+  return theaterAt(layout, x, z)?.number ?? null;
+}
 
 /** Which theater's doorway (if any) a spot is in. */
 export function doorwayAt(layout: Layout, x: number, z: number): number | null {
