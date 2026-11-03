@@ -31,7 +31,7 @@ export interface TicketChoice {
   movie: Movie;
   shared: boolean;
   startSeconds: number;
-  /** The theater showing it today, if it's in the lineup. */
+  /** The movie's own theater. */
   theater?: number;
 }
 
@@ -48,7 +48,7 @@ export function BoxOffice({
 }: {
   open: boolean;
   movies: Movie[];
-  /** Today's movie in each theater (index 0 is Theater 1). */
+  /** Each theater's movie (index 0 is Theater 1). */
   lineup: (string | null)[];
   preselect: string | null;
   showings: Showing[];
@@ -74,16 +74,19 @@ export function BoxOffice({
   const joinable = showings.filter((s) => s.shared && s.status !== 'ended');
   const resume = movie && movie.user.positionSeconds > 60 ? movie.user.positionSeconds : 0;
   const lineupIndex = movie ? lineup.indexOf(movie.id) : -1;
+  // The newest arrivals (the highest-numbered theaters).
   const today = lineup
     .map((id, i) => ({ theater: i + 1, movie: movies.find((m) => m.id === id) }))
-    .filter((x): x is { theater: number; movie: Movie } => Boolean(x.movie));
+    .filter((x): x is { theater: number; movie: Movie } => Boolean(x.movie))
+    .reverse()
+    .slice(0, 8);
 
   return (
     <Dialog
       open={open}
       onClose={onClose}
       title="Box office"
-      description="Pick a movie from today’s lineup, or anything from the collection."
+      description="Every movie has its own theater. Pick one of the new arrivals, or anything in the collection."
       size="lg"
       footer={
         movie ? (
@@ -121,7 +124,7 @@ export function BoxOffice({
             {movie.runtimeMinutes && <p className="muted">{movie.runtimeMinutes} min</p>}
             <p className="boxoffice__where">
               {lineupIndex >= 0
-                ? `🎟️ Showing today in Theater ${lineupIndex + 1}`
+                ? `🎟️ Showing in Theater ${lineupIndex + 1}`
                 : '🎟️ A special screening: we’ll find it a free theater'}
             </p>
             <p className="boxoffice__label">Showing</p>
@@ -159,7 +162,7 @@ export function BoxOffice({
         <>
           {today.length > 0 && (
             <section className="boxoffice__section">
-              <h3 className="boxoffice__label">Today’s lineup</h3>
+              <h3 className="boxoffice__label">New arrivals</h3>
               <ul className="boxoffice__lineup">
                 {today.map(({ theater, movie: m }) => (
                   <li key={theater}>

@@ -6,7 +6,10 @@
 // ticket for which theater and seat, and where each showing's movie is. Every
 // viewer streams the movie themselves and keeps their video in step with it.
 
+/** Theaters in a building from before every movie had its own (older pages don't say). */
 export const THEATER_COUNT = 8;
+/** The most theaters a building can have (one per movie). */
+export const MAX_THEATERS = 5000;
 export const ROWS = 6;
 export const SEATS_PER_ROW = 10;
 export const SEAT_COUNT = ROWS * SEATS_PER_ROW;
@@ -54,44 +57,17 @@ export type Scores = Record<ArcadeGameId, HighScore[]>;
 export const emptyScores = (): Scores => ({ snake: [], breakout: [], catch: [] });
 const TOP_SCORES = 10;
 
-/** A small seeded random number generator (the same sequence for the same seed). */
-function seeded(seed: string) {
-  let h = 1779033703 ^ seed.length;
-  for (let i = 0; i < seed.length; i++) {
-    h = Math.imul(h ^ seed.charCodeAt(i), 3432918353);
-    h = (h << 13) | (h >>> 19);
-  }
-  return () => {
-    h = Math.imul(h ^ (h >>> 16), 2246822507);
-    h = Math.imul(h ^ (h >>> 13), 3266489909);
-    h ^= h >>> 16;
-    return (h >>> 0) / 4294967296;
-  };
-}
-
 /**
- * Today's lineup: which movie each theater shows (index 0 is Theater 1). The
- * newest arrival gets Theater 1; the rest are a shuffle that changes each day
- * and is the same for everyone.
+ * Which movie each theater shows (index 0 is Theater 1): every movie has its own
+ * theater, numbered in the order the movies arrived, so a new movie gets the next
+ * theater and the others keep theirs. The same for everyone with the same library.
  */
-export function dailyLineup(
-  movies: { id: string; dateAdded: string | null }[],
-  day: string,
-): (string | null)[] {
-  const newest = [...movies].sort(
-    (a, b) => (b.dateAdded ?? '').localeCompare(a.dateAdded ?? '') || a.id.localeCompare(b.id),
-  )[0];
-  const rest = movies
-    .filter((m) => m !== newest)
-    .map((m) => m.id)
-    .sort();
-  const random = seeded(day);
-  for (let i = rest.length - 1; i > 0; i--) {
-    const j = Math.floor(random() * (i + 1));
-    [rest[i], rest[j]] = [rest[j]!, rest[i]!];
-  }
-  const ids = newest ? [newest.id, ...rest] : rest;
-  return Array.from({ length: THEATER_COUNT }, (_, i) => ids[i] ?? null);
+export function theaterLineup(movies: { id: string; dateAdded: string | null }[]): string[] {
+  return [...movies]
+    .sort(
+      (a, b) => (a.dateAdded ?? '').localeCompare(b.dateAdded ?? '') || a.id.localeCompare(b.id),
+    )
+    .map((m) => m.id);
 }
 
 export const REACTIONS = ['😂', '😱', '😍', '👏', '😭', '🔥', '🍿', '👀'] as const;
@@ -157,8 +133,10 @@ export type ClientMessage =
       runtimeMinutes: number | null;
       shared: boolean;
       startSeconds: number;
-      /** The theater showing it today, when it's in the lineup. */
+      /** The movie's own theater. */
       theater?: number;
+      /** How many theaters the building has. */
+      theaters?: number;
     }
   | { t: 'score'; game: ArcadeGameId; score: number }
   | { t: 'join'; theater: number }
@@ -379,11 +357,16 @@ export class TheaterState {
     const movieId = text(m.movieId, 120);
     if (!movieId) return;
     const shared = m.shared === true;
+    // How many theaters the building has (one per movie in the library).
+    const count =
+      typeof m.theaters === 'number' && Number.isInteger(m.theaters)
+        ? Math.min(MAX_THEATERS, Math.max(1, m.theaters))
+        : THEATER_COUNT;
     const wanted =
       typeof m.theater === 'number' &&
       Number.isInteger(m.theater) &&
       m.theater >= 1 &&
-      m.theater <= THEATER_COUNT
+      m.theater <= count
         ? m.theater
         : null;
     this.release(player);
@@ -397,9 +380,9 @@ export class TheaterState {
     if (theater === undefined) {
       // The theater showing it today if it's free; otherwise the next free one
       // (a movie that isn't in the lineup always tries the same theater first).
-      const start = wanted ?? (hash(movieId) % THEATER_COUNT) + 1;
-      for (let k = 0; k < THEATER_COUNT && theater === undefined; k++) {
-        const n = ((start - 1 + k) % THEATER_COUNT) + 1;
+      const start = wanted ?? (hash(movieId) % count) + 1;
+      for (let k = 0; k < count && theater === undefined; k++) {
+        const n = ((start - 1 + k) % count) + 1;
         if (!this.showings.has(n)) theater = n;
       }
       if (wanted !== null && theater !== undefined && theater !== wanted) {
@@ -413,7 +396,7 @@ export class TheaterState {
       this.send(null, { t: 'player', player });
       return this.fail(
         player.id,
-        `All ${THEATER_COUNT} theaters are showing something. Join a showing, or try again when one finishes.`,
+        `All ${count} theaters are showing something. Join a showing, or try again when one finishes.`,
       );
     }
     if (!same) {

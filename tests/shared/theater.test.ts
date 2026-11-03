@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   COUNTDOWN_MS,
   countdownLeft,
-  dailyLineup,
+  theaterLineup,
   positionAt,
   THEATER_COUNT,
   TheaterState,
@@ -233,23 +233,55 @@ describe('the theater', () => {
   });
 });
 
-describe('today’s lineup', () => {
+describe('a theater for every movie', () => {
   const movies = Array.from({ length: 20 }, (_, i) => ({
     id: `m${i}`,
     dateAdded: `2026-01-${String(i + 1).padStart(2, '0')}`,
   }));
 
-  it('puts the newest arrival in Theater 1 and eight different movies in eight theaters', () => {
-    const today = dailyLineup(movies, '2026-10-23');
-    expect(today[0]).toBe('m19');
-    expect(new Set(today).size).toBe(8);
-    // The same for everyone on the same day, different on another day.
-    expect(dailyLineup([...movies].reverse(), '2026-10-23')).toEqual(today);
-    expect(dailyLineup(movies, '2026-10-24')).not.toEqual(today);
+  it('numbers the theaters in the order the movies arrived, the same for everyone', () => {
+    const lineup = theaterLineup(movies);
+    expect(lineup).toHaveLength(20);
+    expect(lineup[0]).toBe('m0');
+    expect(lineup.at(-1)).toBe('m19');
+    expect(theaterLineup([...movies].reverse())).toEqual(lineup);
   });
 
-  it('leaves theaters empty when the library is small', () => {
-    expect(dailyLineup(movies.slice(0, 3), 'd')).toHaveLength(8);
-    expect(dailyLineup(movies.slice(0, 3), 'd').filter(Boolean)).toHaveLength(3);
+  it('a new movie gets the next theater; the others keep theirs', () => {
+    const before = theaterLineup(movies);
+    const after = theaterLineup([...movies, { id: 'new', dateAdded: '2026-02-01' }]);
+    expect(after.slice(0, 20)).toEqual(before);
+    expect(after[20]).toBe('new');
+  });
+
+  it('tickets work in a building with hundreds of theaters', () => {
+    const inbox: { to: string | null; m: { t: string; message?: string } }[] = [];
+    const state = new TheaterState(
+      (to, m) => inbox.push({ to, m }),
+      () => 0,
+    );
+    state.join('a', { userId: 'u', name: 'Evan', color: null, emoji: null, image: null });
+    state.join('b', { userId: 'v', name: 'Sam', color: null, emoji: null, image: null });
+    const buy = (id: string, movieId: string, theater: number) =>
+      state.handle(id, {
+        t: 'ticket',
+        movieId,
+        title: movieId,
+        poster: null,
+        runtimeMinutes: 100,
+        shared: false,
+        startSeconds: 0,
+        theater,
+        theaters: 300,
+      });
+    buy('a', 'm250', 250);
+    expect(state.players.get('a')!.ticket).toBe(250);
+    // Someone's private screening is in there: the next free theater.
+    buy('b', 'm250', 250);
+    expect(state.players.get('b')!.ticket).toBe(251);
+    // The very last theater wraps round to Theater 1 when it's busy.
+    buy('a', 'm300', 300);
+    buy('b', 'm300', 300);
+    expect(state.players.get('b')!.ticket).toBe(1);
   });
 });

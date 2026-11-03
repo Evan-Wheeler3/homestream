@@ -23,7 +23,34 @@ type Engine = {
   body: { x: number; y: number; z: number };
   yaw: number;
   simulate(i: { forward?: number; strafe?: number; sprint?: boolean }, s: number): void;
+  layout: {
+    hallZ0: number;
+    gallery: { z1: number };
+    wings: { zc: number }[];
+    theaters: {
+      wing: number;
+      origin: { x: number; z: number };
+      dir: { x: number; z: number };
+      perp: { x: number; z: number };
+    }[];
+  };
 };
+
+/** The building's layout (it grows with the library), from the page. */
+async function plan(page: Page) {
+  return page.evaluate(
+    () => (window as unknown as { __theater: { engine: Engine } }).__theater.engine.layout,
+  );
+}
+
+/** A spot in a theater: u metres from the screen wall, v across (+v toward the main hall). */
+function spot(layout: Engine['layout'], theater: number, u: number, v: number) {
+  const t = layout.theaters[theater - 1]!;
+  return {
+    x: t.origin.x + u * t.dir.x + v * t.perp.x,
+    z: t.origin.z + u * t.dir.z + v * t.perp.z,
+  };
+}
 
 /** Faces a spot and walks there (through the same walls and doors as the keys). */
 async function walkTo(page: Page, x: number, z: number, label: string) {
@@ -55,7 +82,7 @@ async function face(page: Page, yaw: number) {
   }, yaw);
 }
 
-test('theater: snacks in your hands, a ticket for today’s movie, and the show starts after 3, 2, 1', async ({
+test('theater: snacks in your hands, a ticket for a movie in its own theater, and the show starts after 3, 2, 1', async ({
   page,
 }, info) => {
   test.setTimeout(240_000);
@@ -86,24 +113,25 @@ test('theater: snacks in your hands, a ticket for today’s movie, and the show 
   await page.waitForTimeout(800);
   await page.screenshot({ path: info.outputPath('theater-snacks.png') });
 
-  // The box office: today's lineup, one movie per theater.
+  // The box office: every movie has its own theater; the newest arrivals first.
   await page.getByRole('button', { name: 'Go to…' }).click();
   await page.getByRole('button', { name: 'Box office' }).click();
   await page.getByRole('button', { name: /Buy a ticket/ }).click();
   const box = page.getByRole('dialog', { name: 'Box office' });
-  await expect(box.getByRole('heading', { name: 'Today’s lineup' })).toBeVisible();
+  await expect(box.getByRole('heading', { name: 'New arrivals' })).toBeVisible();
+  const n = Number((await box.locator('.lineup__theater').nth(2).innerText()).replace(/\D/g, ''));
   await box.locator('.lineup__card').nth(2).click();
-  await expect(box).toContainText('Showing today in Theater 3');
+  await expect(box).toContainText(`Showing in Theater ${n}`);
   await box.getByRole('radio', { name: 'Private screening' }).click();
   const title = (await box.locator('.boxoffice__title').innerText()).replace(/\s*\(\d{4}\)$/, '');
   await box.getByRole('button', { name: 'Get a ticket' }).click();
   await expect(box).toBeHidden();
   const ticket = page.getByRole('complementary', { name: 'Your ticket' });
-  await expect(ticket).toContainText('Theater 3');
+  await expect(ticket).toContainText(`Theater ${n}`);
   await expect(ticket).toContainText(title);
 
   await ticket.getByRole('button', { name: 'Find me a seat' }).click();
-  await expect(page.locator('.theater__place')).toHaveText('Theater 3');
+  await expect(page.locator('.theater__place')).toHaveText(`Theater ${n}`);
   const sit = page.getByRole('button', { name: /Sit in seat C5/ });
   await expect(sit).toBeVisible();
   await page.waitForTimeout(600);
@@ -390,33 +418,46 @@ test('theater: walk forward, back, sideways, run, jump, and wherever you turn', 
   expect((await where()).yaw).toBeGreaterThan(before + 0.3);
 });
 
-test('theater: walk the whole way on foot, from the doors to a seat and to The Collection', async ({
+test('theater: walk the whole way on foot, up the main hall, down a corridor to a seat, and to The Collection', async ({
   page,
 }) => {
   test.setTimeout(600_000);
   await signIn(page);
   const welcome = await enter(page);
   await welcome.getByRole('button', { name: 'Let’s go' }).click();
+  const layout = await plan(page);
 
-  // Walk to the box office and buy a ticket for Theater 1's movie.
+  // Walk to the box office and buy a ticket for the newest movie (the furthest theater).
   await walkTo(page, -9.5, -4.3, 'the box office');
   await face(page, 0);
   await page.getByRole('button', { name: /Buy a ticket/ }).click();
   const box = page.getByRole('dialog', { name: 'Box office' });
+  const n = Number((await box.locator('.lineup__theater').first().innerText()).replace(/\D/g, ''));
+  expect(n).toBe(layout.theaters.length);
   await box.locator('.lineup__card').first().click();
   await box.getByRole('radio', { name: 'Private screening' }).click();
   await box.getByRole('button', { name: 'Get a ticket' }).click();
-  await expect(page.getByRole('complementary', { name: 'Your ticket' })).toContainText('Theater 1');
+  await expect(page.getByRole('complementary', { name: 'Your ticket' })).toContainText(
+    `Theater ${n}`,
+  );
 
-  // Past the usher, into the hallway, through Theater 1's door (on the left).
-  await walkTo(page, 0, -12.5, 'the hallway');
+  // Past the usher, up the main hall to its corridor, along it to the door.
+  const zc = layout.wings[layout.theaters[n - 1]!.wing]!.zc;
+  const out = spot(layout, n, -2.2, 6.5);
+  await walkTo(page, 0, -12.5, 'the main hall');
   await expect(page.locator('.theater__place')).toHaveText('Hallway');
-  await walkTo(page, -2.4, -12.5, 'Theater 1’s door');
-  await walkTo(page, -5.5, -12.5, 'inside Theater 1');
-  await expect(page.locator('.theater__place')).toHaveText('Theater 1');
+  await walkTo(page, 0, zc, 'the corridor');
+  await walkTo(page, out.x, zc, 'along the corridor');
+  await walkTo(page, out.x, out.z, `Theater ${n}’s door`);
+  await expect(page.locator('.theater__place')).toHaveText(/^Theaters? \d/);
+  const inside = spot(layout, n, 1.5, 6.5);
+  await walkTo(page, inside.x, inside.z, `inside Theater ${n}`);
+  await expect(page.locator('.theater__place')).toHaveText(`Theater ${n}`);
   // Up the aisle stairs and along the walkway in front of row C.
-  await walkTo(page, -14.5, -12.5, 'the aisle by row C');
-  await walkTo(page, -14.5, -19.5, 'the middle of row C');
+  const aisle = spot(layout, n, 10.5, 6.5);
+  const rowC = spot(layout, n, 10.5, -0.5);
+  await walkTo(page, aisle.x, aisle.z, 'the aisle by row C');
+  await walkTo(page, rowC.x, rowC.z, 'the middle of row C');
   await expect(page.getByRole('button', { name: /Sit in seat C5/ })).toBeVisible();
   await page.getByRole('button', { name: /Sit in seat C5/ }).click();
   await expect(page.getByRole('group', { name: 'Movie controls' })).toBeVisible();
@@ -425,18 +466,21 @@ test('theater: walk the whole way on foot, from the doors to a seat and to The C
     .getByRole('button', { name: 'Stand up' })
     .click();
 
-  // Back out, down the hallway to The Collection.
-  await walkTo(page, -14.5, -12.5, 'the aisle');
-  await walkTo(page, -5.5, -12.5, 'the door');
-  await walkTo(page, 0, -12.5, 'the hallway');
-  await walkTo(page, 0, -74, 'the end of the hallway');
-  await walkTo(page, 0, -78.5, 'The Collection');
+  // Back out, and up the main hall to The Collection.
+  await walkTo(page, aisle.x, aisle.z, 'the aisle');
+  await walkTo(page, inside.x, inside.z, 'the door');
+  await walkTo(page, out.x, out.z, 'the corridor');
+  await walkTo(page, out.x, zc, 'the middle of the corridor');
+  await walkTo(page, 0, zc, 'the main hall');
+  await walkTo(page, 0, layout.hallZ0 + 2, 'the end of the main hall');
+  await walkTo(page, 0, layout.hallZ0 - 2.5, 'The Collection');
   await expect(page.locator('.theater__place')).toHaveText('The Collection');
   // In front of the first wall of posters: one of them offers a ticket.
-  await walkTo(page, 0.6, -80.3, 'in front of the posters');
+  const g = layout.gallery.z1;
+  await walkTo(page, 0.6, g - 3.3, 'in front of the posters');
   await face(page, 0);
   await expect(page.getByRole('button', { name: /Get a ticket/ })).toBeVisible();
   // And on round the zig-zag, through the gap at the east end.
-  await walkTo(page, 8, -80, 'the end of the first wall');
-  await walkTo(page, 8, -84.5, 'the second corridor');
+  await walkTo(page, 8, g - 3, 'the end of the first wall');
+  await walkTo(page, 8, g - 7.5, 'the second corridor');
 });

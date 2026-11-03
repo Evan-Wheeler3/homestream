@@ -3,18 +3,32 @@
 // of it, and each room paints its own walls, floor and ceiling. What you see
 // and what you walk into come from the same grid.
 //
-//            ┌──────────── The Collection (a zig-zag gallery, A to Z) ────────────┐
-//            └──────────────────────────────┬──┬──────────────────────────────────┘
-//   Theater 7 (screen on the hall wall)  ◄  │  │  ►  Theater 8
-//   Theater 5                            ◄  │  │  ►  Theater 6
-//   Theater 3                            ◄  │  │  ►  Theater 4
-//   Theater 1                            ◄  │  │  ►  Theater 2
-//            ┌──────────────────────────────┴──┴──────────────────────────────────┐
-//            │ Box office   NOW SHOWING     usher        Concessions   (menu)     │
-//            │ Restrooms                Lobby                         Arcade     │
-//            └───────────────────────────[ glass doors ]──────────────────────────┘
-//                                     sidewalk and street
-import { ROWS, SEATS_PER_ROW, THEATER_COUNT } from '../../shared/theater';
+// Every movie has its own theater, numbered in the order the movies arrived, so
+// the building grows with the library: the main hall runs north from the lobby,
+// and corridors branch off it to the left and right, with theaters on both
+// sides of each corridor (their screens on the corridor wall). A new movie adds
+// a theater at the end of the newest corridor, or starts the next corridor.
+//
+// With three theaters each side of each arm (bigger libraries get longer corridors):
+//
+//                 ┌──── The Collection (a zig-zag gallery, A to Z) ────┐
+//                 └─────────────────────┬──┬───────────────────────────┘
+//     ┌──┬──┬──┐                        │  │                  ┌──┬──┬──┐
+//     │18│16│14│                        │  │                  │20│22│24│
+//   ◄═╧══╧══╧══╧══════ corridor 2 ══════╡  ╞════ corridor 2 ═══╧══╧══╧══╧═►
+//     │17│15│13│                        │  │                  │19│21│23│
+//     └──┴──┴──┘                        │  │                  └──┴──┴──┘
+//     ┌──┬──┬──┐                        │  │                  ┌──┬──┬──┐
+//     │ 6│ 4│ 2│                        │  │                  │ 8│10│12│
+//   ◄═╧══╧══╧══╧══════ corridor 1 ══════╡  ╞════ corridor 1 ═══╧══╧══╧══╧═►
+//     │ 5│ 3│ 1│                        │  │                  │ 7│ 9│11│
+//     └──┴──┴──┘                        │  │                  └──┴──┴──┘
+//                 ┌─────────────────────┴──┴───────────────────────────┐
+//                 │ Box office   NOW SHOWING   usher    Concessions    │
+//                 │ Restrooms               Lobby               Arcade │
+//                 └─────────────────[ glass doors ]────────────────────┘
+//                                  sidewalk and street
+import { ROWS, SEATS_PER_ROW } from '../../shared/theater';
 import { BLOCK } from './blocks';
 import { VoxelGrid, VOXEL, type Bounds } from './grid';
 
@@ -25,8 +39,11 @@ export const PLAYER_HEIGHT = 1.8;
 export const SPAWN = { x: 0, z: 6, yaw: 0 };
 
 export const LOBBY = { x0: -15, x1: 15, z0: -10, z1: 10, height: 7 };
-export const HALL = { x0: -3, x1: 3, z0: -76, z1: -11, height: 7 };
-export const GALLERY = { x0: -11, x1: 11, z1: -77, height: 6 };
+/** The main hall: from the lobby north to The Collection (its far end depends on the library). */
+export const HALL = { x0: -3, x1: 3, z1: -11, height: 7 };
+/** A corridor: 6 m wide, with a 1 m wall each side, so wall to wall it's one 8 m chunk. */
+export const CORRIDOR = { halfWidth: 3, height: 7 };
+export const GALLERY = { x0: -11, x1: 11, height: 6 };
 export const BOX_OFFICE = { x0: -13, x1: -6, z0: -7, z1: -6 };
 export const CONCESSIONS = { x0: 6, x1: 13, z0: -7, z1: -6 };
 export const USHER = { x: 4, z: -8.5 };
@@ -42,63 +59,156 @@ export const STANDEES = [
   { x: 5.25, z: 1.25 },
 ];
 
-/** Inside an auditorium: u is metres from the screen wall (the hall), v across it. */
+/** Inside an auditorium: u is metres from the screen wall (the corridor), v across it. */
 export const THEATER_DEPTH = 22;
 export const THEATER_HALF_WIDTH = 7.5;
 export const THEATER_HEIGHT = 9;
-/** The screen: on the hall wall, in front of a black frame. */
+/** The screen: on the corridor wall, in front of a black frame. */
 export const SCREEN = { u: 0.52, width: 10.4, bottom: 1.2, top: 7.3 };
 const FIRST_ROW_U = 6;
 const ROW_STEP = 2;
 const RISER = 0.5;
 
+/** Along a corridor, a theater every 16 m (15 m inside, a 1 m wall between). */
+const THEATER_PITCH = 16;
+/** Each side of a corridor: 22 m of theater and a 2 m back wall. */
+const BAND = THEATER_DEPTH + 2;
+/** From one corridor to the next. */
+const WING_PITCH = 2 * BAND + 2 * (CORRIDOR.halfWidth + 1);
+/** The first corridor: its south theaters' back wall is the lobby's back wall. */
+const FIRST_WING_Z = HALL.z1 - BAND - (CORRIDOR.halfWidth + 1);
+
+type Vec = { x: number; z: number };
+
 export interface TheaterPlan {
   number: number;
-  /** -1: west of the hall, 1: east. */
-  side: -1 | 1;
-  /** The middle of the auditorium along the hall. */
-  zc: number;
+  /** Which corridor (0 is nearest the lobby), and which way along it (-1 west, 1 east). */
+  wing: number;
+  arm: -1 | 1;
+  /** On the screen wall's inside face, in the middle. */
+  origin: Vec;
+  /** Into the auditorium (away from the screen). */
+  dir: Vec;
+  /** Across it: +v is toward the main hall (the door's side). */
+  perp: Vec;
+  /** +1 when +v is on your right as you face the screen. */
+  across: 1 | -1;
+  /** Inside the auditorium (its walls are outside this). */
   x0: number;
   x1: number;
   z0: number;
   z1: number;
-  /** The doorway in the hall wall, at the front corner by the screen. */
+  /** The doorway through the corridor wall, at the screen corner nearest the main hall. */
   door: { x0: number; x1: number; z0: number; z1: number };
 }
 
-export function theaterPlan(number: number): TheaterPlan {
-  const pair = Math.floor((number - 1) / 2);
-  const side = number % 2 === 1 ? -1 : 1;
-  const zc = -19 - pair * 16;
+export interface WingPlan {
+  index: number;
+  /** The middle of the corridor. */
+  zc: number;
+  /** Where each arm of the corridor ends (x), and the theaters along it. */
+  west: { end: number; theaters: TheaterPlan[] };
+  east: { end: number; theaters: TheaterPlan[] };
+}
+
+export interface Layout {
+  theaters: TheaterPlan[];
+  wings: WingPlan[];
+  /** Theaters along each side of each arm of a corridor. */
+  perSide: number;
+  /** The main hall's north end. */
+  hallZ0: number;
+  gallery: GalleryPlan;
+}
+
+/** Longer corridors for bigger libraries, so the main hall doesn't get too long to walk. */
+export function perSideFor(count: number) {
+  return count <= 64 ? 4 : count <= 240 ? 6 : count <= 600 ? 8 : 10;
+}
+
+const box = (a: Vec, b: Vec) => ({
+  x0: Math.min(a.x, b.x),
+  x1: Math.max(a.x, b.x),
+  z0: Math.min(a.z, b.z),
+  z1: Math.max(a.z, b.z),
+});
+
+export function toWorld(t: TheaterPlan, u: number, v: number): Vec {
   return {
-    number,
-    side,
-    zc,
-    x0: side === -1 ? -4 - THEATER_DEPTH : 4,
-    x1: side === -1 ? -4 : 4 + THEATER_DEPTH,
-    z0: zc - THEATER_HALF_WIDTH,
-    z1: zc + THEATER_HALF_WIDTH,
-    door: {
-      x0: side === -1 ? -4 : 3,
-      x1: side === -1 ? -3 : 4,
-      z0: zc + 5.5,
-      z1: zc + THEATER_HALF_WIDTH,
-    },
+    x: t.origin.x + u * t.dir.x + v * t.perp.x,
+    z: t.origin.z + u * t.dir.z + v * t.perp.z,
   };
 }
 
-export const THEATERS = Array.from({ length: THEATER_COUNT }, (_, i) => theaterPlan(i + 1));
-
 export function toLocal(t: TheaterPlan, x: number, z: number) {
-  return { u: t.side === -1 ? -4 - x : x - 4, v: z - t.zc };
-}
-
-export function toWorld(t: TheaterPlan, u: number, v: number) {
-  return { x: t.side === -1 ? -4 - u : 4 + u, z: t.zc + v };
+  const dx = x - t.origin.x;
+  const dz = z - t.origin.z;
+  return { u: dx * t.dir.x + dz * t.dir.z, v: dx * t.perp.x + dz * t.perp.z };
 }
 
 /** Facing the screen (yaw 0 looks toward -z). */
-export const screenYaw = (t: TheaterPlan) => (t.side === -1 ? -Math.PI / 2 : Math.PI / 2);
+export const screenYaw = (t: TheaterPlan) => Math.atan2(t.dir.x, t.dir.z);
+/** Facing a direction (yaw 0 looks toward -z). */
+export const yawToward = (d: Vec) => Math.atan2(-d.x, -d.z);
+
+function theaterPlan(number: number, wing: number, arm: -1 | 1, pos: number, north: boolean) {
+  const zc = FIRST_WING_Z - wing * WING_PITCH;
+  const edge = CORRIDOR.halfWidth + 1;
+  const origin = {
+    x: arm * (HALL.x1 + 1 + THEATER_HALF_WIDTH + pos * THEATER_PITCH),
+    z: north ? zc - edge : zc + edge,
+  };
+  const dir = { x: 0, z: north ? -1 : 1 };
+  const perp = { x: -arm, z: 0 };
+  const plan = { number, wing, arm, origin, dir, perp } as TheaterPlan;
+  plan.across = perp.x * dir.z - perp.z * dir.x > 0 ? 1 : -1;
+  Object.assign(
+    plan,
+    box(toWorld(plan, 0, -THEATER_HALF_WIDTH), toWorld(plan, THEATER_DEPTH, THEATER_HALF_WIDTH)),
+  );
+  plan.door = box(toWorld(plan, -1, THEATER_HALF_WIDTH - 2), toWorld(plan, 0, THEATER_HALF_WIDTH));
+  return plan;
+}
+
+/** The whole floor plan for a library of `count` movies (one theater each). */
+export function planLayout(count: number): Layout {
+  const perSide = perSideFor(count);
+  const perArm = perSide * 2;
+  const perWing = perArm * 2;
+  const theaters: TheaterPlan[] = [];
+  const wings: WingPlan[] = [];
+  for (let w = 0; w * perWing < count; w++) {
+    const zc = FIRST_WING_Z - w * WING_PITCH;
+    const wing: WingPlan = {
+      index: w,
+      zc,
+      west: { end: HALL.x0, theaters: [] },
+      east: { end: HALL.x1, theaters: [] },
+    };
+    for (let k = 0; k < perWing; k++) {
+      const number = w * perWing + k + 1;
+      if (number > count) break;
+      // West arm first, then east; along each, south then north, from the main hall out.
+      const arm = k < perArm ? -1 : 1;
+      const j = k % perArm;
+      const pos = Math.floor(j / 2);
+      const t = theaterPlan(number, w, arm, pos, j % 2 === 1);
+      theaters.push(t);
+      const side = arm === -1 ? wing.west : wing.east;
+      side.theaters.push(t);
+      side.end = arm * (HALL.x1 + (pos + 1) * THEATER_PITCH);
+    }
+    wings.push(wing);
+  }
+  const last = wings.at(-1);
+  const hasNorth = last && last.west.theaters.length + last.east.theaters.length > 1;
+  const hallZ0 = !last
+    ? HALL.z1 - 16
+    : hasNorth
+      ? last.zc - (CORRIDOR.halfWidth + 1) - BAND
+      : last.zc - (CORRIDOR.halfWidth + 1);
+  return { theaters, wings, perSide, hallZ0, gallery: galleryPlan(count, hallZ0 - 1) };
+}
 
 /** Row r's platform starts here (its front edge) and is one riser higher than the last. */
 export const rowU = (row: number) => FIRST_ROW_U + row * ROW_STEP;
@@ -121,8 +231,36 @@ export function seatWalkway(t: TheaterPlan, seat: number) {
   return { ...toWorld(t, rowU(p.row) + WALKWAY_U, p.v), y: p.y };
 }
 
-export function theaterAt(x: number, z: number): TheaterPlan | null {
-  return THEATERS.find((t) => x > t.x0 && x < t.x1 && z > t.z0 && z < t.z1) ?? null;
+const inside = (b: { x0: number; x1: number; z0: number; z1: number }, x: number, z: number) =>
+  x > b.x0 && x < b.x1 && z > b.z0 && z < b.z1;
+
+export function theaterAt(layout: Layout, x: number, z: number): TheaterPlan | null {
+  const w = wingNear(layout, z);
+  if (!w) return null;
+  return [...w.west.theaters, ...w.east.theaters].find((t) => inside(t, x, z)) ?? null;
+}
+
+/** The corridor whose theaters reach to z, if any. */
+function wingNear(layout: Layout, z: number): WingPlan | null {
+  const i = Math.round((FIRST_WING_Z - z) / WING_PITCH);
+  return layout.wings[i] ?? null;
+}
+
+/** "Theaters 13–24": who's down one arm of a corridor. */
+export function armRange(theaters: TheaterPlan[]) {
+  if (!theaters.length) return '';
+  const a = theaters[0]!.number;
+  const b = theaters.at(-1)!.number;
+  return a === b ? `Theater ${a}` : `Theaters ${a}–${b}`;
+}
+
+/** How to get to a theater from the lobby, in words. */
+export function directions(layout: Layout, number: number) {
+  const t = layout.theaters[number - 1];
+  if (!t) return '';
+  const nth = ['first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth'];
+  const which = nth[t.wing] ?? `${t.wing + 1}th`;
+  return `Theater ${number}: up the main hall, ${which} corridor, on the ${t.arm === -1 ? 'left' : 'right'}.`;
 }
 
 // -----------------------------------------------------------------------------
@@ -136,20 +274,21 @@ const PER_FACE = POSTER_COLS * POSTER_ROWS;
 const PER_DIVIDER = PER_FACE * 2;
 
 export interface GalleryPlan {
-  /** The far (north) end. */
+  /** The far (north) end, and the near end (where the main hall comes in). */
   z0: number;
+  z1: number;
   dividers: { z: number; x0: number; x1: number }[];
 }
 
-export function galleryPlan(movieCount: number): GalleryPlan {
+export function galleryPlan(movieCount: number, z1: number): GalleryPlan {
   const count = Math.max(1, Math.ceil(movieCount / PER_DIVIDER));
   const dividers = Array.from({ length: count }, (_, i) => ({
     // The wall is the half metre north of z.
-    z: GALLERY.z1 - DIVIDER_GAP * (i + 1),
+    z: z1 - DIVIDER_GAP * (i + 1),
     x0: i % 2 === 0 ? GALLERY.x0 : GALLERY.x0 + 6,
     x1: i % 2 === 0 ? GALLERY.x1 - 6 : GALLERY.x1,
   }));
-  return { z0: dividers.at(-1)!.z - VOXEL - DIVIDER_GAP, dividers };
+  return { z0: dividers.at(-1)!.z - VOXEL - DIVIDER_GAP, z1, dividers };
 }
 
 export const POSTER_SIZE = { w: 1, h: 1.5 };
@@ -183,23 +322,31 @@ export function postersPerDivider() {
 export type Place =
   | { kind: 'outside' }
   | { kind: 'lobby' }
-  | { kind: 'hall' }
+  /** The main hall, or (with `corridor`, e.g. "Theaters 13–24") a corridor off it. */
+  | { kind: 'hall'; corridor?: string }
   | { kind: 'gallery' }
   | { kind: 'theater'; number: number };
 
-export function placeAt(x: number, z: number): Place {
-  const t = theaterAt(x, z);
+export function placeAt(layout: Layout, x: number, z: number): Place {
+  const t = theaterAt(layout, x, z);
   if (t) return { kind: 'theater', number: t.number };
   if (z > LOBBY.z1) return { kind: 'outside' };
   if (z >= LOBBY.z0) return { kind: 'lobby' };
-  if (z >= HALL.z0 - 0.5) return { kind: 'hall' };
-  return { kind: 'gallery' };
+  if (z < layout.hallZ0 - 0.5) return { kind: 'gallery' };
+  const w = wingNear(layout, z);
+  if (w && Math.abs(z - w.zc) <= CORRIDOR.halfWidth + 0.5 && Math.abs(x) > HALL.x1 + 0.5) {
+    const arm = x < 0 ? w.west : w.east;
+    if (arm.theaters.length) return { kind: 'hall', corridor: armRange(arm.theaters) };
+  }
+  return { kind: 'hall' };
 }
 
 export const placeName = (p: Place) =>
   p.kind === 'theater'
     ? `Theater ${p.number}`
-    : { outside: 'Outside', lobby: 'Lobby', hall: 'Hallway', gallery: 'The Collection' }[p.kind];
+    : p.kind === 'hall' && p.corridor
+      ? p.corridor
+      : { outside: 'Outside', lobby: 'Lobby', hall: 'Hallway', gallery: 'The Collection' }[p.kind];
 
 // -----------------------------------------------------------------------------
 // Building the grid
@@ -232,16 +379,22 @@ const lobbyPaint: Room['paint'] = (surface, x, y, z) => {
   return BLOCK.plaster;
 };
 
-const hallPaint: Room['paint'] = (surface, x, y, z) => {
-  if (surface === 'floor') return Math.abs(x) < 1 ? BLOCK.runner : BLOCK.hallCarpet;
-  if (surface === 'ceiling') {
-    const m = ((z % 4) + 4) % 4;
-    return m > 1.5 && m < 2.5 && Math.abs(x) < 1 ? BLOCK.light : BLOCK.ceiling;
-  }
-  if (y < 1) return BLOCK.wainscot;
-  if (y > 5 && y < 5.5) return x < 0 ? BLOCK.neonPink : BLOCK.neonTeal;
-  return BLOCK.plaster;
-};
+/** The main hall (along z) or a corridor (along x, centred on z = zc): a runner down the middle. */
+const corridorPaint =
+  (zc: number | null): Room['paint'] =>
+  (surface, x, y, z) => {
+    const across = zc === null ? x : z - zc;
+    const along = zc === null ? z : x;
+    if (surface === 'floor') return Math.abs(across) < 1 ? BLOCK.runner : BLOCK.hallCarpet;
+    if (surface === 'ceiling') {
+      const m = ((along % 4) + 4) % 4;
+      return m > 1.5 && m < 2.5 && Math.abs(across) < 1 ? BLOCK.light : BLOCK.ceiling;
+    }
+    if (y < 1) return BLOCK.wainscot;
+    if (y > 5 && y < 5.5) return across < 0 ? BLOCK.neonPink : BLOCK.neonTeal;
+    return BLOCK.plaster;
+  };
+const hallPaint = corridorPaint(null);
 
 function theaterPaint(t: TheaterPlan): Room['paint'] {
   return (surface, x, y, z) => {
@@ -254,16 +407,18 @@ function theaterPaint(t: TheaterPlan): Room['paint'] {
   };
 }
 
-const galleryPaint: Room['paint'] = (surface, x, y, z) => {
-  if (surface === 'floor') return BLOCK.galleryFloor;
-  if (surface === 'ceiling') {
-    // A light strip down each corridor.
-    const m = (((GALLERY.z1 - z) % DIVIDER_GAP) + DIVIDER_GAP) % DIVIDER_GAP;
-    return m > 2 && m < 3 && Math.abs(x) < 9 ? BLOCK.light : BLOCK.ceiling;
-  }
-  if (y > GALLERY.height - 0.5) return BLOCK.neonYellow;
-  return BLOCK.galleryWall;
-};
+const galleryPaint =
+  (z1: number): Room['paint'] =>
+  (surface, x, y, z) => {
+    if (surface === 'floor') return BLOCK.galleryFloor;
+    if (surface === 'ceiling') {
+      // A light strip down each corridor.
+      const m = (((z1 - z) % DIVIDER_GAP) + DIVIDER_GAP) % DIVIDER_GAP;
+      return m > 2 && m < 3 && Math.abs(x) < 9 ? BLOCK.light : BLOCK.ceiling;
+    }
+    if (y > GALLERY.height - 0.5) return BLOCK.neonYellow;
+    return BLOCK.galleryWall;
+  };
 
 const doorwayPaint =
   (inner: Room['paint']): Room['paint'] =>
@@ -272,19 +427,34 @@ const doorwayPaint =
 
 export interface Building {
   grid: VoxelGrid;
+  layout: Layout;
   gallery: GalleryPlan;
 }
 
-/** The grid's z boundaries fall every 8 m from the lobby's back wall, so each auditorium is two whole chunks. */
+/**
+ * The grid's chunk boundaries fall every 8 m from the lobby's back wall (z) and
+ * from the main hall's walls (x), so each auditorium is whole chunks (6 of them)
+ * and a corridor, wall to wall, is one.
+ */
 export const CHUNK = 16;
 
 export function buildBuilding(movieCount: number): Building {
-  const gallery = galleryPlan(movieCount);
+  const layout = planLayout(movieCount);
+  const { gallery } = layout;
   const chunkM = CHUNK * VOXEL;
-  const k = Math.ceil((-11 - (gallery.z0 - 1)) / chunkM);
-  const bounds: Bounds = { x0: -28, x1: 28, y0: -0.5, y1: 10, z0: -11 - k * chunkM, z1: 21 };
+  const k = Math.ceil((HALL.z1 - (gallery.z0 - 1)) / chunkM);
+  const reach = HALL.x1 + 1 + layout.perSide * THEATER_PITCH;
+  const bounds: Bounds = {
+    x0: -reach,
+    x1: reach,
+    y0: -0.5,
+    y1: 10,
+    z0: HALL.z1 - k * chunkM,
+    z1: 21,
+  };
   const grid = new VoxelGrid(bounds);
   grid.cells.fill(BLOCK.rock);
+  grid.doorway = (x, z) => doorwayAt(layout, x, z);
 
   const rooms: Room[] = [];
   const carve = (room: Room) => {
@@ -294,8 +464,8 @@ export function buildBuilding(movieCount: number): Building {
 
   // Outside: the sidewalk and street in front of the doors.
   carve({
-    x0: bounds.x0,
-    x1: bounds.x1,
+    x0: -28,
+    x1: 28,
     y0: 0,
     y1: bounds.y1,
     z0: LOBBY.z1 + 1,
@@ -304,7 +474,7 @@ export function buildBuilding(movieCount: number): Building {
       surface === 'floor' ? (z < LOBBY.z1 + 5 ? BLOCK.sidewalk : BLOCK.asphalt) : BLOCK.facade,
   });
   carve({ ...LOBBY, y0: 0, y1: LOBBY.height, paint: lobbyPaint });
-  // Into the hallway.
+  // Into the main hall.
   carve({
     x0: HALL.x0,
     x1: HALL.x1,
@@ -314,8 +484,31 @@ export function buildBuilding(movieCount: number): Building {
     z1: LOBBY.z0,
     paint: doorwayPaint(hallPaint),
   });
-  carve({ ...HALL, y0: 0, y1: HALL.height, paint: hallPaint });
-  for (const t of THEATERS) {
+  carve({
+    x0: HALL.x0,
+    x1: HALL.x1,
+    y0: 0,
+    y1: HALL.height,
+    z0: layout.hallZ0,
+    z1: HALL.z1,
+    paint: hallPaint,
+  });
+  // The corridors, each way off the main hall.
+  for (const w of layout.wings) {
+    for (const arm of [w.west, w.east]) {
+      if (!arm.theaters.length) continue;
+      carve({
+        x0: Math.min(arm.end, 0),
+        x1: Math.max(arm.end, 0),
+        y0: 0,
+        y1: CORRIDOR.height,
+        z0: w.zc - CORRIDOR.halfWidth,
+        z1: w.zc + CORRIDOR.halfWidth,
+        paint: corridorPaint(w.zc),
+      });
+    }
+  }
+  for (const t of layout.theaters) {
     carve({
       x0: t.x0,
       x1: t.x1,
@@ -333,9 +526,9 @@ export function buildBuilding(movieCount: number): Building {
     x1: HALL.x1,
     y0: 0,
     y1: 4,
-    z0: GALLERY.z1,
-    z1: HALL.z0,
-    paint: doorwayPaint(galleryPaint),
+    z0: gallery.z1,
+    z1: layout.hallZ0,
+    paint: doorwayPaint(galleryPaint(gallery.z1)),
   });
   carve({
     x0: GALLERY.x0,
@@ -343,8 +536,8 @@ export function buildBuilding(movieCount: number): Building {
     y0: 0,
     y1: GALLERY.height,
     z0: gallery.z0,
-    z1: GALLERY.z1,
-    paint: galleryPaint,
+    z1: gallery.z1,
+    paint: galleryPaint(gallery.z1),
   });
 
   // Each room paints the solid cells around it.
@@ -356,10 +549,24 @@ export function buildBuilding(movieCount: number): Building {
     [0, 1, 0, 'ceiling'],
     [0, -1, 0, 'floor'],
   ] as const;
+  // Every room is a box of air, so only the cells on its outside layer can touch
+  // a wall: look at those (in the same order as cell by cell, so the result is the same).
   for (const room of rooms) {
-    for (let iz = grid.iz(room.z0); iz < grid.iz(room.z1 - 1e-6) + 1; iz++) {
-      for (let iy = grid.iy(room.y0); iy < grid.iy(room.y1 - 1e-6) + 1; iy++) {
-        for (let ix = grid.ix(room.x0); ix < grid.ix(room.x1 - 1e-6) + 1; ix++) {
+    const x0 = grid.ix(room.x0);
+    const x1 = grid.ix(room.x1 - 1e-6);
+    const y0 = grid.iy(room.y0);
+    const y1 = grid.iy(room.y1 - 1e-6);
+    const z0 = grid.iz(room.z0);
+    const z1 = grid.iz(room.z1 - 1e-6);
+    for (let iz = z0; iz <= z1; iz++) {
+      const zEdge = iz === z0 || iz === z1;
+      for (let iy = y0; iy <= y1; iy++) {
+        const yEdge = iy === y0 || iy === y1;
+        for (let ix = x0; ix <= x1; ix++) {
+          if (!zEdge && !yEdge && ix !== x0 && ix !== x1) {
+            ix = x1 - 1;
+            continue;
+          }
           if (grid.get(ix, iy, iz) !== BLOCK.air) continue;
           for (const [dx, dy, dz, surface] of dirs) {
             if (grid.get(ix + dx, iy + dy, iz + dz) !== BLOCK.rock) continue;
@@ -427,7 +634,7 @@ export function buildBuilding(movieCount: number): Building {
 
   // Each auditorium: stepped rows, a stage, the screen's frame, seats (solid,
   // drawn separately), wall lights, speakers and the projection window.
-  for (const t of THEATERS) {
+  for (const t of layout.theaters) {
     const box = (
       u0: number,
       u1: number,
@@ -473,10 +680,10 @@ export function buildBuilding(movieCount: number): Building {
     // A bin by the door, for the empties.
     box(2, 2.5, 0, 1, -THEATER_HALF_WIDTH, -THEATER_HALF_WIDTH + 0.5, BLOCK.trash);
     // Gold around the doorway, on both sides of the wall.
-    const d = t.door;
-    grid.fill(d.x0, 3, d.z0 - 0.5, d.x1, 3.5, d.z1 + 0.5, BLOCK.gold);
-    grid.fill(d.x0, 0, d.z0 - 0.5, d.x1, 3, d.z0, BLOCK.gold);
-    grid.fill(d.x0, 0, d.z1, d.x1, 3, d.z1 + 0.5, BLOCK.gold);
+    const h = THEATER_HALF_WIDTH;
+    box(-1, 0, 3, 3.5, h - 2.5, h + 0.5, BLOCK.gold);
+    box(-1, 0, 0, 3, h - 2.5, h - 2, BLOCK.gold);
+    box(-1, 0, 0, 3, h, h + 0.5, BLOCK.gold);
   }
 
   // The Collection's walls of posters.
@@ -484,17 +691,21 @@ export function buildBuilding(movieCount: number): Building {
     grid.fill(d.x0, 0, d.z - VOXEL, d.x1, GALLERY.height, d.z, BLOCK.galleryWall);
     grid.fill(d.x0, 0, d.z - VOXEL, d.x1, 0.5, d.z, BLOCK.darkOak);
   }
-  return { grid, gallery };
+  return { grid, layout, gallery };
 }
 
 /** The bin inside each auditorium (by the screen, across from the door). */
 export const theaterTrash = (t: TheaterPlan) => toWorld(t, 2.25, -THEATER_HALF_WIDTH + 0.25);
 
 /** Which theater's doorway (if any) a spot is in. */
-export function doorwayAt(x: number, z: number): number | null {
-  for (const t of THEATERS) {
+export function doorwayAt(layout: Layout, x: number, z: number): number | null {
+  const w = wingNear(layout, z);
+  if (!w) return null;
+  for (const t of [...w.west.theaters, ...w.east.theaters]) {
     const d = t.door;
-    if (x > d.x0 - 0.05 && x < d.x1 + 0.05 && z > d.z0 && z < d.z1) return t.number;
+    if (x > d.x0 - 0.05 && x < d.x1 + 0.05 && z > d.z0 - 0.05 && z < d.z1 + 0.05) {
+      return t.number;
+    }
   }
   return null;
 }

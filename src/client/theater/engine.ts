@@ -19,7 +19,6 @@ import { Avatar } from './avatars';
 import { VOXEL } from './grid';
 import {
   EYE_HEIGHT,
-  HALL,
   placeAt,
   rowU,
   SCREEN,
@@ -28,15 +27,25 @@ import {
   seatWalkway,
   screenYaw,
   SPAWN,
-  THEATERS,
+  THEATER_HALF_WIDTH,
   toLocal,
   toWorld,
+  yawToward,
+  type Layout,
   type Place,
+  type TheaterPlan,
 } from './layout';
 import { CUPHOLDER_HEIGHT, CUPHOLDERS, disposeMaterials, materials, snackModel } from './models';
 import { step, SPRINT_SPEED, WALK_SPEED, type Body } from './physics';
 import { canvasTexture } from './textures';
-import { buildWorld, paintDoorSign, type GalleryMovie, type Hotspot, type World } from './world';
+import {
+  buildWorld,
+  paintDoorSign,
+  type GalleryMovie,
+  type Hotspot,
+  type TheaterView,
+  type World,
+} from './world';
 
 export type Prompt =
   | { kind: Hotspot['kind']; label: string; game?: ArcadeGameId }
@@ -67,8 +76,10 @@ const reducedMotion = () =>
 export class TheaterEngine {
   private readonly renderer: THREE.WebGLRenderer;
   private readonly scene = new THREE.Scene();
-  private readonly camera = new THREE.PerspectiveCamera(72, 1, 0.05, 140);
+  // Nothing past the fog is drawn (the building is built around you as you go).
+  private readonly camera = new THREE.PerspectiveCamera(72, 1, 0.05, 80);
   private readonly world: World;
+  readonly layout: Layout;
   private readonly hemi = new THREE.HemisphereLight(0xffe7c4, 0x2a1440, 1.6);
   private readonly ambient = new THREE.AmbientLight(0xffffff, 0.6);
   private readonly screenLight = new THREE.PointLight(0xbfd4ff, 0, 30, 1.2);
@@ -76,6 +87,8 @@ export class TheaterEngine {
   private readonly keys = new Set<string>();
   private readonly clock = new THREE.Clock();
   private readonly screenSources = new Map<number, THREE.Texture>();
+  /** What each screen shows (kept, so a screen built later shows it too). */
+  private readonly screenElements = new Map<number, HTMLVideoElement | HTMLCanvasElement>();
   private readonly posters = new Map<number, THREE.CanvasTexture>();
   private readonly glowSample = document.createElement('canvas');
   private readonly resizeObserver: ResizeObserver | null = null;
@@ -132,15 +145,24 @@ export class TheaterEngine {
     this.renderer.domElement.className = 'theater__canvas';
     container.appendChild(this.renderer.domElement);
     this.scene.background = new THREE.Color(0x0a0716);
-    this.scene.fog = new THREE.Fog(0x0a0716, 45, 120);
+    this.scene.fog = new THREE.Fog(0x0a0716, 30, 70);
     this.world = buildWorld(movies, lineup);
+    this.layout = this.world.layout;
+    this.world.onView = (view) => this.dressView(view);
+    this.world.onDrop = (n) => {
+      this.posters.get(n)?.dispose();
+      this.posters.delete(n);
+      this.screenSources.get(n)?.dispose();
+      this.screenSources.delete(n);
+    };
+    this.world.update(this.body.x, this.body.z, true);
     this.scene.add(this.world.root, this.hemi, this.ambient, this.screenLight, this.holders);
     // Your hands are drawn last, over everything (so they never poke into a wall).
     this.renderer.autoClear = false;
     this.overlay.add(this.viewModel);
     this.addSky();
     this.glowSample.width = this.glowSample.height = 4;
-    this.world.showFrom(this.place, this.body.z);
+    this.world.showFrom(this.place, this.body.x, this.body.z);
     this.setShowings([]);
     this.resize();
     if ('ResizeObserver' in window) {
@@ -298,7 +320,7 @@ export class TheaterEngine {
     this.pitch = Math.max(-1.2, Math.min(1.2, this.pitch - dy * s));
     if (this.seat) {
       // Seated: you can look around, but not turn your back on the screen.
-      const facing = screenYaw(THEATERS[this.seat.theater - 1]!);
+      const facing = screenYaw(this.theater(this.seat.theater));
       let d = this.yaw - facing;
       d = Math.atan2(Math.sin(d), Math.cos(d));
       this.yaw = facing + Math.max(-1.4, Math.min(1.4, d));
@@ -345,6 +367,21 @@ export class TheaterEngine {
       this.viewModel.add(item);
     });
     this.updateHolders();
+  }
+
+  private theater(n: number): TheaterPlan {
+    return this.layout.theaters[n - 1]!;
+  }
+
+  /** An auditorium has just been built near you: its sign, screen and curtains as they are now. */
+  private dressView(view: TheaterView) {
+    const n = view.plan.number;
+    this.paintView(view);
+    const source = this.screenElements.get(n);
+    if (source) this.setScreen(n, source);
+    else this.showIdleScreen(n);
+    // Already open if the movie's on.
+    view.curtains.open = view.curtains.target;
   }
 
   /** Lifts a snack to your mouth (in first person). */
@@ -399,7 +436,7 @@ export class TheaterEngine {
   private placeAvatar(a: Avatar, p: TheaterPlayer) {
     const sitting = p.seat !== null && p.ticket !== null;
     if (sitting) {
-      const pose = seatPose(THEATERS[p.ticket! - 1]!, p.seat!);
+      const pose = seatPose(this.theater(p.ticket!), p.seat!);
       a.target.set(pose.x, pose.y + 0.05, pose.z);
       a.targetYaw = pose.yaw;
     } else {
@@ -453,13 +490,12 @@ export class TheaterEngine {
     this.holdersKey = key;
     this.clearGroup(this.holders);
     for (const p of seated) {
-      const t = THEATERS[p.ticket! - 1]!;
+      const t = this.theater(p.ticket!);
       const pose = seatPose(t, p.seat!);
-      const across = t.side === -1 ? 1 : -1;
       p.hands.forEach((h, i) => {
         if (!h?.down) return;
         const [sx, sz] = CUPHOLDERS[i]!;
-        const w = toWorld(t, pose.u + sz, pose.v + sx * across);
+        const w = toWorld(t, pose.u + sz, pose.v + sx * t.across);
         const item = snackModel(h.id, h.level);
         item.position.set(w.x, pose.y + CUPHOLDER_HEIGHT, w.z);
         this.holders.add(item);
@@ -469,42 +505,46 @@ export class TheaterEngine {
 
   setShowings(showings: Showing[]) {
     this.showings = new Map(showings.map((s) => [s.theater, s]));
-    const title = (id: string | null | undefined) =>
-      this.movies.find((m) => m.id === id)?.title ?? '';
-    for (const view of this.world.theaters) {
-      const n = view.plan.number;
-      const s = this.showings.get(n);
-      if (!s) {
-        const today = title(this.lineup[n - 1]).toUpperCase();
-        paintDoorSign(
-          view,
-          [`THEATER ${n}`, today || 'COMING SOON', today ? 'NOW SHOWING' : ''],
-          false,
-        );
-      } else {
-        const status =
-          s.status === 'seating'
-            ? s.shared
-              ? 'SEATING · JOIN IN'
-              : 'PRIVATE · SEATING'
-            : s.status === 'playing'
-              ? s.shared
-                ? 'NOW PLAYING · JOIN IN'
-                : 'PRIVATE SCREENING'
-              : s.status === 'paused'
-                ? 'PAUSED'
-                : 'THE END';
-        paintDoorSign(view, [`THEATER ${n}`, s.title.toUpperCase(), status], true);
-      }
-      view.beam.visible = s?.status === 'playing';
-      view.curtains.target = s && (s.status === 'playing' || s.status === 'paused') ? 1 : 0;
-      if (!this.screenSources.has(n)) this.showIdleScreen(n);
+    for (const view of this.world.views.values()) {
+      this.paintView(view);
+      if (!this.screenSources.has(view.plan.number)) this.showIdleScreen(view.plan.number);
     }
+  }
+
+  /** The sign over a door, the beam and the curtains: what's on in that theater. */
+  private paintView(view: TheaterView) {
+    const n = view.plan.number;
+    const s = this.showings.get(n);
+    if (!s) {
+      const title = this.movies.find((m) => m.id === this.lineup[n - 1])?.title ?? '';
+      paintDoorSign(
+        view,
+        [`THEATER ${n}`, title.toUpperCase() || 'COMING SOON', title ? 'NOW SHOWING' : ''],
+        false,
+      );
+    } else {
+      const status =
+        s.status === 'seating'
+          ? s.shared
+            ? 'SEATING · JOIN IN'
+            : 'PRIVATE · SEATING'
+          : s.status === 'playing'
+            ? s.shared
+              ? 'NOW PLAYING · JOIN IN'
+              : 'PRIVATE SCREENING'
+            : s.status === 'paused'
+              ? 'PAUSED'
+              : 'THE END';
+      paintDoorSign(view, [`THEATER ${n}`, s.title.toUpperCase(), status], true);
+    }
+    view.beam.visible = s?.status === 'playing';
+    view.curtains.target = s && (s.status === 'playing' || s.status === 'paused') ? 1 : 0;
   }
 
   /** Until the movie starts, the screen shows its poster (or today's movie), big and pixelated. */
   private showIdleScreen(theater: number) {
-    const view = this.world.theaters[theater - 1]!;
+    const view = this.world.views.get(theater);
+    if (!view) return;
     const movieId = this.showings.get(theater)?.movieId ?? this.lineup[theater - 1];
     const material = view.screen.material;
     const canvas = movieId ? this.world.atlas.posterCanvas(movieId) : null;
@@ -527,7 +567,9 @@ export class TheaterEngine {
 
   /** What a screen shows: a video, a canvas (the countdown), or null for its poster. */
   setScreen(theater: number, source: HTMLVideoElement | HTMLCanvasElement | null) {
-    const view = this.world.theaters[theater - 1];
+    if (source) this.screenElements.set(theater, source);
+    else this.screenElements.delete(theater);
+    const view = this.world.views.get(theater);
     if (!view) return;
     this.screenSources.get(theater)?.dispose();
     this.screenSources.delete(theater);
@@ -551,7 +593,7 @@ export class TheaterEngine {
 
   /** Scales a screen to its picture's shape (wide movies are letterboxed). */
   fitScreen(theater: number, source: HTMLVideoElement | HTMLCanvasElement) {
-    const view = this.world.theaters[theater - 1];
+    const view = this.world.views.get(theater);
     if (!view) return;
     const w = source instanceof HTMLVideoElement ? source.videoWidth : source.width;
     const h = source instanceof HTMLVideoElement ? source.videoHeight : source.height;
@@ -571,11 +613,11 @@ export class TheaterEngine {
   }
 
   sitAt(theater: number, seat: number) {
-    const pose = seatPose(THEATERS[theater - 1]!, seat);
+    const pose = seatPose(this.theater(theater), seat);
     this.seat = { theater, seat };
     Object.assign(this.body, { x: pose.x, y: pose.y, z: pose.z, vy: 0, onGround: true });
     this.yaw = pose.yaw;
-    const sc = toWorld(THEATERS[theater - 1]!, SCREEN.u, 0);
+    const sc = toWorld(this.theater(theater), SCREEN.u, 0);
     const dist = Math.hypot(sc.x - pose.x, sc.z - pose.z);
     this.pitch = Math.atan2((SCREEN.bottom + SCREEN.top) / 2 - (pose.y + SEATED_EYE_HEIGHT), dist);
     this.updateHolders();
@@ -585,7 +627,7 @@ export class TheaterEngine {
 
   standUp() {
     if (!this.seat) return;
-    const t = THEATERS[this.seat.theater - 1]!;
+    const t = this.theater(this.seat.theater);
     const out = seatWalkway(t, this.seat.seat);
     this.seat = null;
     Object.assign(this.body, { x: out.x, y: out.y, z: out.z, vy: 0, onGround: true });
@@ -621,18 +663,18 @@ export class TheaterEngine {
     let z = SPAWN.z;
     let yaw = SPAWN.yaw;
     if (typeof place === 'object') {
-      const t = THEATERS[place.theater - 1]!;
+      const t = this.theater(place.theater);
       if (place.seat !== undefined && this.ticket === place.theater) {
         // In the walkway in front of the seat, facing it.
         ({ x, z } = seatWalkway(t, place.seat));
         yaw = screenYaw(t) + Math.PI;
       } else if (this.ticket === place.theater) {
         ({ x, z } = toWorld(t, 3, 6.5));
-        yaw = screenYaw(t) + (t.side === -1 ? 0.6 : -0.6);
+        yaw = screenYaw(t) + 0.6 * t.across;
       } else {
-        x = t.side === -1 ? HALL.x0 + 1.2 : HALL.x1 - 1.2;
-        z = (t.door.z0 + t.door.z1) / 2;
-        yaw = t.side === -1 ? Math.PI / 2 : -Math.PI / 2;
+        // In the corridor, facing the door.
+        ({ x, z } = toWorld(t, -2.2, THEATER_HALF_WIDTH - 1));
+        yaw = yawToward(t.dir);
       }
     } else if (place === 'boxoffice') {
       [x, z, yaw] = [-9.5, -4.2, 0];
@@ -641,8 +683,10 @@ export class TheaterEngine {
     } else if (place === 'arcade') {
       [x, z, yaw] = [12.2, 2.5, -Math.PI / 2];
     } else if (place === 'gallery') {
-      [x, z, yaw] = [0, HALL.z0 - 2.2, 0];
+      [x, z, yaw] = [0, this.layout.hallZ0 - 2.2, 0];
     }
+    // Build what's around where you land before you see it.
+    this.world.update(x, z, true);
     Object.assign(this.body, { x, z, y: this.groundAt(x, z), vy: 0, onGround: true });
     this.eyeY = this.body.y + EYE_HEIGHT;
     this.yaw = yaw;
@@ -688,7 +732,8 @@ export class TheaterEngine {
     this.updateViewModel(dt);
     for (const a of this.avatars.values()) a.update(dt);
     this.world.animate(time, dt);
-    this.world.showFrom(this.place, b.z);
+    this.world.update(b.x, b.z);
+    this.world.showFrom(this.place, b.x, b.z);
     // House lights down while a movie plays.
     this.dimmed += ((this.wantDim ? 1 : 0) - this.dimmed) * Math.min(1, dt * 1.5);
     materials().opaque.color.setScalar(1 - this.dimmed * 0.6);
@@ -812,7 +857,7 @@ export class TheaterEngine {
     if (!moved || now - s.at < 100) return;
     this.lastSent = { x: b.x, z: b.z, yaw: this.yaw, at: now };
     this.events.onMove(b.x, b.z, this.yaw);
-    const place = placeAt(b.x, b.z);
+    const place = placeAt(this.layout, b.x, b.z);
     if (JSON.stringify(place) !== JSON.stringify(this.place)) {
       this.place = place;
       this.events.onPlace(place);
@@ -827,7 +872,7 @@ export class TheaterEngine {
       this.screenLight.intensity *= 0.9;
       return;
     }
-    const p = toWorld(THEATERS[theater - 1]!, 4, 0);
+    const p = toWorld(this.theater(theater), 4, 0);
     this.screenLight.position.set(p.x, 4.5, p.z);
     if (this.frame % 15 === 0) {
       try {
@@ -862,7 +907,7 @@ export class TheaterEngine {
       const fz = -Math.cos(this.yaw);
       // A seat: in the walkway in front of a row, in a theater you hold a ticket for.
       if (this.place.kind === 'theater' && this.ticket === this.place.number) {
-        const t = THEATERS[this.ticket - 1]!;
+        const t = this.theater(this.ticket);
         const me = toLocal(t, b.x, b.z);
         let best: { seat: number; d: number } | null = null;
         for (let seat = 0; seat < SEAT_COUNT; seat++) {

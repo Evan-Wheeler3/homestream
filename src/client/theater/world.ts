@@ -8,10 +8,11 @@ import { BLOCKS, tile } from './blocks';
 import { meshChunk, VOXEL } from './grid';
 import {
   ARCADE_Z,
+  armRange,
   buildBuilding,
   CHUNK,
   CLAW,
-  GALLERY,
+  CORRIDOR,
   HALL,
   LOBBY,
   POSTER_SIZE,
@@ -21,13 +22,15 @@ import {
   SCREEN,
   seatPose,
   STANDEES,
+  theaterAt,
   theaterTrash,
   THEATER_DEPTH,
-  THEATERS,
+  THEATER_HALF_WIDTH,
   toWorld,
   TRASH,
   USHER,
   type Building,
+  type Layout,
   type Place,
   type TheaterPlan,
 } from './layout';
@@ -63,20 +66,41 @@ export interface Hotspot {
 export interface World {
   root: THREE.Group;
   building: Building;
+  layout: Layout;
   atlas: PosterAtlas;
-  theaters: TheaterView[];
+  /** The auditoriums near you (they're built as you get close, and let go when you leave). */
+  views: Map<number, TheaterView>;
+  /** Called when an auditorium has just been built, and when it's let go. */
+  onView: ((view: TheaterView) => void) | null;
+  onDrop: ((theater: number) => void) | null;
   hotspots: Hotspot[];
   arcadeScreens: { canvas: HTMLCanvasElement; texture: THREE.CanvasTexture }[];
   /** The poster nearest the middle of your view, within a few metres. */
   posterInView(x: number, z: number, yaw: number): string | undefined;
   /** Draws only what can be seen from a place. */
-  showFrom(place: Place, z: number): void;
+  showFrom(place: Place, x: number, z: number): void;
+  /**
+   * Builds what's near (x, z) and lets go of what's far away, a few pieces at a
+   * time (or everything at once with `all`, e.g. after jumping somewhere).
+   */
+  update(x: number, z: number, all?: boolean): void;
   animate(time: number, dt: number): void;
   dispose(): void;
 }
 
 // Planes face +z by default; these turn them.
 const FACE = { south: 0, north: Math.PI, east: Math.PI / 2, west: -Math.PI / 2 };
+/** Turns a plane to face a direction. */
+const facing = (d: { x: number; z: number }) => Math.atan2(d.x, d.z);
+
+/** Blocks are drawn within this distance (metres), and let go beyond the second. */
+const CHUNKS_IN = 72;
+const CHUNKS_OUT = 88;
+/** Auditoriums (seats, screen, curtains, signs) are built within this distance. */
+const ROOMS_IN = 40;
+const ROOMS_OUT = 52;
+/** How many chunks or auditoriums to build per update while walking. */
+const BUDGET = 3;
 
 export function buildWorld(movies: GalleryMovie[], lineup: (string | null)[]): World {
   const root = new THREE.Group();
@@ -87,35 +111,66 @@ export function buildWorld(movies: GalleryMovie[], lineup: (string | null)[]): W
     a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }),
   );
   const building = buildBuilding(sorted.length);
-  const { grid, gallery } = building;
+  const { grid, gallery, layout } = building;
   const atlas = new PosterAtlas(sorted);
   disposables.push(atlas.texture);
 
   // ---------------------------------------------------------------------------
-  // The block grid, in 8 m chunks. Chunks inside an auditorium belong to it.
-  const theaterGroups = THEATERS.map(() => new THREE.Group());
-  theaterGroups.forEach((g) => root.add(g));
-  const theaterOfChunk = (cx: number, cz: number) => {
-    if (Math.abs(cx) < 4) return null;
-    return THEATERS.find((t) => Math.sign(cx) === t.side && Math.abs(cz - t.zc) < 8) ?? null;
+  // The block grid, in 8 m chunks, drawn near you. Chunks inside an auditorium
+  // belong to it (hidden unless you can see into it).
+  const groups = new Map<number, THREE.Group>();
+  const groupFor = (n: number) => {
+    let g = groups.get(n);
+    if (!g) {
+      g = new THREE.Group();
+      groups.set(n, g);
+      root.add(g);
+    }
+    return g;
   };
   const tileFor = (id: number, face: 'top' | 'side' | 'bottom') => tile(BLOCKS[id]![face]);
+  interface Chunk {
+    ix: number;
+    iz: number;
+    x: number;
+    z: number;
+    owner: number | null;
+    meshes: THREE.Mesh[] | null;
+  }
+  const chunks: Chunk[] = [];
   for (let ix = 0; ix < grid.nx; ix += CHUNK) {
     for (let iz = 0; iz < grid.nz; iz += CHUNK) {
-      const cx = grid.bounds.x0 + (ix + CHUNK / 2) * VOXEL;
-      const cz = grid.bounds.z0 + (iz + CHUNK / 2) * VOXEL;
-      const t = theaterOfChunk(cx, cz);
-      const parts = meshChunk(grid, ix, ix + CHUNK, iz, iz + CHUNK, tileFor, t ? 0.85 : 1);
-      for (const kind of ['opaque', 'glow', 'glass'] as const) {
-        if (!parts[kind].indices.length) continue;
-        const geometry = geometryOf(parts[kind]);
-        disposables.push(geometry);
-        const mesh = new THREE.Mesh(geometry, mats[kind]);
-        mesh.matrixAutoUpdate = false;
-        (t ? theaterGroups[t.number - 1]! : root).add(mesh);
-      }
+      const x = grid.bounds.x0 + (ix + CHUNK / 2) * VOXEL;
+      const z = grid.bounds.z0 + (iz + CHUNK / 2) * VOXEL;
+      chunks.push({ ix, iz, x, z, owner: theaterAt(layout, x, z)?.number ?? null, meshes: null });
     }
   }
+  const meshChunkAt = (c: Chunk) => {
+    const parts = meshChunk(
+      grid,
+      c.ix,
+      c.ix + CHUNK,
+      c.iz,
+      c.iz + CHUNK,
+      tileFor,
+      c.owner ? 0.85 : 1,
+    );
+    c.meshes = [];
+    for (const kind of ['opaque', 'glow', 'glass'] as const) {
+      if (!parts[kind].indices.length) continue;
+      const mesh = new THREE.Mesh(geometryOf(parts[kind]), mats[kind]);
+      mesh.matrixAutoUpdate = false;
+      (c.owner ? groupFor(c.owner) : root).add(mesh);
+      c.meshes.push(mesh);
+    }
+  };
+  const dropChunk = (c: Chunk) => {
+    for (const m of c.meshes ?? []) {
+      m.removeFromParent();
+      m.geometry.dispose();
+    }
+    c.meshes = null;
+  };
 
   // Builders for the small things, per part of the building.
   const lobby = { opaque: new BoxBuilder(), glow: new BoxBuilder(), glass: new BoxBuilder() };
@@ -236,10 +291,15 @@ export function buildWorld(movies: GalleryMovie[], lineup: (string | null)[]): W
 
   // Now Showing above the box office, the menu above concessions.
   const nowShowing = document.createElement('canvas');
+  // The newest arrivals, and their theaters.
+  const newest = lineup
+    .map((id, i) => ({ id, theater: i + 1 }))
+    .reverse()
+    .slice(0, 8);
   drawBoard(
     nowShowing,
     'NOW SHOWING',
-    lineup.map((id, i) => [String(i + 1), titleOf(id) || '—']),
+    newest.map((m) => [String(m.theater), titleOf(m.id) || '—']),
     { heading: '#2ee6d6', accent: '#2ee6d6' },
   );
   const nowTexture = canvasTexture(nowShowing);
@@ -372,7 +432,7 @@ export function buildWorld(movies: GalleryMovie[], lineup: (string | null)[]): W
     if (x < -6.6) lobby.opaque.box(x, 0.82, -3.62, x + 1.5, 0.88, -3.58, 'rope');
   }
 
-  // Standees of the first two movies on today's lineup.
+  // Standees of the two newest movies.
   const posterQuads: {
     movieId: string;
     x: number;
@@ -383,7 +443,7 @@ export function buildWorld(movies: GalleryMovie[], lineup: (string | null)[]): W
     h: number;
   }[] = [];
   STANDEES.forEach((s, i) => {
-    const id = lineup[i];
+    const id = newest[i]?.id;
     if (!id) return;
     lobby.opaque.box(s.x - 0.05, 0, s.z - 0.05, s.x + 0.05, 0.6, s.z + 0.05, 'black', {
       fit: true,
@@ -475,9 +535,10 @@ export function buildWorld(movies: GalleryMovie[], lineup: (string | null)[]): W
     lobby.glow.box(x, 0.01, 18.4, x + 2, 0.03, 18.6, 'neonYellow', { fit: true });
 
   // ---------------------------------------------------------------------------
-  // The hallway: signs over each door, a lit poster beside it, and direction signs.
+  // The main hall: which theaters are down each corridor, at every turn.
+  const count = layout.theaters.length;
   hanging(
-    ['◀ 1 · 3 · 5 · 7     2 · 4 · 6 · 8 ▶'],
+    [count ? `THEATERS 1–${count}` : 'THE COLLECTION'],
     ['LOBBY AND EXIT'],
     5.6,
     0.7,
@@ -485,23 +546,78 @@ export function buildWorld(movies: GalleryMovie[], lineup: (string | null)[]): W
     4.6,
     HALL.z1 - 1.5,
   );
-  hanging(['◀ 1 · 3 · 5 · 7     2 · 4 · 6 · 8 ▶'], ['LOBBY AND EXIT'], 5.6, 0.7, 0, 4.6, -43);
+  for (const w of layout.wings) {
+    const west = armRange(w.west.theaters).replace('Theaters ', '').replace('Theater ', '');
+    const east = armRange(w.east.theaters).replace('Theaters ', '').replace('Theater ', '');
+    const arrows = (left: string, right: string) =>
+      [left && `◀ ${left}`, right && `${right} ▶`].filter(Boolean).join('      ');
+    hanging(
+      [arrows(west, east)],
+      [arrows(east, west)],
+      5.6,
+      0.7,
+      0,
+      4.6,
+      w.zc + CORRIDOR.halfWidth + 2.5,
+    );
+  }
   sign(
     ['THE COLLECTION', `${sorted.length} ${sorted.length === 1 ? 'MOVIE' : 'MOVIES'} · A TO Z`],
     6,
     1.4,
     0,
     5.4,
-    HALL.z0 + 0.02,
+    layout.hallZ0 + 0.02,
     FACE.south,
     { color: '#ffd23f', glow: '#ffd23f', border: '#ffd23f' },
   );
 
-  const theaters: TheaterView[] = [];
+  // Beside each theater's door (corridor side): its movie's poster in a light box.
+  for (const t of layout.theaters) {
+    const id = lineup[t.number - 1];
+    if (!id) continue;
+    const out = { x: -t.dir.x, z: -t.dir.z };
+    const p = toWorld(t, -1.01, THEATER_HALF_WIDTH - 3.5);
+    posterQuads.push({ movieId: id, x: p.x, y: 2.1, z: p.z, yaw: facing(out), w: 1.2, h: 1.8 });
+    const frame = (v0: number, v1: number, y0: number, y1: number) => {
+      const a = toWorld(t, -1.06, v0);
+      const b = toWorld(t, -1, v1);
+      lobby.glow.box(a.x, y0, a.z, b.x, y1, b.z, 'lightPanel', { fit: true });
+    };
+    const v = THEATER_HALF_WIDTH - 3.5;
+    frame(v - 0.7, v + 0.7, 1.1, 1.18);
+    frame(v - 0.7, v + 0.7, 3.02, 3.1);
+    frame(v - 0.7, v - 0.62, 1.1, 3.1);
+    frame(v + 0.62, v + 0.7, 1.1, 3.1);
+  }
+
   const screenGeometry = new THREE.PlaneGeometry(1, 1);
   disposables.push(screenGeometry);
-  for (const t of THEATERS) {
-    const group = theaterGroups[t.number - 1]!;
+
+  /** Builds one auditorium's insides (and the sign over its door). */
+  const buildView = (t: TheaterPlan): { view: TheaterView; own: { dispose(): void }[] } => {
+    const own: { dispose(): void }[] = [];
+    const group = groupFor(t.number);
+    // The sign over the door sits in the corridor, so it's drawn even when the room isn't.
+    const outside = new THREE.Group();
+    root.add(outside);
+    own.push({ dispose: () => outside.removeFromParent() });
+    const ownPlane = (
+      w: number,
+      h: number,
+      material: THREE.Material,
+      at: { x: number; z: number },
+      y: number,
+      yaw: number,
+      parent: THREE.Object3D,
+    ) => {
+      const mesh = new THREE.Mesh(screenGeometry, material);
+      mesh.scale.set(w, h, 1);
+      mesh.position.set(at.x, y, at.z);
+      mesh.rotation.y = yaw;
+      parent.add(mesh);
+      return mesh;
+    };
     const inside = { opaque: new BoxBuilder(), glow: new BoxBuilder(), glass: new BoxBuilder() };
     const tb = (
       b: BoxBuilder,
@@ -518,54 +634,28 @@ export function buildWorld(movies: GalleryMovie[], lineup: (string | null)[]): W
       const c = toWorld(t, u1, v1);
       b.box(a.x, y0, a.z, c.x, y1, c.z, faces, { fit });
     };
-    const inward = t.side === -1 ? FACE.west : FACE.east;
-    const hallward = t.side === -1 ? FACE.east : FACE.west;
-    const doorZ = (t.door.z0 + t.door.z1) / 2;
-    const hallX = t.side === -1 ? HALL.x0 + 0.02 : HALL.x1 - 0.02;
+    const inward = facing(t.dir);
+    const out = facing({ x: -t.dir.x, z: -t.dir.z });
 
-    // Over the door (hallway side): the theater number and what's on.
+    // Over the door (corridor side): the theater number and what's on.
     const doorCanvas = document.createElement('canvas');
     drawSign(
       doorCanvas,
       [`THEATER ${t.number}`, titleOf(lineup[t.number - 1]).toUpperCase() || 'COMING SOON'],
-      {
-        width: 128,
-        height: 56,
-        border: '#ffd23f',
-      },
+      { width: 128, height: 56, border: '#ffd23f' },
     );
     const doorTexture = canvasTexture(doorCanvas);
     const doorMaterial = new THREE.MeshBasicMaterial({ map: doorTexture });
-    disposables.push(doorTexture, doorMaterial);
-    plane(2.6, 1.1, doorMaterial, hallX, 4.25, doorZ, hallward);
-    // Beside the door: today's poster in a light box.
-    const showing = lineup[t.number - 1];
-    if (showing) {
-      const pz = t.door.z0 - 1.5;
-      posterQuads.push({
-        movieId: showing,
-        x: hallX + (t.side === -1 ? 0.01 : -0.01),
-        y: 2.1,
-        z: pz,
-        yaw: hallward,
-        w: 1.2,
-        h: 1.8,
-      });
-      const fx = t.side === -1 ? HALL.x0 : HALL.x1 - 0.06;
-      lobby.glow.box(fx, 1.1, pz - 0.7, fx + 0.06, 1.18, pz + 0.7, 'lightPanel', { fit: true });
-      lobby.glow.box(fx, 3.02, pz - 0.7, fx + 0.06, 3.1, pz + 0.7, 'lightPanel', { fit: true });
-      lobby.glow.box(fx, 1.1, pz - 0.7, fx + 0.06, 3.1, pz - 0.62, 'lightPanel', { fit: true });
-      lobby.glow.box(fx, 1.1, pz + 0.62, fx + 0.06, 3.1, pz + 0.7, 'lightPanel', { fit: true });
-    }
+    own.push(doorTexture, doorMaterial);
+    ownPlane(2.6, 1.1, doorMaterial, toWorld(t, -1.02, THEATER_HALF_WIDTH - 1), 4.25, out, outside);
 
     // Seats, ten to a row, with armrests and cupholders.
     for (let seat = 0; seat < SEAT_COUNT; seat++) {
       const p = seatPose(t, seat);
-      const across = t.side === -1 ? 1 : -1;
       addSeat(
         inside.opaque,
         (sx, sy, sz) => {
-          const w = toWorld(t, p.u + sz, p.v + sx * across);
+          const w = toWorld(t, p.u + sz, p.v + sx * t.across);
           return [w.x, p.y + sy, w.z];
         },
         p.col === 0,
@@ -574,18 +664,15 @@ export function buildWorld(movies: GalleryMovie[], lineup: (string | null)[]): W
     // The valance over the screen, and the EXIT sign over the door.
     tb(inside.opaque, 0.3, 0.9, SCREEN.top + 0.15, 8.4, -6.3, 6.3, 'velvet');
     tb(inside.opaque, 0.88, 0.95, SCREEN.top + 0.12, SCREEN.top + 0.22, -6.3, 6.3, 'gold');
-    const exit = toWorld(t, 0.03, 6.5);
-    sign(
-      ['EXIT'],
-      0.9,
-      0.3,
-      exit.x,
-      3.45,
-      exit.z,
-      inward,
-      { width: 48, height: 16, color: '#3dff6a', background: '#062a10' },
-      group,
-    );
+    const exitTexture = signTexture(['EXIT'], {
+      width: 48,
+      height: 16,
+      color: '#3dff6a',
+      background: '#062a10',
+    });
+    const exitMaterial = new THREE.MeshBasicMaterial({ map: exitTexture });
+    own.push(exitTexture, exitMaterial);
+    ownPlane(0.9, 0.3, exitMaterial, toWorld(t, 0.03, 6.5), 3.45, inward, group);
     // A light in each aisle step.
     for (let r = 0; r < 6; r++) {
       for (const v of [-6.25, 6.25])
@@ -601,11 +688,16 @@ export function buildWorld(movies: GalleryMovie[], lineup: (string | null)[]): W
           true,
         );
     }
-    flush(inside, group);
+    for (const kind of ['opaque', 'glow', 'glass'] as const) {
+      if (inside[kind].empty) continue;
+      const mesh = meshOf(inside[kind], kind);
+      own.push(mesh.geometry, { dispose: () => mesh.removeFromParent() });
+      group.add(mesh);
+    }
 
     // The screen, the projector's beam, and the curtains in front.
     const screenMaterial = new THREE.MeshBasicMaterial({ color: 0x55556a });
-    disposables.push(screenMaterial);
+    own.push(screenMaterial);
     const screen = new THREE.Mesh(screenGeometry, screenMaterial);
     const sc = toWorld(t, SCREEN.u, 0);
     screen.position.set(sc.x, (SCREEN.bottom + SCREEN.top) / 2, sc.z);
@@ -624,7 +716,7 @@ export function buildWorld(movies: GalleryMovie[], lineup: (string | null)[]): W
       depthWrite: false,
       side: THREE.DoubleSide,
     });
-    disposables.push(beamGeometry, beamMaterial);
+    own.push(beamGeometry, beamMaterial);
     const beam = new THREE.Mesh(beamGeometry, beamMaterial);
     beam.position.copy(from).add(to).multiplyScalar(0.5);
     beam.quaternion.setFromUnitVectors(
@@ -634,28 +726,39 @@ export function buildWorld(movies: GalleryMovie[], lineup: (string | null)[]): W
     beam.visible = false;
     group.add(beam);
     const curtain = (edgeV: number, dir: 1 | -1) => {
-      // Built from its outer edge, so it opens by shrinking toward that edge.
+      // Built from its outer edge (along the screen wall), so it opens by shrinking toward that edge.
       const b = new BoxBuilder();
       const half = SCREEN.width / 2 + 0.25;
       b.box(-0.07, SCREEN.bottom - 0.15, 0, 0.07, SCREEN.top + 0.2, dir * half, 'velvet');
       const mesh = meshOf(b);
-      disposables.push(mesh.geometry);
+      own.push(mesh.geometry);
       const p = toWorld(t, SCREEN.u + 0.12, edgeV);
       mesh.position.set(p.x, 0, p.z);
+      mesh.rotation.y = facing(t.perp);
       group.add(mesh);
       return mesh;
     };
     const left = curtain(-SCREEN.width / 2 - 0.25, 1);
     const right = curtain(SCREEN.width / 2 + 0.25, -1);
-    theaters.push({
-      plan: t,
-      group,
-      screen,
-      beam,
-      curtains: { left, right, open: 0, target: 0 },
-      doorSign: { canvas: doorCanvas, texture: doorTexture },
+    own.push({
+      dispose: () => {
+        for (const m of [screen, beam, left, right]) m.removeFromParent();
+      },
     });
-  }
+    return {
+      view: {
+        plan: t,
+        group,
+        screen,
+        beam,
+        curtains: { left, right, open: 0, target: 0 },
+        doorSign: { canvas: doorCanvas, texture: doorTexture },
+      },
+      own,
+    };
+  };
+  const views = new Map<number, TheaterView>();
+  const owned = new Map<number, { dispose(): void }[]>();
 
   // ---------------------------------------------------------------------------
   // The Collection: posters on every wall of the zig-zag, with a letter range at each turn.
@@ -768,7 +871,7 @@ export function buildWorld(movies: GalleryMovie[], lineup: (string | null)[]): W
       radius: 1.2,
       label: 'Restroom',
     })),
-    ...[...TRASH, ...THEATERS.map(theaterTrash)].map((b) => ({
+    ...[...TRASH, ...layout.theaters.map(theaterTrash)].map((b) => ({
       kind: 'trash' as const,
       x: b.x,
       z: b.z,
@@ -777,13 +880,62 @@ export function buildWorld(movies: GalleryMovie[], lineup: (string | null)[]): W
     })),
   ];
 
-  return {
+  /** How far (x, z) is from a box, on the floor (0 inside it). */
+  const away = (b: { x0: number; x1: number; z0: number; z1: number }, x: number, z: number) =>
+    Math.hypot(Math.max(b.x0 - x, 0, x - b.x1), Math.max(b.z0 - z, 0, z - b.z1));
+  let last = { x: Infinity, z: Infinity };
+
+  const world: World = {
     root,
     building,
+    layout,
     atlas,
-    theaters,
+    views,
+    onView: null,
+    onDrop: null,
     hotspots,
     arcadeScreens,
+    update(x, z, all = false) {
+      // Little changes from one step to the next: look again every couple of metres.
+      if (!all && Math.hypot(x - last.x, z - last.z) < 2) return;
+      last = { x, z };
+      const near = (c: { x: number; z: number }) => Math.hypot(c.x - x, c.z - z);
+      const wanted: Chunk[] = [];
+      for (const c of chunks) {
+        const d = near(c);
+        if (c.meshes && d > CHUNKS_OUT) dropChunk(c);
+        else if (!c.meshes && d < CHUNKS_IN) wanted.push(c);
+      }
+      wanted.sort((a, b) => near(a) - near(b));
+      for (const c of all ? wanted : wanted.slice(0, BUDGET)) meshChunkAt(c);
+      if (!all && wanted.length > BUDGET) last = { x: Infinity, z: Infinity };
+
+      const rooms: TheaterPlan[] = [];
+      for (const t of layout.theaters) {
+        const d = away(t, x, z);
+        if (views.has(t.number) && d > ROOMS_OUT) {
+          for (const o of owned.get(t.number) ?? []) o.dispose();
+          owned.delete(t.number);
+          views.delete(t.number);
+          world.onDrop?.(t.number);
+        } else if (!views.has(t.number) && d < ROOMS_IN) rooms.push(t);
+      }
+      rooms.sort((a, b) => away(a, x, z) - away(b, x, z));
+      for (const t of all ? rooms : rooms.slice(0, 1)) {
+        const { view, own } = buildView(t);
+        views.set(t.number, view);
+        owned.set(t.number, own);
+        world.onView?.(view);
+      }
+      if (!all && rooms.length > 1) last = { x: Infinity, z: Infinity };
+      // Groups with nothing left in them go.
+      for (const [n, g] of groups) {
+        if (!g.children.length) {
+          g.removeFromParent();
+          groups.delete(n);
+        }
+      }
+    },
     posterInView(x, z, yaw) {
       const fx = -Math.sin(yaw);
       const fz = -Math.cos(yaw);
@@ -802,13 +954,14 @@ export function buildWorld(movies: GalleryMovie[], lineup: (string | null)[]): W
       }
       return best?.id;
     },
-    showFrom(place, z) {
-      // From the hallway only the nearest doorways show anything of the rooms behind them.
-      for (const view of theaters) {
-        const t = view.plan;
-        view.group.visible =
-          (place.kind === 'theater' && place.number === t.number) ||
-          (place.kind === 'hall' && Math.abs((t.door.z0 + t.door.z1) / 2 - z) < 14);
+    showFrom(place, x, z) {
+      // From a corridor only the nearest doorways show anything of the rooms behind them.
+      for (const [n, g] of groups) {
+        const t = layout.theaters[n - 1]!;
+        const door = toWorld(t, -0.5, THEATER_HALF_WIDTH - 1);
+        g.visible =
+          (place.kind === 'theater' && place.number === n) ||
+          (place.kind === 'hall' && Math.hypot(door.x - x, door.z - z) < 16);
       }
     },
     animate(time, dt) {
@@ -823,7 +976,7 @@ export function buildWorld(movies: GalleryMovie[], lineup: (string | null)[]): W
           Math.cos(p * 23) * 0.25,
         );
       });
-      for (const v of theaters) {
+      for (const v of views.values()) {
         const c = v.curtains;
         c.open += (c.target - c.open) * Math.min(1, dt * 1.2);
         const s = 1 - c.open * 0.88;
@@ -835,9 +988,12 @@ export function buildWorld(movies: GalleryMovie[], lineup: (string | null)[]): W
     },
     dispose() {
       for (const d of disposables) d.dispose();
+      for (const own of owned.values()) for (const o of own) o.dispose();
+      for (const c of chunks) dropChunk(c);
       for (const a of staff) a.dispose();
     },
   };
+  return world;
 }
 
 export function paintDoorSign(view: TheaterView, lines: string[], busy: boolean) {
@@ -850,5 +1006,3 @@ export function paintDoorSign(view: TheaterView, lines: string[], busy: boolean)
   });
   view.doorSign.texture.needsUpdate = true;
 }
-
-export const GALLERY_ENTRANCE_Z = GALLERY.z1;

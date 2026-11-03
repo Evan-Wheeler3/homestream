@@ -3,7 +3,7 @@
 // let you through with a ticket for that theater.
 import type { VoxelGrid } from './grid';
 import { VOXEL } from './grid';
-import { doorwayAt, PLAYER_HEIGHT, PLAYER_RADIUS } from './layout';
+import { PLAYER_HEIGHT, PLAYER_RADIUS } from './layout';
 
 export const WALK_SPEED = 5.5;
 export const SPRINT_SPEED = 9;
@@ -33,14 +33,14 @@ export function overlaps(grid: VoxelGrid, x: number, y: number, z: number): bool
 }
 
 /** The theater whose doorway you'd be standing in without its ticket, if any. */
-function gated(x: number, z: number, ticket: number | null): number | null {
+function gated(grid: VoxelGrid, x: number, z: number, ticket: number | null): number | null {
   for (const [dx, dz] of [
     [-PLAYER_RADIUS, -PLAYER_RADIUS],
     [PLAYER_RADIUS, -PLAYER_RADIUS],
     [-PLAYER_RADIUS, PLAYER_RADIUS],
     [PLAYER_RADIUS, PLAYER_RADIUS],
   ] as const) {
-    const n = doorwayAt(x + dx, z + dz);
+    const n = grid.doorway?.(x + dx, z + dz) ?? null;
     if (n !== null && n !== ticket) return n;
   }
   return null;
@@ -67,7 +67,7 @@ export function step(
 ): StepResult {
   let blockedBy: number | null = null;
   const tryAxis = (nx: number, nz: number) => {
-    const door = gated(nx, nz, ticket);
+    const door = gated(grid, nx, nz, ticket);
     if (door !== null) {
       blockedBy = door;
       return;

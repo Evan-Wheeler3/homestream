@@ -148,14 +148,18 @@ instead.
   (Home → _Go to the movies_, **Theater** in the menu, or _In the theater_ on any movie). It's built
   from half-metre pixel-textured blocks: a lobby with a neon marquee and patterned carpet, a box office
   with a **Now Showing** board, a concession stand with a lit menu, popcorn machine, soda fountain and
-  hot dog roller, an arcade corner, a claw machine, standees, a hallway of eight auditoriums with
-  stadium seating (aisle stairs, step lights, curtains, a projector beam, EXIT signs), and **The
-  Collection**: a zig-zag gallery with a pixel-art poster for every movie, A to Z.
-  - **Each theater shows its own movie today** (a new lineup every day, the same for everyone; the
-    newest arrival gets Theater 1). The door signs and lit posters by each door say what's on. Buy a
-    ticket at the box office (today's lineup first, or anything from the collection) or from any
-    poster, and the ticket sends you to that movie's theater. The door only lets you in with a ticket;
-    _Find me a seat_ takes you straight to one.
+  hot dog roller, an arcade corner, a claw machine, standees, auditoriums with stadium seating (aisle
+  stairs, step lights, curtains, a projector beam, EXIT signs), and **The Collection**: a zig-zag
+  gallery with a pixel-art poster for every movie, A to Z.
+  - **Every movie has its own theater**, numbered in the order the movies arrived. The main hall runs
+    from the lobby to The Collection, and corridors branch off it left and right with theaters on both
+    sides, like a real multiplex; a sign at each junction says which theaters are which way, and the
+    corridor you're in shows at the top of the screen. The door signs and lit posters by each door say
+    what's on. Buy a ticket at the box office (the newest arrivals first, or anything from the
+    collection) or from any poster, and the ticket sends you to that movie's theater. The door only
+    lets you in with a ticket; _Find me a seat_ takes you straight to one, and the usher gives
+    directions. Only the part of the building around you is built and drawn, so a library of hundreds
+    of movies still runs smoothly on a phone.
   - **Sit down to start the movie**: the curtains open, a "3, 2, 1" film leader plays (with beeps),
     the house lights dim and the movie plays on the big screen. Seated: play/pause, seeking, volume,
     subtitles, **Full screen** and _Open in the player_.
@@ -172,8 +176,9 @@ instead.
     fraction of a second of each other, and anyone seated can pause or seek for all. _Private
     screening_ pauses when you stand up. Emoji reactions and messages float over people's heads.
   - **New movies appear by themselves**: the theater is built from the library each time it opens, so
-    a newly ripped movie joins the lineup rotation, the _New arrivals_ wall and The Collection straight
-    away. Nothing extra happens at rip time.
+    a newly ripped movie gets the next theater (at the end of the newest corridor, or a new corridor
+    when that one's full), a place on the _New arrivals_ wall and in The Collection, straight away.
+    The other theaters keep their numbers. Nothing extra happens at rip time.
   - **Controls**: on a computer, W/S or ↑/↓ walk, ←/→ turn, A/D step sideways, Shift runs, Space jumps,
     drag to look, E or Enter uses things. On a phone, put your left thumb down anywhere on the left to
     get a thumbstick that moves you (all the way to run), drag on the right to look and turn,

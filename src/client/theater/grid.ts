@@ -19,6 +19,8 @@ export class VoxelGrid {
   readonly ny: number;
   readonly nz: number;
   readonly cells: Uint8Array;
+  /** Which theater's doorway (ticket holders only) a spot is in, if any. */
+  doorway: ((x: number, z: number) => number | null) | null = null;
 
   constructor(readonly bounds: Bounds) {
     this.nx = Math.round((bounds.x1 - bounds.x0) / VOXEL);

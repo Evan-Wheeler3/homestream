@@ -4,19 +4,30 @@ import { meshChunk } from '../../src/client/theater/grid';
 import {
   buildBuilding,
   galleryPlan,
-  HALL,
   LOBBY,
   placeAt,
+  planLayout,
   posterSlot,
   seatPose,
   seatWalkway,
   SPAWN,
-  THEATERS,
+  THEATER_HALF_WIDTH,
   toWorld,
+  type TheaterPlan,
 } from '../../src/client/theater/layout';
 import { overlaps, step, type Body } from '../../src/client/theater/physics';
 
-const { grid, gallery } = buildBuilding(120);
+const { grid, gallery, layout } = buildBuilding(120);
+const THEATERS = layout.theaters;
+
+/** Just outside a theater's door, in its corridor. */
+const outsideDoor = (t: TheaterPlan) => toWorld(t, -2.2, THEATER_HALF_WIDTH - 1);
+/** Up the main hall to a theater's corridor, then along it to the door. */
+function walkToDoor(b: Body, t: TheaterPlan, ticket: number | null = null) {
+  const zc = layout.wings[t.wing]!.zc;
+  const door = outsideDoor(t);
+  return walkTo(b, 0, zc, ticket, 120).reached && walkTo(b, door.x, door.z, ticket, 60).reached;
+}
 
 function body(x: number, z: number, y = 0): Body {
   return { x, y, z, vy: 0, onGround: true };
@@ -42,7 +53,7 @@ function walkTo(b: Body, x: number, z: number, ticket: number | null = null, sec
 describe('the cinema building', () => {
   it('starts you on the lobby floor, with room to stand', () => {
     expect(overlaps(grid, SPAWN.x, 0, SPAWN.z)).toBe(false);
-    expect(placeAt(SPAWN.x, SPAWN.z)).toEqual({ kind: 'lobby' });
+    expect(placeAt(layout, SPAWN.x, SPAWN.z)).toEqual({ kind: 'lobby' });
   });
 
   it('walls stop you, and you slide along them', () => {
@@ -54,12 +65,12 @@ describe('the cinema building', () => {
     expect(b.z).toBeLessThan(-4);
   });
 
-  it('walks from the doors down the hallway to The Collection', () => {
+  it('walks from the doors up the main hall to The Collection', () => {
     const b = body(SPAWN.x, SPAWN.z);
     expect(walkTo(b, 0, -40).reached).toBe(true);
-    expect(placeAt(b.x, b.z)).toEqual({ kind: 'hall' });
-    expect(walkTo(b, 0, HALL.z0 - 2).reached).toBe(true);
-    expect(placeAt(b.x, b.z)).toEqual({ kind: 'gallery' });
+    expect(placeAt(layout, b.x, b.z)).toEqual({ kind: 'hall' });
+    expect(walkTo(b, 0, layout.hallZ0 - 2, null, 120).reached).toBe(true);
+    expect(placeAt(layout, b.x, b.z)).toEqual({ kind: 'gallery' });
     // Round the zig-zag walls: through the gap at the east end of the first.
     const [first, second] = gallery.dividers;
     expect(walkTo(b, 8, first!.z + 2).reached).toBe(true);
@@ -68,17 +79,77 @@ describe('the cinema building', () => {
     expect(walkTo(b, 8, second!.z - 2.5).reached).toBe(false);
   });
 
+  it('every movie has its own theater, off corridors branching from the main hall', () => {
+    expect(THEATERS).toHaveLength(120);
+    expect(THEATERS.map((t) => t.number)).toEqual(Array.from({ length: 120 }, (_, i) => i + 1));
+    // 12 down each arm of a corridor: 24 to a corridor, left and right.
+    expect(layout.wings).toHaveLength(5);
+    expect(layout.wings[0]!.west.theaters.map((t) => t.number)).toEqual(
+      Array.from({ length: 12 }, (_, i) => i + 1),
+    );
+    expect(layout.wings[0]!.east.theaters[0]!.number).toBe(13);
+    // On both sides of the corridor.
+    expect(new Set(THEATERS.slice(0, 12).map((t) => t.dir.z))).toEqual(new Set([1, -1]));
+    // No two theaters overlap, and each is wholly inside the grid.
+    for (const a of THEATERS) {
+      expect(a.x0).toBeGreaterThan(grid.bounds.x0);
+      expect(a.x1).toBeLessThan(grid.bounds.x1);
+      for (const b of THEATERS) {
+        if (a === b) continue;
+        const apart = a.x1 <= b.x0 || b.x1 <= a.x0 || a.z1 <= b.z0 || b.z1 <= a.z0;
+        expect(apart, `theaters ${a.number} and ${b.number}`).toBe(true);
+      }
+    }
+    // Each door opens from a corridor into its theater.
+    for (const t of THEATERS) {
+      const door = toWorld(t, -0.5, THEATER_HALF_WIDTH - 1);
+      const out = outsideDoor(t);
+      const inside = toWorld(t, 1.5, THEATER_HALF_WIDTH - 1);
+      for (const p of [door, out, inside]) expect(grid.at(p.x, 1, p.z)).toBe(BLOCK.air);
+      expect(placeAt(layout, out.x, out.z)).toMatchObject({ kind: 'hall' });
+      expect(placeAt(layout, inside.x, inside.z)).toEqual({ kind: 'theater', number: t.number });
+    }
+  });
+
+  it('a new movie adds a theater at the end of the newest corridor, and nothing else moves', () => {
+    const before = planLayout(30);
+    const after = planLayout(31);
+    expect(after.theaters).toHaveLength(31);
+    expect(after.theaters.slice(0, 30)).toEqual(before.theaters);
+    expect(after.theaters[30]!.wing).toBe(before.theaters[29]!.wing);
+    // A full corridor: the next movie starts a new one, further up the main hall.
+    const full = planLayout(32);
+    const next = planLayout(33);
+    expect(next.wings).toHaveLength(full.wings.length + 1);
+    expect(next.hallZ0).toBeLessThan(full.hallZ0);
+  });
+
+  it('names the corridor you are in', () => {
+    const t = THEATERS[13]!; // Theater 14: first corridor, right
+    const out = outsideDoor(t);
+    expect(placeAt(layout, out.x, out.z)).toEqual({ kind: 'hall', corridor: 'Theaters 13–24' });
+  });
+
   it('a theater door needs a ticket for that theater', () => {
-    const t = THEATERS[2]!; // Theater 3, on the left
-    const doorZ = (t.door.z0 + t.door.z1) / 2;
-    const b = body(0, doorZ);
-    const inside = toWorld(t, 3, doorZ - t.zc);
+    const t = THEATERS[2]!; // Theater 3: first corridor, left
+    const b = body(SPAWN.x, SPAWN.z);
+    expect(walkToDoor(b, t)).toBe(true);
+    const inside = toWorld(t, 3, THEATER_HALF_WIDTH - 1);
     const without = walkTo(b, inside.x, inside.z, null, 5);
     expect(without.reached).toBe(false);
     expect(without.blockedBy).toBe(3);
     expect(walkTo(b, inside.x, inside.z, 1, 5).blockedBy).toBe(3);
     expect(walkTo(b, inside.x, inside.z, 3).reached).toBe(true);
-    expect(placeAt(b.x, b.z)).toEqual({ kind: 'theater', number: 3 });
+    expect(placeAt(layout, b.x, b.z)).toEqual({ kind: 'theater', number: 3 });
+  });
+
+  it('you can walk from the lobby to the furthest theater and in', () => {
+    const t = THEATERS.at(-1)!;
+    const b = body(SPAWN.x, SPAWN.z);
+    expect(walkToDoor(b, t, t.number)).toBe(true);
+    const inside = toWorld(t, 3, THEATER_HALF_WIDTH - 1);
+    expect(walkTo(b, inside.x, inside.z, t.number).reached).toBe(true);
+    expect(placeAt(layout, b.x, b.z)).toEqual({ kind: 'theater', number: t.number });
   });
 
   it('the aisle is stairs: you climb to the back row without jumping', () => {
@@ -123,7 +194,7 @@ describe('the cinema building', () => {
   });
 
   it('posters hang on the gallery walls, each in its own place', () => {
-    const plan = galleryPlan(120);
+    const plan = galleryPlan(120, gallery.z1);
     const slots = Array.from({ length: 120 }, (_, i) => posterSlot(plan, i));
     const keys = new Set(slots.map((s) => `${s.x.toFixed(2)},${s.y},${s.z.toFixed(2)}`));
     expect(keys.size).toBe(120);
@@ -135,11 +206,15 @@ describe('the cinema building', () => {
   });
 
   it('draws only faces you can see, and never two in the same place', () => {
-    const arrays = meshChunk(grid, 0, grid.nx, 0, grid.nz, () => 0);
+    // The lobby and the first corridor.
+    const arrays = meshChunk(grid, 0, grid.nx, grid.iz(-80), grid.nz, () => 0);
     const seen = new Set<string>();
     const p = arrays.opaque.positions;
     for (let q = 0; q < p.length; q += 12) {
-      const key = Array.from({ length: 12 }, (_, i) => p[q + i]!.toFixed(3))
+      // The face's four corners, as points (in any order).
+      const key = Array.from({ length: 4 }, (_, c) =>
+        [0, 1, 2].map((a) => p[q + c * 3 + a]!.toFixed(3)).join(' '),
+      )
         .sort()
         .join();
       expect(seen.has(key)).toBe(false);
