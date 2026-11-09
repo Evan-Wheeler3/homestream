@@ -36,7 +36,6 @@
     "cloud:bootstrap": "tsx --env-file-if-exists=.env scripts/cloud.ts bootstrap"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^1.6.0",
     "@fontsource-variable/inter": "^5.3.0",
     "@fontsource/instrument-serif": "^5.3.0",
     "@tanstack/react-query": "^5.104.2",

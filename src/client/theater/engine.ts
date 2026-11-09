@@ -11,7 +11,6 @@ import {
   type Hands,
   type Scores,
   type Showing,
-  type StatueSpec,
   type TheaterPlayer,
 } from '../../shared/theater';
 import { drawAttract } from './arcade';
@@ -136,7 +135,6 @@ export class TheaterEngine {
     private readonly movies: GalleryMovie[],
     private readonly lineup: (string | null)[],
     private readonly meId: () => string | null,
-    statues: Record<string, StatueSpec> = {},
   ) {
     this.renderer = new THREE.WebGLRenderer({
       antialias: false,
@@ -148,7 +146,7 @@ export class TheaterEngine {
     container.appendChild(this.renderer.domElement);
     this.scene.background = new THREE.Color(0x0a0716);
     this.scene.fog = new THREE.Fog(0x0a0716, 30, 70);
-    this.world = buildWorld(movies, lineup, statues);
+    this.world = buildWorld(movies, lineup);
     this.layout = this.world.layout;
     this.world.onView = (view) => this.dressView(view);
     this.world.onDrop = (n) => {

@@ -271,3 +271,22 @@ describe('the cinema building', () => {
     expect(seen.size).toBeGreaterThan(500);
   });
 });
+
+describe('the statues designed for movies', () => {
+  it('fit on the statue grid, stand on the pedestal, and have a name', async () => {
+    const { MOVIE_STATUES } = await import('../../src/client/theater/designs');
+    const { STATUE_GRID } = await import('../../src/shared/theater');
+    expect(Object.keys(MOVIE_STATUES).length).toBeGreaterThanOrEqual(18);
+    for (const [id, spec] of Object.entries(MOVIE_STATUES)) {
+      expect(spec.name, id).toBeTruthy();
+      expect(spec.boxes.length, id).toBeGreaterThan(3);
+      expect(Math.min(...spec.boxes.map((b) => b[1])), `${id} stands on the pedestal`).toBe(0);
+      for (const [x0, y0, z0, x1, y1, z1, color, glow] of spec.boxes) {
+        expect(x0 >= 0 && x1 <= STATUE_GRID.x && x0 < x1, `${id} x`).toBe(true);
+        expect(y0 >= 0 && y1 <= STATUE_GRID.y && y0 < y1, `${id} y`).toBe(true);
+        expect(z0 >= 0 && z1 <= STATUE_GRID.z && z0 < z1, `${id} z`).toBe(true);
+        expect(color >= 0 && color <= 0xffffff && (glow === 0 || glow === 1), id).toBe(true);
+      }
+    }
+  });
+});

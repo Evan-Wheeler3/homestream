@@ -26,7 +26,7 @@
   "durable_objects": { "bindings": [{ "name": "THEATER", "class_name": "TheaterHouse" }] },
   "migrations": [{ "tag": "theater-v1", "new_sqlite_classes": ["TheaterHouse"] }],
   // Nightly database backup to R2 and ratings refresh (04:17 UTC).
-  "triggers": { "crons": ["17 4 * * *", "*/20 * * * *"] },
+  "triggers": { "crons": ["17 4 * * *"] },
   "vars": {
     // Password hashing strength (PBKDF2-SHA256). Raise to 100000 on Workers Paid.
     "PBKDF2_ITERATIONS": "5000",

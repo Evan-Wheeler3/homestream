@@ -42,6 +42,7 @@ import {
   type TheaterPlan,
 } from './layout';
 import { addSeat, BoxBuilder, geometryOf, materials, meshOf } from './models';
+import { MOVIE_STATUES } from './designs';
 import { buildDesignedStatue, buildStatue, statueFor } from './statues';
 import { canvasTexture, drawBoard, drawSign, PosterAtlas, signTexture } from './textures';
 
@@ -116,7 +117,7 @@ export function buildWorld(
   movies: GalleryMovie[],
   lineup: (string | null)[],
   /** Statues designed for particular movies (the rest get one for their genre). */
-  statues: Record<string, StatueSpec> = {},
+  statues: Record<string, StatueSpec> = MOVIE_STATUES,
 ): World {
   const root = new THREE.Group();
   const mats = materials();

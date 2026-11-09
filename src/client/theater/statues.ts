@@ -330,10 +330,7 @@ export function buildStatue(
   }
 }
 
-/**
- * Builds a statue designed for this movie (see src/cloud/statues.ts) on the same
- * pedestal; `at` as for buildStatue.
- */
+/** Builds a statue designed for this movie (designs.ts) on the same pedestal; `at` as for buildStatue. */
 export function buildDesignedStatue(
   spec: StatueSpec,
   parts: StatueParts,
