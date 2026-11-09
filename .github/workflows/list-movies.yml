@@ -1,0 +1,34 @@
+# Prints the cloud library (titles, years, genres and a line of each story) in
+# this run's log, read-only. Runs when this file changes, or by hand from the
+# Actions tab (Run workflow). Uses the same Cloudflare secrets as the deploy.
+name: List movies
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [claude/peaceful-cray-8hwjin]
+    paths: [.github/workflows/list-movies.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  list:
+    name: List the cloud library
+    runs-on: ubuntu-24.04
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Movies, in the order they were added (Theater 1 first)
+        run: >
+          npx wrangler d1 execute wheelhouse --remote --json --command
+          "SELECT id, title, year, json_extract(summary, '$.genres') AS genres,
+          substr(json_extract(summary, '$.overview'), 1, 300) AS story
+          FROM movies ORDER BY date_added, id"
