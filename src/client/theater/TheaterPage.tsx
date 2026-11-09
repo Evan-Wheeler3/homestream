@@ -8,6 +8,7 @@ import { useNavigate, useSearchParams } from 'react-router';
 import {
   countdownLeft,
   theaterLineup,
+  type StatueSpec,
   emptyScores,
   positionAt,
   REACTIONS,
@@ -67,6 +68,17 @@ export default function TheaterPage() {
     staleTime: Infinity,
     refetchOnWindowFocus: false,
   });
+  // Each movie's statue, designed in the cloud (elsewhere, or not yet: one for its genre).
+  const statues = useQuery({
+    queryKey: ['theater', 'statues'],
+    queryFn: () =>
+      api<{ statues: Record<string, StatueSpec> }>('/theater/statues').then(
+        (r) => r.statues,
+        () => ({}),
+      ),
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+  });
   if (session.isError || movies.isError) {
     return (
       <div className="theater theater--message">
@@ -77,7 +89,7 @@ export default function TheaterPage() {
       </div>
     );
   }
-  if (!session.data || !movies.data) {
+  if (!session.data || !movies.data || statues.isPending) {
     return (
       <div className="theater theater--message">
         <Spinner size={36} label="Opening the doors" />
@@ -86,7 +98,12 @@ export default function TheaterPage() {
     );
   }
   return (
-    <Cinema me={session.data.user} cloud={session.data.source === 'cloud'} movies={movies.data} />
+    <Cinema
+      me={session.data.user}
+      cloud={session.data.source === 'cloud'}
+      movies={movies.data}
+      statues={statues.data ?? {}}
+    />
   );
 }
 
@@ -104,7 +121,17 @@ type Dialogs =
   | { kind: 'arcade'; game: ArcadeGameId }
   | null;
 
-function Cinema({ me, cloud, movies }: { me: SessionUser; cloud: boolean; movies: Movie[] }) {
+function Cinema({
+  me,
+  cloud,
+  movies,
+  statues,
+}: {
+  me: SessionUser;
+  cloud: boolean;
+  movies: Movie[];
+  statues: Record<string, StatueSpec>;
+}) {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const toast = useToast();
@@ -525,6 +552,7 @@ function Cinema({ me, cloud, movies }: { me: SessionUser; cloud: boolean; movies
       })),
       lineup,
       () => meIdRef.current,
+      statues,
     );
     engineRef.current = engine;
     const self = meRef.current;

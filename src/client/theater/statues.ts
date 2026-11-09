@@ -1,6 +1,7 @@
 // A statue beside each theater's door, on a marble pedestal, picked from the
 // movie's genres: a rocket for science fiction, a jack-o'-lantern for horror,
 // a cactus in a cowboy hat for westerns... Built from boxes like everything else.
+import { STATUE_GRID, type StatueSpec } from '../../shared/theater';
 import type { BoxBuilder, Faces } from './models';
 
 export type StatueTheme =
@@ -326,5 +327,68 @@ export function buildStatue(
       solid(-0.07, T + 1.12, -0.06, 0.07, T + 1.28, 0.06, 'gold');
       break;
     }
+  }
+}
+
+/**
+ * Builds a statue designed for this movie (see src/cloud/statues.ts) on the same
+ * pedestal; `at` as for buildStatue.
+ */
+export function buildDesignedStatue(
+  spec: StatueSpec,
+  parts: StatueParts,
+  at: (x: number, y: number, z: number) => [number, number, number],
+) {
+  const rgb = (c: number): RGB => [
+    ((c >> 16) & 255) / 255,
+    ((c >> 8) & 255) / 255,
+    (c & 255) / 255,
+  ];
+  // The plaque glows in the statue's own glow colour (gold if nothing glows).
+  const glowing = spec.boxes.find((b) => b[7] === 1);
+  const put = (
+    b: BoxBuilder,
+    x0: number,
+    y0: number,
+    z0: number,
+    x1: number,
+    y1: number,
+    z1: number,
+    faces: Faces,
+    tint?: RGB,
+  ) => {
+    const a = at(x0, y0, z0);
+    const c = at(x1, y1, z1);
+    b.box(a[0], a[1], a[2], c[0], c[1], c[2], faces, { fit: true, tint });
+  };
+  put(parts.opaque, -0.5, 0, -0.5, 0.5, 0.15, 0.5, 'darkMetal');
+  put(parts.opaque, -0.42, 0.15, -0.42, 0.42, 0.75, 0.42, 'white', [0.86, 0.84, 0.8]);
+  put(parts.opaque, -0.48, 0.75, -0.48, 0.48, PEDESTAL.top, 0.48, 'gold');
+  put(
+    parts.glow,
+    -0.28,
+    0.38,
+    0.42,
+    0.28,
+    0.52,
+    0.44,
+    'white',
+    glowing ? rgb(glowing[6]) : [1, 0.82, 0.25],
+  );
+  // Grid units are 1/16 m, centred on the pedestal.
+  const gx = (n: number) => n / 16 - STATUE_GRID.x / 32;
+  const gz = (n: number) => n / 16 - STATUE_GRID.z / 32;
+  for (const [x0, y0, z0, x1, y1, z1, color, glow] of spec.boxes) {
+    put(
+      glow ? parts.glow : parts.opaque,
+      gx(x0),
+      PEDESTAL.top + y0 / 16,
+      gz(z0),
+      gx(x1),
+      PEDESTAL.top + y1 / 16,
+      gz(z1),
+      'white',
+      rgb(color),
+    );
   }
 }

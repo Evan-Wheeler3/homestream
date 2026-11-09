@@ -71,6 +71,7 @@ import { nowIso, Sql } from './db.js';
 import type { CloudEnv } from './env.js';
 import { CloudLibrary } from './library.js';
 import { refreshRatings } from './ratings.js';
+import { allStatues, claudeDesigner, designStatue } from './statues.js';
 import {
   episodeDetail,
   episodeInfo,
@@ -519,6 +520,18 @@ export function createApp() {
   mac.get('/movies', async (c) => c.json({ movies: await listIngested(c.get('sql')) }));
   mac.put('/movies/:id', async (c) => {
     const result = await ingestMovie(c.env, c.get('sql'), c.req.param('id'), await json(c));
+    // Its statue for the 3D cinema (the scheduled run catches it if this doesn't finish).
+    if (c.env.ANTHROPIC_API_KEY) {
+      const sql = c.get('sql');
+      const id = c.req.param('id');
+      const design = claudeDesigner(c.env.ANTHROPIC_API_KEY);
+      c.executionCtx.waitUntil(
+        sql
+          .get<{ spec: string | null }>('SELECT spec FROM statues WHERE movie_id = ?', id)
+          .then((row) => (row?.spec ? null : designStatue(sql, id, design)))
+          .catch(() => undefined),
+      );
+    }
     // IMDb and Rotten Tomatoes ratings right away (the Mac sends TMDB's score).
     try {
       await refreshRatings(c.env, c.get('sql'), { ids: [c.req.param('id')] });
@@ -700,6 +713,12 @@ export function createApp() {
   app.delete('/movies/:id', async (c) => {
     requireAdmin(user(c), 'remove movies');
     return c.json(await removeMovie(c.env, c.get('sql'), itemId(c), user(c).id));
+  });
+
+  // The 3D cinema's statues, one per movie that has one designed.
+  app.get('/theater/statues', async (c) => {
+    c.header('Cache-Control', 'private, max-age=300');
+    return c.json({ statues: await allStatues(c.get('sql')) });
   });
 
   app.put('/movies/:id/favorite', async (c) => {

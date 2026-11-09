@@ -2,7 +2,13 @@
 // plus everything that isn't a whole block: seats with cupholders, curtains,
 // screens, signs, the machines behind the counters, standees and posters.
 import * as THREE from 'three';
-import { ARCADE_GAMES, SEAT_COUNT, SNACKS, type ArcadeGameId } from '../../shared/theater';
+import {
+  ARCADE_GAMES,
+  SEAT_COUNT,
+  SNACKS,
+  type ArcadeGameId,
+  type StatueSpec,
+} from '../../shared/theater';
 import { Avatar } from './avatars';
 import { BLOCKS, tile } from './blocks';
 import { meshChunk, VOXEL } from './grid';
@@ -36,7 +42,7 @@ import {
   type TheaterPlan,
 } from './layout';
 import { addSeat, BoxBuilder, geometryOf, materials, meshOf } from './models';
-import { buildStatue, statueFor } from './statues';
+import { buildDesignedStatue, buildStatue, statueFor } from './statues';
 import { canvasTexture, drawBoard, drawSign, PosterAtlas, signTexture } from './textures';
 
 export interface GalleryMovie {
@@ -106,7 +112,12 @@ const ROOMS_OUT = 52;
 /** How many chunks or auditoriums to build per update while walking. */
 const BUDGET = 3;
 
-export function buildWorld(movies: GalleryMovie[], lineup: (string | null)[]): World {
+export function buildWorld(
+  movies: GalleryMovie[],
+  lineup: (string | null)[],
+  /** Statues designed for particular movies (the rest get one for their genre). */
+  statues: Record<string, StatueSpec> = {},
+): World {
   const root = new THREE.Group();
   const mats = materials();
   const disposables: { dispose(): void }[] = [];
@@ -582,11 +593,14 @@ export function buildWorld(movies: GalleryMovie[], lineup: (string | null)[]): W
     const id = lineup[t.number - 1];
     if (!id) continue;
     const movie = movies.find((m) => m.id === id);
-    buildStatue(statueFor(movie?.genres), lobby, (sx, sy, sz) => {
-      // The statue faces the corridor; x is to your right as you face it.
+    // The statue faces the corridor; x is to your right as you face it.
+    const at = (sx: number, sy: number, sz: number): [number, number, number] => {
       const w = toWorld(t, STATUE.u - sz, STATUE.v - sx * t.across);
       return [w.x, sy, w.z];
-    });
+    };
+    const designed = statues[id];
+    if (designed) buildDesignedStatue(designed, lobby, at);
+    else buildStatue(statueFor(movie?.genres), lobby, at);
     const out = { x: -t.dir.x, z: -t.dir.z };
     const p = toWorld(t, -1.01, THEATER_HALF_WIDTH - 3.5);
     posterQuads.push({ movieId: id, x: p.x, y: 2.1, z: p.z, yaw: facing(out), w: 1.2, h: 1.8 });

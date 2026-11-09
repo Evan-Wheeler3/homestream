@@ -111,6 +111,13 @@ including new database migrations. Nothing needs to run on the Mac.
 The Worker's own secrets (e.g. `OMDB_API_KEY`) can be added in the browser too: Cloudflare dashboard →
 **Workers & Pages → wheelhouse → Settings → Variables and Secrets → Add** (type _Secret_).
 
+**Statues in the 3D cinema:** add an `ANTHROPIC_API_KEY` Worker secret (a Claude API key, from
+platform.claude.com) and each movie gets its own statue by its theater's door: Claude reads the movie's
+story and designs one object or prop from the film (never a character or a logo) out of blocks. New
+movies get theirs as the Mac adds them; every 20 minutes the Worker designs up to four for movies
+still without one, so an existing library fills in over a few hours. It costs roughly a cent per
+movie, once. Without the key, or until a movie's statue is designed, it gets one for its genre.
+
 **Going back to the local setup:** remove `WHEELHOUSE_MODE=ripper` from `.env`, restart the same way,
 and open Jellyfin again.
 
@@ -155,9 +162,8 @@ instead.
     from the lobby to The Collection, and corridors branch off it left and right with theaters on both
     sides, like a real multiplex; a sign at each junction says which theaters are which way, and the
     corridor you're in shows at the top of the screen. The door signs and lit posters by each door say
-    what's on, and a statue on a pedestal by each door matches the movie's genre (a rocket for science
-    fiction, a jack-o'-lantern for horror, a cactus in a cowboy hat for westerns, a rubber duck for
-    comedy, a golden award for drama, and more). Buy a ticket at the box office (the newest arrivals first, or anything from the
+    what's on, and a statue on a pedestal by each door shows an object from that movie, designed for
+    it (see _Statues in the 3D cinema_; until then, or on the Mac's own site, one for its genre). Buy a ticket at the box office (the newest arrivals first, or anything from the
     collection) or from any poster, and the ticket sends you to that movie's theater. The door only
     lets you in with a ticket; _Find me a seat_ takes you straight to one, and the usher gives
     directions. Only the part of the building around you is built and drawn, so a library of hundreds

@@ -70,6 +70,19 @@ export function theaterLineup(movies: { id: string; dateAdded: string | null }[]
     .map((m) => m.id);
 }
 
+/**
+ * A movie's statue (by its theater's door): boxes on a grid of 1/16 m units,
+ * x across (left to right as you face it), y up, z back to front.
+ */
+export const STATUE_GRID = { x: 16, y: 24, z: 16 };
+/** [x0, y0, z0, x1, y1, z1, colour as 0xrrggbb, glows (1) or not (0)] */
+export type StatueBox = [number, number, number, number, number, number, number, number];
+export interface StatueSpec {
+  /** For the plaque, e.g. "The Red Balloon". */
+  name: string;
+  boxes: StatueBox[];
+}
+
 export const REACTIONS = ['😂', '😱', '😍', '👏', '😭', '🔥', '🍿', '👀'] as const;
 
 /** Where people walk in (just inside the front doors), facing the box office. */

@@ -92,6 +92,8 @@ export interface CloudEnv {
   TMDB_READ_TOKEN?: string;
   /** omdbapi.com key: IMDb and Rotten Tomatoes ratings. */
   OMDB_API_KEY?: string;
+  /** Claude API key: designs each movie's statue in the 3D cinema (optional). */
+  ANTHROPIC_API_KEY?: string;
   OPENSUBTITLES_API_KEY?: string;
   OPENSUBTITLES_USERNAME?: string;
   OPENSUBTITLES_PASSWORD?: string;

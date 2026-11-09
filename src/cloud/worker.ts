@@ -5,6 +5,7 @@ import { createApp } from './app.js';
 import { readSession, SESSION_COOKIE } from './auth.js';
 import { nowIso, Sql } from './db.js';
 import { refreshRatings } from './ratings.js';
+import { designMissing } from './statues.js';
 import type { CloudEnv } from './env.js';
 import { THEATER_USER_HEADER } from './theater.js';
 
@@ -26,9 +27,18 @@ export default {
     return env.ASSETS.fetch(request);
   },
 
-  /** Nightly: back up the database to R2, tidy away expired records, refresh some ratings. */
-  async scheduled(_controller: unknown, env: CloudEnv, ctx: Ctx) {
+  /**
+   * Every 20 minutes: design statues for movies still without one. Nightly: back
+   * up the database to R2, tidy away expired records, refresh some ratings.
+   */
+  async scheduled(controller: { cron?: string }, env: CloudEnv, ctx: Ctx) {
     const sql = new Sql(env.DB);
+    if (controller.cron === STATUE_CRON) {
+      ctx.waitUntil(
+        designMissing(env, sql).catch((error) => console.warn('Statues failed', error)),
+      );
+      return;
+    }
     ctx.waitUntil(
       (async () => {
         await backupNow(env, sql);
@@ -47,6 +57,9 @@ export default {
     );
   },
 };
+
+/** Matches wrangler.jsonc's triggers. */
+const STATUE_CRON = '*/20 * * * *';
 
 const cookie = (request: Request, name: string) =>
   request.headers

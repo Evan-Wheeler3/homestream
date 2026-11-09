@@ -310,7 +310,7 @@ test('theater on a phone: snacks, cupholders and the movie controls all take a t
   await page.getByRole('button', { name: 'Box office' }).tap();
   await page.getByRole('button', { name: /Buy a ticket/ }).tap();
   const box = page.getByRole('dialog', { name: 'Box office' });
-  await box.locator('.lineup__card').first().tap();
+  await box.locator('.boxoffice__movie').first().tap();
   await box.getByRole('radio', { name: 'Private screening' }).tap();
   await box.getByRole('button', { name: 'Get a ticket' }).tap();
   await page

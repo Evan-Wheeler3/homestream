@@ -541,6 +541,27 @@ describe('cloud: library and playback', () => {
   });
 });
 
+describe('cloud: statues for the 3D cinema', () => {
+  it('lists the designed statues for signed-in people', async () => {
+    const c = cloud();
+    expect((await c.call('GET', '/api/theater/statues')).status).toBe(401);
+    await signedInAdmin(c);
+    await addMovie(c);
+    c.db.raw
+      .prepare(`INSERT INTO statues (movie_id, spec, attempts, updated_at) VALUES (?, ?, 1, ?)`)
+      .run(
+        'tmdb-680',
+        JSON.stringify({ name: 'The Briefcase', boxes: [[0, 0, 0, 4, 4, 4, 0, 0]] }),
+        '',
+      );
+    const res = await c.call('GET', '/api/theater/statues');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      statues: { 'tmdb-680': { name: 'The Briefcase', boxes: [[0, 0, 0, 4, 4, 4, 0, 0]] } },
+    });
+  });
+});
+
 describe('cloud: removing a movie', () => {
   it('takes it out of the library, lists and storage, for admins only', async () => {
     const c = cloud();
