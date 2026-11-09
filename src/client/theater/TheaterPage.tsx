@@ -516,7 +516,13 @@ function Cinema({ me, cloud, movies }: { me: SessionUser; cloud: boolean; movies
           if (JSON.stringify(next) !== JSON.stringify(handsRef.current)) updateHands(next);
         },
       },
-      movies.map((m) => ({ id: m.id, title: m.title, year: m.year, poster: m.images.poster })),
+      movies.map((m) => ({
+        id: m.id,
+        title: m.title,
+        year: m.year,
+        poster: m.images.poster,
+        genres: m.genres,
+      })),
       lineup,
       () => meIdRef.current,
     );

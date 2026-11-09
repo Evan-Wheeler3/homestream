@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { BLOCK } from '../../src/client/theater/blocks';
 import { meshChunk } from '../../src/client/theater/grid';
+import { statueFor } from '../../src/client/theater/statues';
 import {
   buildBuilding,
   CHUNK,
@@ -13,6 +14,7 @@ import {
   seatPose,
   seatWalkway,
   SPAWN,
+  STATUE,
   THEATER_HALF_WIDTH,
   toWorld,
   type TheaterPlan,
@@ -150,6 +152,23 @@ describe('the cinema building', () => {
           true,
         );
       }
+    }
+  });
+
+  it('a statue by every door, picked by genre, that you walk round (not through the door)', () => {
+    expect(statueFor(['Drama', 'Science Fiction'])).toBe('rocket');
+    expect(statueFor(['Comedy', 'Horror'])).toBe('pumpkin');
+    expect(statueFor(['Western'])).toBe('cactus');
+    expect(statueFor(['Drama'])).toBe('award');
+    expect(statueFor(undefined)).toBe('award');
+    for (const t of THEATERS) {
+      const p = toWorld(t, STATUE.u, STATUE.v);
+      expect(grid.at(p.x, 0.5, p.z), `theater ${t.number} pedestal`).toBe(BLOCK.barrier);
+      // The doorway and the corridor down the middle stay clear.
+      const door = toWorld(t, -1.5, THEATER_HALF_WIDTH - 1);
+      expect(grid.at(door.x, 0.5, door.z)).toBe(BLOCK.air);
+      const middle = toWorld(t, -4, STATUE.v);
+      expect(grid.at(middle.x, 0.5, middle.z)).toBe(BLOCK.air);
     }
   });
 

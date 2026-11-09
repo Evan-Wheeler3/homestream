@@ -21,6 +21,7 @@ import {
   RESTROOMS,
   SCREEN,
   seatPose,
+  STATUE,
   STANDEES,
   chunkOwner,
   theaterTrash,
@@ -35,6 +36,7 @@ import {
   type TheaterPlan,
 } from './layout';
 import { addSeat, BoxBuilder, geometryOf, materials, meshOf } from './models';
+import { buildStatue, statueFor } from './statues';
 import { canvasTexture, drawBoard, drawSign, PosterAtlas, signTexture } from './textures';
 
 export interface GalleryMovie {
@@ -42,6 +44,8 @@ export interface GalleryMovie {
   title: string;
   year: number | null;
   poster: string | null;
+  /** Picks the statue by its theater's door. */
+  genres?: string[];
 }
 
 export interface TheaterView {
@@ -572,10 +576,17 @@ export function buildWorld(movies: GalleryMovie[], lineup: (string | null)[]): W
     { color: '#ffd23f', glow: '#ffd23f', border: '#ffd23f' },
   );
 
-  // Beside each theater's door (corridor side): its movie's poster in a light box.
+  // Beside each theater's door (corridor side): a statue for its movie, and its
+  // poster in a light box.
   for (const t of layout.theaters) {
     const id = lineup[t.number - 1];
     if (!id) continue;
+    const movie = movies.find((m) => m.id === id);
+    buildStatue(statueFor(movie?.genres), lobby, (sx, sy, sz) => {
+      // The statue faces the corridor; x is to your right as you face it.
+      const w = toWorld(t, STATUE.u - sz, STATUE.v - sx * t.across);
+      return [w.x, sy, w.z];
+    });
     const out = { x: -t.dir.x, z: -t.dir.z };
     const p = toWorld(t, -1.01, THEATER_HALF_WIDTH - 3.5);
     posterQuads.push({ movieId: id, x: p.x, y: 2.1, z: p.z, yaw: facing(out), w: 1.2, h: 1.8 });

@@ -63,6 +63,11 @@ export const STANDEES = [
 export const THEATER_DEPTH = 22;
 export const THEATER_HALF_WIDTH = 7.5;
 export const THEATER_HEIGHT = 9;
+/**
+ * Each theater's statue, in the corridor beside its door: the middle of its
+ * pedestal (u, v as inside the theater, so u < 0 is the corridor side of the wall).
+ */
+export const STATUE = { u: -1.55, v: 1 };
 /** The screen: on the corridor wall, in front of a black frame. */
 export const SCREEN = { u: 0.52, width: 10.4, bottom: 1.2, top: 7.3 };
 const FIRST_ROW_U = 6;
@@ -532,6 +537,12 @@ export function buildBuilding(movieCount: number): Building {
       paint: theaterPaint(t),
     });
     carve({ ...t.door, y0: 0, y1: 3, paint: doorwayPaint(theaterPaint(t)) });
+  }
+  // The statues' pedestals: you walk round them (they're drawn separately).
+  for (const t of layout.theaters) {
+    const a = toWorld(t, STATUE.u - 0.45, STATUE.v - 0.5);
+    const b = toWorld(t, STATUE.u + 0.55, STATUE.v + 0.5);
+    grid.fill(a.x, 0, a.z, b.x, 2, b.z, BLOCK.barrier);
   }
   // The Collection.
   carve({
