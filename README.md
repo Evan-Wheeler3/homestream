@@ -188,6 +188,17 @@ instead.
     and use the big buttons for Use, Jump and Run; it works upright or sideways. On a TV remote the
     arrows walk and turn and OK uses things. Sound effects can be muted. On the home (Jellyfin) server
     it works the same but it's just you.
+  - **VR (Meta Quest, even the original Oculus Quest)**: open the theater in the Quest's browser and
+    press **Enter VR**. It's made for **hand tracking**, so no controllers are needed. Point at the
+    floor and pinch to go there (a green ring shows where; red means a door you have no ticket for).
+    A floating menu in front of you does the rest: _Get a ticket_ (the box office, newest movies
+    first), _Sit down in Theater N_ (straight to a good seat), turning left and right in 45° steps,
+    and, once seated, Play/Pause, Back 10 s, Ahead 30 s, Stand up and Exit VR. _Hide menu_ puts it
+    away; pinch at anything that isn't the floor to bring it back. With controllers, the trigger is
+    a pinch, the left stick walks and the right stick turns. Not in VR yet: snacks, the arcade,
+    subtitles and chat (take the headset off for those). Browsers only allow VR on **HTTPS** pages:
+    the Cloudflare edition is HTTPS already; the home server needs HTTPS (see
+    [Remote access](#remote-access)), because plain `http://` on your home network won't offer VR.
 - **Home**: a featured film with backdrop (rotates; source configurable), Continue Watching, Recently Added,
   Personal Favorites, your collections, a “Spin the wheel” invitation, and genre/decade shelves. Sections can be hidden and
   reordered, and any collection can be pinned as its own row. Empty rows never appear.

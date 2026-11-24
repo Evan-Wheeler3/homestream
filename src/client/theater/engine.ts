@@ -38,6 +38,7 @@ import {
 import { CUPHOLDER_HEIGHT, CUPHOLDERS, disposeMaterials, materials, snackModel } from './models';
 import { step, SPRINT_SPEED, WALK_SPEED, type Body } from './physics';
 import { canvasTexture } from './textures';
+import { VrMode } from './vr';
 import {
   buildWorld,
   paintDoorSign,
@@ -46,6 +47,7 @@ import {
   type TheaterView,
   type World,
 } from './world';
+import type { VrPanelModel } from './xr';
 
 export type Prompt =
   | { kind: Hotspot['kind']; label: string; game?: ArcadeGameId }
@@ -65,9 +67,15 @@ export interface EngineEvents {
   onEat(hand: 0 | 1): void;
   /** Sat down or stood up (snacks go into the cupholders and back). */
   onSeated(seated: boolean): void;
+  /** VR: a button on the floating menu. */
+  onVrPress?(id: string): void;
+  /** VR started or ended. */
+  onVr?(on: boolean): void;
 }
 
 const TURN_SPEED = 2.4;
+/** VR turns in steps (smooth turning makes people queasy). */
+const SNAP_TURN = Math.PI / 4;
 const LOOK_SENSITIVITY = 0.0042;
 const TOUCH_LOOK_SENSITIVITY = 0.0068;
 const reducedMotion = () =>
@@ -98,6 +106,12 @@ export class TheaterEngine {
   private holdersKey = '';
   private frame = 0;
   private disposed = false;
+  // VR: the rig carries your headset (and hands) through the building; your
+  // real head moves inside it. `recenter` puts your head back where the body is.
+  private readonly rig = new THREE.Group();
+  private vr: VrMode | null = null;
+  private recenter = false;
+  private readonly headEuler = new THREE.Euler(0, 0, 0, 'YXZ');
 
   // You.
   readonly body: Body = { x: SPAWN.x, y: 0, z: SPAWN.z, vy: 0, onGround: true };
@@ -193,6 +207,7 @@ export class TheaterEngine {
     window.removeEventListener('keydown', this.onKeyDown, { capture: true });
     window.removeEventListener('keyup', this.onKeyUp, { capture: true });
     window.removeEventListener('blur', this.onBlur);
+    this.vr?.dispose();
     for (const a of this.avatars.values()) a.dispose();
     for (const t of this.posters.values()) t.dispose();
     this.clearGroup(this.viewModel);
@@ -226,6 +241,8 @@ export class TheaterEngine {
 
   // The canvas follows its box (rotating a phone, browser bars coming and going).
   private readonly resize = () => {
+    // The headset sets the size while you're in VR.
+    if (this.renderer.xr.isPresenting) return;
     const w = this.container.clientWidth || window.innerWidth;
     const h = this.container.clientHeight || window.innerHeight;
     if (!w || !h) return;
@@ -622,6 +639,7 @@ export class TheaterEngine {
     this.pitch = Math.atan2((SCREEN.bottom + SCREEN.top) / 2 - (pose.y + SEATED_EYE_HEIGHT), dist);
     this.updateHolders();
     this.updatePrompt(true);
+    this.moved();
     this.events.onSeated(true);
   }
 
@@ -634,6 +652,7 @@ export class TheaterEngine {
     this.pitch = 0;
     this.updateHolders();
     this.updatePrompt(true);
+    this.moved();
     this.events.onSeated(false);
   }
 
@@ -692,6 +711,7 @@ export class TheaterEngine {
     this.yaw = yaw;
     this.pitch = 0;
     this.updatePrompt(true);
+    this.moved();
   }
 
   /** A good free seat: the middle of the third row, or as close to it as is free. */
@@ -714,22 +734,168 @@ export class TheaterEngine {
   }
 
   // ---------------------------------------------------------------------------
+  // VR
+
+  private vrPanel: VrPanelModel | null = null;
+  private panelAfterRecenter = false;
+
+  /** You were moved (a seat, the Go to… menu): in VR, your head follows, and the menu with it. */
+  private moved(showPanel = true) {
+    this.recenter = true;
+    if (showPanel && this.vr?.active) this.panelAfterRecenter = true;
+  }
+
+  get inVr() {
+    return Boolean(this.vr?.active);
+  }
+
+  /** Starts VR (from a button press: browsers only allow it then). */
+  async enterVr() {
+    if (!this.vr) {
+      this.vr = new VrMode(this.renderer, this.scene, this.rig, this.camera, {
+        grid: () => this.world.building.grid,
+        ticket: () => this.ticket,
+        seated: () => this.seat !== null,
+        teleport: (x, y, z) => this.teleportTo(x, y, z),
+        turn: (dir) => this.snapTurn(dir),
+        stick: (x, y) => this.setStick(x, y),
+        press: (id) => this.events.onVrPress?.(id),
+        blocked: (n) => this.events.onBlocked(n),
+        started: () => {
+          this.scene.add(this.rig);
+          this.rig.add(this.camera);
+          this.camera.position.set(0, 0, 0);
+          this.camera.quaternion.identity();
+          this.pitch = 0;
+          this.recenter = true;
+          this.panelAfterRecenter = true;
+          this.events.onVr?.(true);
+        },
+        ended: () => {
+          this.rig.remove(this.camera);
+          this.scene.remove(this.rig);
+          this.camera.position.set(this.body.x, this.body.y + EYE_HEIGHT, this.body.z);
+          this.stick = { x: 0, y: 0 };
+          this.pitch = 0;
+          this.resize();
+          this.events.onVr?.(false);
+        },
+      });
+      if (this.vrPanel) this.vr.setPanel(this.vrPanel);
+    }
+    await this.vr.enter();
+  }
+
+  exitVr() {
+    this.vr?.exit();
+  }
+
+  /** What the floating VR menu shows (kept up to date by the page). */
+  setVrPanel(model: VrPanelModel) {
+    this.vrPanel = model;
+    this.vr?.setPanel(model);
+  }
+
+  showVrPanel() {
+    this.vr?.showPanel();
+  }
+
+  hideVrPanel() {
+    this.vr?.hidePanel();
+  }
+
+  /** VR: a pinch at the floor. You keep facing the way you were. */
+  teleportTo(x: number, y: number, z: number) {
+    if (this.seat) return;
+    this.world.update(x, z, true);
+    Object.assign(this.body, { x, y, z, vy: 0, onGround: true });
+    this.eyeY = y + EYE_HEIGHT;
+    play('step');
+    this.moved(false);
+    this.updatePrompt(true);
+  }
+
+  /** VR: turn 45° (-1 left, 1 right), around where you stand. */
+  snapTurn(dir: -1 | 1) {
+    if (this.seat) {
+      // Seated, your seat faces the screen; turning just puts your head back in it.
+      this.yaw = screenYaw(this.theater(this.seat.theater));
+    } else {
+      this.yaw -= dir * SNAP_TURN;
+    }
+    this.moved(false);
+  }
+
+  /**
+   * A VR frame. The headset says where your head is inside the rig (as of the
+   * last frame); the rig is where that puts you in the building. Walking with
+   * your feet moves your body with it; sticks and teleports move the rig.
+   */
+  private tickVr(dt: number) {
+    const cam = this.camera;
+    const b = this.body;
+    const hasPose = cam.position.lengthSq() > 0;
+    this.headEuler.setFromQuaternion(cam.quaternion, 'YXZ');
+    const headYaw = this.headEuler.y;
+    if (this.recenter && hasPose) {
+      // Put your head where the body is, facing the way the body faces.
+      const ry = this.yaw - headYaw;
+      const c = Math.cos(ry);
+      const s = Math.sin(ry);
+      this.rig.rotation.set(0, ry, 0);
+      this.rig.position.set(
+        b.x - (c * cam.position.x + s * cam.position.z),
+        b.y,
+        b.z - (-s * cam.position.x + c * cam.position.z),
+      );
+      this.recenter = false;
+      if (this.panelAfterRecenter) {
+        this.panelAfterRecenter = false;
+        this.rig.updateMatrixWorld(true);
+        this.vr?.showPanel();
+      }
+    }
+    const ry = this.rig.rotation.y;
+    const c = Math.cos(ry);
+    const s = Math.sin(ry);
+    const hx = this.rig.position.x + c * cam.position.x + s * cam.position.z;
+    const hz = this.rig.position.z - s * cam.position.x + c * cam.position.z;
+    this.yaw = ry + headYaw;
+    if (!this.seat && !this.recenter && hasPose) {
+      b.x = hx;
+      b.z = hz;
+      this.walk(dt);
+      // The sticks (and stairs, and falling) move you; your real head stays put in the rig.
+      this.rig.position.x += b.x - hx;
+      this.rig.position.z += b.z - hz;
+      this.rig.position.y = b.y;
+    }
+    this.rig.updateMatrixWorld(true);
+    this.vr?.update();
+  }
+
+  // ---------------------------------------------------------------------------
   // Each frame
 
   private readonly tick = () => {
     if (this.disposed) return;
     const dt = Math.min(0.05, this.clock.getDelta());
     const time = this.clock.elapsedTime;
-    if (!this.seat) this.walk(dt);
-    // The camera: smooth over steps, a little bob while walking.
     const b = this.body;
-    const eyeHeight = this.seat ? SEATED_EYE_HEIGHT : EYE_HEIGHT;
-    const target = b.y + eyeHeight;
-    this.eyeY = b.onGround ? this.eyeY + (target - this.eyeY) * Math.min(1, dt * 14) : target;
-    const bob = reducedMotion() ? 0 : Math.sin(this.bob) * 0.045 * Math.min(1, this.bobAmount);
-    this.camera.position.set(b.x, this.eyeY + bob, b.z);
-    this.camera.rotation.set(this.pitch, this.yaw, 0, 'YXZ');
-    this.updateViewModel(dt);
+    const xr = this.renderer.xr.isPresenting;
+    if (xr) {
+      this.tickVr(dt);
+    } else {
+      if (!this.seat) this.walk(dt);
+      // The camera: smooth over steps, a little bob while walking.
+      const eyeHeight = this.seat ? SEATED_EYE_HEIGHT : EYE_HEIGHT;
+      const target = b.y + eyeHeight;
+      this.eyeY = b.onGround ? this.eyeY + (target - this.eyeY) * Math.min(1, dt * 14) : target;
+      const bob = reducedMotion() ? 0 : Math.sin(this.bob) * 0.045 * Math.min(1, this.bobAmount);
+      this.camera.position.set(b.x, this.eyeY + bob, b.z);
+      this.camera.rotation.set(this.pitch, this.yaw, 0, 'YXZ');
+      this.updateViewModel(dt);
+    }
     for (const a of this.avatars.values()) a.update(dt);
     this.world.animate(time, dt);
     this.world.update(b.x, b.z);
@@ -745,6 +911,8 @@ export class TheaterEngine {
     this.sendMove();
     this.renderer.clear();
     this.renderer.render(this.scene, this.camera);
+    // (In VR the snacks in your hands aren't drawn yet: there are no screen-fixed hands there.)
+    if (xr) return;
     this.camera.updateMatrixWorld();
     this.viewModel.position.copy(this.camera.position);
     this.viewModel.quaternion.copy(this.camera.quaternion);

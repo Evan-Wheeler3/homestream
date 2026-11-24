@@ -43,6 +43,8 @@ import {
   type TicketChoice,
 } from './parts';
 import { ScreenPlayer } from './screen';
+import { VrMode } from './vr';
+import { VR_PAGE, vrMenu } from './vrmenu';
 import '../styles/theater.css';
 
 async function loadAllMovies(): Promise<Movie[]> {
@@ -107,7 +109,29 @@ type Dialogs =
 function Cinema({ me, cloud, movies }: { me: SessionUser; cloud: boolean; movies: Movie[] }) {
   const navigate = useNavigate();
   const [params] = useSearchParams();
-  const toast = useToast();
+  // In VR the toasts can't be seen, so the latest one is also shown on the floating menu.
+  const toasts = useToast();
+  const [note, setNote] = useState<string | null>(null);
+  const noteTimer = useRef(0);
+  const toast = useMemo(
+    () => ({
+      show: (message: string, tone?: 'info' | 'error') => {
+        toasts.show(message, tone);
+        setNote(message);
+        window.clearTimeout(noteTimer.current);
+        noteTimer.current = window.setTimeout(() => setNote(null), tone === 'error' ? 9000 : 7000);
+      },
+    }),
+    [toasts],
+  );
+  const [vrSupported, setVrSupported] = useState(false);
+  const [vrOn, setVrOn] = useState(false);
+  const vrOnRef = useRef(false);
+  /** The VR menu's page: the usual buttons, or the box office's list of movies. */
+  const [vrPage, setVrPage] = useState<{ kind: 'main' } | { kind: 'movies'; page: number }>({
+    kind: 'main',
+  });
+  const vrPressRef = useRef<(id: string) => void>(() => undefined);
   const meRef = useRef(me);
   const hostRef = useRef<HTMLDivElement>(null);
   const videoHostRef = useRef<HTMLDivElement>(null);
@@ -217,6 +241,21 @@ function Cinema({ me, cloud, movies }: { me: SessionUser; cloud: boolean; movies
       play('ticket');
     },
     [lineup.length],
+  );
+
+  /** A ticket as the box office would sell it: from where you left off, together if others are here. */
+  const ticketFor = useCallback(
+    (movie: Movie): TicketChoice => {
+      const index = lineup.indexOf(movie.id);
+      const others = [...playersRef.current.keys()].some((id) => id !== meIdRef.current);
+      return {
+        movie,
+        shared: others,
+        startSeconds: movie.user.positionSeconds > 60 ? movie.user.positionSeconds : 0,
+        theater: index >= 0 ? index + 1 : undefined,
+      };
+    },
+    [lineup],
   );
 
   /** What you're carrying: shown in front of you, and sent to everyone else. */
@@ -440,18 +479,26 @@ function Cinema({ me, cloud, movies }: { me: SessionUser; cloud: boolean; movies
       unlockAudio();
       if (!p || !engine || !link || dialogRef.current) return;
       const ticket = ticketRef.current;
+      const vr = vrOnRef.current;
       switch (p.kind) {
         case 'boxoffice':
-          setDialog({ kind: 'boxoffice', movieId: null });
+          if (vr) setVrPage({ kind: 'movies', page: 0 });
+          else setDialog({ kind: 'boxoffice', movieId: null });
           break;
         case 'poster':
-          setDialog({ kind: 'boxoffice', movieId: p.movieId });
+          if (vr) {
+            const movie = movies.find((m) => m.id === p.movieId);
+            if (movie) buy(ticketFor(movie));
+          } else setDialog({ kind: 'boxoffice', movieId: p.movieId });
           break;
         case 'concessions':
-          setDialog({ kind: 'concessions' });
+          if (vr)
+            toast.show('The concession stand isn’t open in VR yet. Snacks are on the flat screen.');
+          else setDialog({ kind: 'concessions' });
           break;
         case 'arcade':
-          if (p.game) setDialog({ kind: 'arcade', game: p.game });
+          if (vr) toast.show('The arcade games need the flat screen for now.');
+          else if (p.game) setDialog({ kind: 'arcade', game: p.game });
           break;
         case 'claw':
           play('coin');
@@ -482,7 +529,7 @@ function Cinema({ me, cloud, movies }: { me: SessionUser; cloud: boolean; movies
           break;
       }
     },
-    [layout, stand, toast, toss],
+    [buy, layout, movies, stand, ticketFor, toast, toss],
   );
 
   // ---------------------------------------------------------------------------
@@ -508,6 +555,17 @@ function Cinema({ me, cloud, movies }: { me: SessionUser; cloud: boolean; movies
           toast.show(`Theater ${n} needs a ticket. Get one at the box office in the lobby.`),
         onInteract: () => interact(),
         onEat: (hand) => eat(hand),
+        onVrPress: (id) => vrPressRef.current(id),
+        onVr: (on) => {
+          vrOnRef.current = on;
+          setVrOn(on);
+          setVrPage({ kind: 'main' });
+          if (on) {
+            setDialog(null);
+            setTravelOpen(false);
+            setChatOpen(false);
+          }
+        },
         onSeated: (seated) => {
           // Sit down and your snacks go in the cupholders; stand up and you take them with you.
           const next = handsRef.current.map((h) =>
@@ -717,8 +775,117 @@ function Cinema({ me, cloud, movies }: { me: SessionUser; cloud: boolean; movies
           ? 'Reconnecting…'
           : 'Connecting…';
 
+  // ---------------------------------------------------------------------------
+  // VR: the floating menu (what it shows, and what its buttons do)
+
+  useEffect(() => {
+    void VrMode.supported().then(setVrSupported);
+  }, []);
+
+  const position = myShowing ? positionAt(myShowing, now) : 0;
+  const sitNow = () => {
+    const engine = engineRef.current;
+    const theater = mine?.ticket;
+    if (!engine || !theater) return;
+    const seat = engine.freeSeat(theater);
+    engine.goTo({ theater, seat });
+    screenRef.current?.unlock();
+    if (intentRef.current) intentRef.current.seat = seat;
+    engine.sitAt(theater, seat);
+    linkRef.current?.send({ t: 'sit', seat });
+  };
+  const vrPanel = vrMenu({
+    vrPage,
+    note,
+    movies,
+    seated,
+    showing: seated ? myShowing : undefined,
+    countdown,
+    position,
+    duration,
+    canControl,
+    needsTap: needsTap && inMyTheater,
+    screenError: seated ? screenError : null,
+    place: placeName(place),
+    ticket: mine?.ticket ?? null,
+    ticketTitle: myShowing?.title ?? null,
+    prompt,
+  });
+  useEffect(() => {
+    engineRef.current?.setVrPanel(vrPanel);
+  });
+  const vrPages = Math.max(1, Math.ceil(movies.length / VR_PAGE));
+  const vrPress = (id: string) => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    unlockAudio();
+    if (id.startsWith('movie:')) {
+      const movie = movies.find((m) => m.id === id.slice('movie:'.length));
+      if (movie) buy(ticketFor(movie));
+      setVrPage({ kind: 'main' });
+      return;
+    }
+    switch (id) {
+      case 'main':
+        setVrPage({ kind: 'main' });
+        break;
+      case 'prev':
+      case 'next':
+        setVrPage((p) => {
+          const page = p.kind === 'movies' ? p.page : 0;
+          return { kind: 'movies', page: (page + (id === 'next' ? 1 : -1) + vrPages) % vrPages };
+        });
+        break;
+      case 'movies':
+        setVrPage({ kind: 'movies', page: 0 });
+        break;
+      case 'use':
+        interact(promptRef.current);
+        break;
+      case 'sit':
+        sitNow();
+        break;
+      case 'lobby':
+        engine.goTo('lobby');
+        break;
+      case 'left':
+      case 'right':
+        engine.snapTurn(id === 'left' ? -1 : 1);
+        break;
+      case 'return':
+        returnTicket();
+        break;
+      case 'hide':
+        engine.hideVrPanel();
+        break;
+      case 'exit':
+        engine.exitVr();
+        break;
+      case 'sound':
+        setMuted(false);
+        screenRef.current?.unlock();
+        setScreen((st) => ({ ...st, needsTap: false }));
+        break;
+      case 'toggle':
+        if (myShowing) control(myShowing.status === 'playing' ? 'pause' : 'play');
+        break;
+      case 'back':
+        control('seek', Math.max(0, position - 10));
+        break;
+      case 'ahead':
+        control('seek', duration ? Math.min(duration - 1, position + 30) : position + 30);
+        break;
+      case 'stand':
+        stand();
+        break;
+    }
+  };
+  useEffect(() => {
+    vrPressRef.current = vrPress;
+  });
+
   return (
-    <div className={`theater ${seated ? 'theater--seated' : ''}`}>
+    <div className={`theater ${seated ? 'theater--seated' : ''} ${vrOn ? 'theater--vr' : ''}`}>
       <div ref={hostRef} className="theater__world" />
       <div ref={videoHostRef} className="theater__videos" aria-hidden="true" />
 
@@ -754,6 +921,21 @@ function Cinema({ me, cloud, movies }: { me: SessionUser; cloud: boolean; movies
             setSoundOff(!soundOff);
           }}
         />
+        {vrSupported && (
+          <Button
+            size="sm"
+            onClick={() => {
+              unlockAudio();
+              engineRef.current
+                ?.enterVr()
+                .catch((e: unknown) =>
+                  toast.show(`VR couldn’t start: ${errorMessage(e)}`, 'error'),
+                );
+            }}
+          >
+            Enter VR
+          </Button>
+        )}
         <IconButton icon="pin" label="Go to…" onClick={() => setTravelOpen((o) => !o)} />
         <IconButton icon="info" label="How it works" onClick={() => setDialog({ kind: 'help' })} />
       </header>

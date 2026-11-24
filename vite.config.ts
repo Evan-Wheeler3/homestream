@@ -11,6 +11,8 @@ export default defineConfig({
     outDir: '../../dist/client',
     emptyOutDir: true,
     sourcemap: true,
+    // Older browsers too: an original Oculus Quest's browser stopped updating in 2023.
+    target: ['chrome100', 'edge100', 'firefox104', 'safari16'],
     // hls.js (~570 kB) is lazy-loaded only by browsers without native HLS.
     chunkSizeWarningLimit: 600,
   },

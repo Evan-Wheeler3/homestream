@@ -33,7 +33,7 @@ export function overlaps(grid: VoxelGrid, x: number, y: number, z: number): bool
 }
 
 /** The theater whose doorway you'd be standing in without its ticket, if any. */
-function gated(grid: VoxelGrid, x: number, z: number, ticket: number | null): number | null {
+export function gated(grid: VoxelGrid, x: number, z: number, ticket: number | null): number | null {
   for (const [dx, dz] of [
     [-PLAYER_RADIUS, -PLAYER_RADIUS],
     [PLAYER_RADIUS, -PLAYER_RADIUS],
